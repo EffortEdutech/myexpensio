@@ -5,7 +5,7 @@
 **Document ID:** 00-README  
 **Version:** v1.1  
 **Date:** 02 Mar 2026  
-**Owner:** Darya Malak  
+**Owner:** Eff  
 **Status:** Updated (aligned to integrated pack v1.5)
 
 ---
@@ -159,4 +159,4 @@ If you place docs in a `/docs` folder, a clean order is:
 ---
 
 ## Ownership
-Karya oleh **Darya Malak**.
+**Eff**.
