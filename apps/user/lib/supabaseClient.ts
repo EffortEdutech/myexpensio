@@ -1,8 +1,11 @@
-﻿import { createClient } from '@supabase/supabase-js'
+// apps/user/lib/supabaseClient.ts
+// ---------------------------------------------------------------------------
+// DEPRECATED — do not use this file for new code.
+// Use lib/supabase/client.ts  (Client Components)
+// Use lib/supabase/server.ts  (Server Components / Route Handlers)
+// ---------------------------------------------------------------------------
+// Kept only so the /auth-test dev utility page keeps working without changes.
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseKey =
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { createClient } from './supabase/client'
 
-export const supabase = createClient(supabaseUrl, supabaseKey)
+export const supabase = createClient()
