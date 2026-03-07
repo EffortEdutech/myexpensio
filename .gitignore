@@ -50,3 +50,5 @@ yarn-error.log*
 Thumbs.db
 *.pem
 *.tmp
+
+RUNBOOK_LOCAL_DEV.md
