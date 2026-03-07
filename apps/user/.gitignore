@@ -1,8 +1,7 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
-/node_modules
-/.pnp
+# ── Dependencies ──────────────────────────────────────────────────────────────
+# No leading slash — matches node_modules at ANY depth (root + all workspaces)
+node_modules/
+.pnp
 .pnp.*
 .yarn/*
 !.yarn/patches
@@ -10,32 +9,44 @@
 !.yarn/releases
 !.yarn/versions
 
-# testing
+# ── Next.js ───────────────────────────────────────────────────────────────────
+.next/
+out/
+build/
 /coverage
 
-# next.js
-/.next/
-/out/
+# ── Package manager ───────────────────────────────────────────────────────────
+# Commit pnpm-lock.yaml (yes), ignore npm/yarn lockfiles
+package-lock.json
+yarn.lock
+.pnpm-debug.log*
 
-# production
-/build
+# ── Environment variables ─────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env*
 
-# misc
-.DS_Store
-*.pem
+# ── Supabase ──────────────────────────────────────────────────────────────────
+supabase/.temp/
+# Ignore auto-saved SQL snippets from Supabase Studio
+supabase/snippets/
 
-# debug
+# ── Vercel ────────────────────────────────────────────────────────────────────
+.vercel
+
+# ── TypeScript ────────────────────────────────────────────────────────────────
+*.tsbuildinfo
+next-env.d.ts
+
+# ── Debug / logs ──────────────────────────────────────────────────────────────
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
+*.log
 
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# ── OS / Editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.pem
+*.tmp
