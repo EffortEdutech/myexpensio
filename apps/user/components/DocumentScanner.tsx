@@ -72,9 +72,11 @@ function loadOpenCV(): Promise<any> {
     // Already loaded by a previous component instance this session
     if (w.cv?.Mat) { _cvCache = w.cv; resolve(_cvCache); return }
 
-    // Correct URL: dist/opencv.js inside the published npm package
-    // This is the only file that sets window.cv correctly for browser use
-    const CDN = 'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.12.0-release.1/dist/opencv.js'
+    // Self-hosted in /public/opencv.js — served from your own Vercel deployment.
+    // No external CDN dependency, no CORS, no mystery hangs.
+    // See RUNBOOK: download once with:
+    //   curl -L -o apps/user/public/opencv.js "https://docs.opencv.org/4.10.0/opencv.js"
+    const CDN = '/opencv.js'
 
     const script = document.createElement('script')
     script.async = true
