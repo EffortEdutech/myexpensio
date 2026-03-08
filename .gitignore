@@ -22,10 +22,12 @@ yarn.lock
 .pnpm-debug.log*
 
 # ── Environment variables ─────────────────────────────────────────────────────
+# Never commit real secrets
 .env
 .env.local
 .env.*.local
-.env*
+# .env.production is SAFE to commit (public NEXT_PUBLIC_ vars only, no secrets)
+# .env.local.example is SAFE to commit (placeholder template)
 
 # ── Supabase ──────────────────────────────────────────────────────────────────
 supabase/.temp/
@@ -50,5 +52,6 @@ yarn-error.log*
 Thumbs.db
 *.pem
 *.tmp
+
 
 RUNBOOK_LOCAL_DEV.md
