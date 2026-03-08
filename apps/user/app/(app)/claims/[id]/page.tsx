@@ -279,8 +279,8 @@ function ExpenseModal({ type, onAdd, onClose, editMode = false, initialData, ite
   const [nights,       setNights]       = useState(initNights)
   const [lodgingRate,  setLodgingRate]  = useState<number>(120)
 
-  // Receipt upload path (for RECEIPT mode)
-  const [receiptPath, setReceiptPath] = useState<string>('')
+  // Receipt upload path — seeded from existing item when editing
+  const [receiptPath, setReceiptPath] = useState<string>(initialData?.receipt_url ?? '')
 
   // Fetch rates once on mount
   useEffect(() => {
