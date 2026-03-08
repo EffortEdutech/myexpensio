@@ -50,11 +50,15 @@ function loadOpenCV(): Promise<any> {
   if (_cvCache) return Promise.resolve(_cvCache)
   if (_cvPromise) return _cvPromise
 
-  // Primary: official OpenCV CDN  Secondary: jsDelivr npm mirror
+  // CDN order: jsDelivr first (global edge CDN, fast)
+  //             docs.opencv.org second (documentation server, slow — last resort)
   const URLS = [
+    'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/opencv.js',
+    'https://cdn.jsdelivr.net/npm/opencv-browser@1.0.0/dist/opencv.js',
     'https://docs.opencv.org/4.x/opencv.js',
-    'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/src/opencv.js',
   ]
+
+  const SCRIPT_TIMEOUT_MS = 15_000   // give each URL 15s before trying next
 
   function tryLoad(urls: string[], reject: (e: Error) => void, resolve: (cv: any) => void) {
     if (urls.length === 0) {
@@ -62,48 +66,69 @@ function loadOpenCV(): Promise<any> {
       return
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w   = window as any
-    const url = urls[0]
+    const w    = window as any
+    const url  = urls[0]
     const rest = urls.slice(1)
+    let   done = false   // prevent double-resolve / double-reject
 
-    const script   = document.createElement('script')
-    script.async   = true
-    script.src     = url
-    script.onerror = () => {
-      console.warn('[DocumentScanner] Failed to load OpenCV from:', url, '— trying next URL')
-      document.head.removeChild(script)
+    function advance(reason: string) {
+      if (done) return
+      done = true
+      clearTimeout(timeoutHandle)
+      // Remove script tag cleanly before trying next
+      try { document.head.removeChild(script) } catch { /* already removed */ }
+      console.warn(`[DocumentScanner] ${reason} — trying next URL`)
       tryLoad(rest, reject, resolve)
     }
-    script.onload  = () => {
-      // OpenCV.js sets window.cv but WASM may not be ready yet
-      const poll = (attempts = 0) => {
-        if (w.cv?.Mat) {
-          _cvCache = w.cv
-          resolve(_cvCache)
-        } else if (attempts > 100) {
-          tryLoad(rest, reject, resolve)   // WASM stalled — try next URL
-        } else {
-          setTimeout(() => poll(attempts + 1), 100)
-        }
-      }
-      if (w.cv) {
-        // Hook onRuntimeInitialized AND poll as belt-and-braces
-        const orig = w.cv.onRuntimeInitialized
-        w.cv.onRuntimeInitialized = () => {
-          orig?.()
-          _cvCache = w.cv
-          resolve(_cvCache)
-        }
-      }
-      setTimeout(() => poll(), 200)
+
+    function succeed() {
+      if (done) return
+      done = true
+      clearTimeout(timeoutHandle)
+      _cvCache = w.cv
+      resolve(_cvCache)
     }
+
+    const script = document.createElement('script')
+    script.async = true
+    script.src   = url
+
+    // Hard timeout — fires if script loads but WASM hangs, OR if server is just slow
+    const timeoutHandle = setTimeout(
+      () => advance(`Timed out after ${SCRIPT_TIMEOUT_MS / 1000}s loading ${url}`),
+      SCRIPT_TIMEOUT_MS,
+    )
+
+    script.onerror = () => advance(`Network error loading ${url}`)
+
+    script.onload = () => {
+      // Script tag loaded — now wait for WASM runtime to initialise.
+      // cv.Mat is the reliable "ready" signal.
+      if (w.cv?.Mat) { succeed(); return }
+
+      // Hook onRuntimeInitialized (fires when WASM is compiled and ready)
+      if (w.cv && !w.cv.Mat) {
+        const orig = w.cv.onRuntimeInitialized
+        w.cv.onRuntimeInitialized = () => { orig?.(); if (w.cv?.Mat) succeed() }
+      }
+
+      // Belt-and-braces poll — catches cases where hook fires before we set it
+      const poll = (attempts = 0) => {
+        if (done) return
+        if (w.cv?.Mat) { succeed(); return }
+        if (attempts < 80) setTimeout(() => poll(attempts + 1), 100)
+        // else let the hard timeout handle it
+      }
+      setTimeout(() => poll(), 150)
+    }
+
     document.head.appendChild(script)
   }
 
   _cvPromise = new Promise((resolve, reject) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any
-    // Already loaded by a prior instance on this page
+    // Already loaded by a prior instance on this page — instant
     if (w.cv?.Mat) { _cvCache = w.cv; resolve(_cvCache); return }
     tryLoad(URLS, reject, resolve)
   })
@@ -434,6 +459,7 @@ export function DocumentScanner({
 
   useEffect(() => {
     let mounted = true
+    setMsg('Loading scanner engine… (first use ~8 MB, cached after)')
     loadOpenCV()
       .then(cv => {
         if (!mounted) return
