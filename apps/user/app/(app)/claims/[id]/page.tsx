@@ -817,10 +817,17 @@ export default function ClaimDetailPage() {
         }
       </div>
 
-      {/* Total */}
+      {/* Total
+           DRAFT  → live sum from items (DB total_amount may be stale / 0)
+           SUBMITTED → locked snapshot from claim.total_amount (audit-safe) */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: 12 }}>
         <span style={{ fontSize: 14, fontWeight: 600, color: '#64748b' }}>Total</span>
-        <span style={{ fontSize: 22, fontWeight: 800, color: '#0f172a' }}>{fmtMyr(claim.total_amount)}</span>
+        <span style={{ fontSize: 22, fontWeight: 800, color: '#0f172a' }}>
+          {fmtMyr(isDraft
+            ? items.reduce((sum, i) => sum + (Number(i.amount) || 0), 0)
+            : claim.total_amount
+          )}
+        </span>
       </div>
 
       {/* Add buttons */}
