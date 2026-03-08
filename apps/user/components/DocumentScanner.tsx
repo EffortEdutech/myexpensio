@@ -50,25 +50,62 @@ function loadOpenCV(): Promise<any> {
   if (_cvCache) return Promise.resolve(_cvCache)
   if (_cvPromise) return _cvPromise
 
-  _cvPromise = new Promise((resolve, reject) => {
-    // Already loaded by a prior instance
+  // Primary: official OpenCV CDN  Secondary: jsDelivr npm mirror
+  const URLS = [
+    'https://docs.opencv.org/4.x/opencv.js',
+    'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/src/opencv.js',
+  ]
+
+  function tryLoad(urls: string[], reject: (e: Error) => void, resolve: (cv: any) => void) {
+    if (urls.length === 0) {
+      reject(new Error('Could not load scanner engine. Check your internet connection and try again.'))
+      return
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any
-    if (w.cv?.Mat) { _cvCache = w.cv; resolve(_cvCache); return }
+    const w   = window as any
+    const url = urls[0]
+    const rest = urls.slice(1)
 
     const script   = document.createElement('script')
     script.async   = true
-    script.src     = 'https://cdnjs.cloudflare.com/ajax/libs/opencv.js/4.8.0/opencv.js'
-    script.onerror = () => reject(new Error('Failed to load OpenCV.js from CDN.'))
+    script.src     = url
+    script.onerror = () => {
+      console.warn('[DocumentScanner] Failed to load OpenCV from:', url, '— trying next URL')
+      document.head.removeChild(script)
+      tryLoad(rest, reject, resolve)
+    }
     script.onload  = () => {
-      const poll = () => {
-        if (w.cv?.Mat) { _cvCache = w.cv; resolve(_cvCache) }
-        else            setTimeout(poll, 80)
+      // OpenCV.js sets window.cv but WASM may not be ready yet
+      const poll = (attempts = 0) => {
+        if (w.cv?.Mat) {
+          _cvCache = w.cv
+          resolve(_cvCache)
+        } else if (attempts > 100) {
+          tryLoad(rest, reject, resolve)   // WASM stalled — try next URL
+        } else {
+          setTimeout(() => poll(attempts + 1), 100)
+        }
       }
-      if (w.cv) { w.cv.onRuntimeInitialized = () => { _cvCache = w.cv; resolve(_cvCache) } }
-      setTimeout(poll, 200)
+      if (w.cv) {
+        // Hook onRuntimeInitialized AND poll as belt-and-braces
+        const orig = w.cv.onRuntimeInitialized
+        w.cv.onRuntimeInitialized = () => {
+          orig?.()
+          _cvCache = w.cv
+          resolve(_cvCache)
+        }
+      }
+      setTimeout(() => poll(), 200)
     }
     document.head.appendChild(script)
+  }
+
+  _cvPromise = new Promise((resolve, reject) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any
+    // Already loaded by a prior instance on this page
+    if (w.cv?.Mat) { _cvCache = w.cv; resolve(_cvCache); return }
+    tryLoad(URLS, reject, resolve)
   })
   return _cvPromise
 }
