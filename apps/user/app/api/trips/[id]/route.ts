@@ -68,7 +68,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   // Fetch current trip state
   const { data: trip, error: fetchError } = await supabase
     .from('trips')
-    .select('id, org_id, status, calculation_mode, gps_distance_m, selected_route_distance_m')
+    .select('id, org_id, status, calculation_mode, gps_distance_m, selected_route_distance_m, odometer_mode, odometer_distance_m, odometer_start_url, odometer_end_url')
     .eq('id', id)
     .eq('org_id', org.org_id)
     .single()
