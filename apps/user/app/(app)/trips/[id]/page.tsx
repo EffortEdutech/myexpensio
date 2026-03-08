@@ -347,7 +347,7 @@ export default function TripDetailPage() {
               <label key={m} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
                 <input type="radio" name="odo_mode" value={m}
                   checked={odoMode === m}
-                  onChange={() => { setOdoMode(m); if (m === 'NONE') setOdoDistKm('') }}
+                  onChange={() => { setOdoMode(m); if (m !== 'OVERRIDE') setOdoDistKm(''); setOdoStartUrl(null); setOdoEndUrl(null) }}
                   style={{ marginTop: 2, accentColor: '#0f172a' }}
                 />
                 <div>
@@ -386,15 +386,15 @@ export default function TripDetailPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <p style={{ fontSize: 12, fontWeight: 600, color: '#374151', margin: '0 0 6px' }}>📷 Start Reading</p>
-                  <ReceiptUploader storagePath={odoStartUrl}
+                  <ReceiptUploader key={`odo-start-${odoMode}`} storagePath={odoStartUrl}
                     onUploaded={p => handlePhotoUploaded('odometer_start_url', p || null)}
-                    purpose="ODOMETER" label="Start" />
+                    purpose="ODOMETER" label="Start" enableScan={true} />
                 </div>
                 <div>
                   <p style={{ fontSize: 12, fontWeight: 600, color: '#374151', margin: '0 0 6px' }}>📷 End Reading</p>
-                  <ReceiptUploader storagePath={odoEndUrl}
+                  <ReceiptUploader key={`odo-end-${odoMode}`} storagePath={odoEndUrl}
                     onUploaded={p => handlePhotoUploaded('odometer_end_url', p || null)}
-                    purpose="ODOMETER" label="End" />
+                    purpose="ODOMETER" label="End" enableScan={true} />
                 </div>
               </div>
             </div>

@@ -549,6 +549,7 @@ function ExpenseModal({ type, onAdd, onClose, editMode = false, initialData, ite
             <ReceiptUploader
               storagePath={receiptPath || null}
               onUploaded={path => setReceiptPath(path)}
+              enableScan={true}
             />
           </div>
         </>
