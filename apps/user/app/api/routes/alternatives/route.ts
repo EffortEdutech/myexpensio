@@ -1,19 +1,44 @@
 // apps/user/app/api/routes/alternatives/route.ts
 // POST /api/routes/alternatives
 //
-// Returns route alternatives for origin → destination.
-// Uses deterministic mock — replace MOCK SECTION with real
-// Google Routes API v2 call when key is available.
+// Returns real route alternatives via OSRM (OpenStreetMap routing).
+// OSRM public demo: router.project-osrm.org — free, no API key.
 //
-// NOTE: increment_routes_usage is SECURITY DEFINER — it runs with
-// elevated DB privileges regardless of caller. No admin client needed.
+// Request body:
+//   origin_text        string  — human-readable label (stored on trip)
+//   origin_lat         number  — geocoded latitude
+//   origin_lng         number  — geocoded longitude
+//   destination_text   string  — human-readable label
+//   destination_lat    number  — geocoded latitude
+//   destination_lng    number  — geocoded longitude
+//   travel_mode?       string  — 'DRIVING' (default)
+//
+// Response alternatives include GeoJSON geometry for Leaflet map drawing.
+// Gating: FREE = 2/month (server-side), ADMIN bypass, PRO bypass.
 
 import { createClient }                  from '@/lib/supabase/server'
 import { getActiveOrg }                  from '@/lib/org'
 import { type NextRequest, NextResponse } from 'next/server'
 import { createHash }                    from 'crypto'
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+type OsrmRoute = {
+  distance: number
+  duration: number
+  geometry: { type: 'LineString'; coordinates: [number, number][] }
+  legs:     Array<{ summary: string; steps: unknown[] }>
+}
+
+type RouteAlternative = {
+  route_id:   string
+  distance_m: number
+  duration_s: number
+  summary:    string
+  geometry:   { type: 'LineString'; coordinates: [number, number][] }
+}
+
+const OSRM_PROFILE: Record<string, string> = {
+  DRIVING: 'driving', CYCLING: 'cycling', WALKING: 'foot',
+}
 
 function err(code: string, message: string, status: number, details?: object) {
   return NextResponse.json(
@@ -22,31 +47,49 @@ function err(code: string, message: string, status: number, details?: object) {
   )
 }
 
-function hashText(t: string): string {
-  return createHash('sha256').update(t.toLowerCase().trim()).digest('hex').slice(0, 16)
+function hashCoord(lat: number, lng: number): string {
+  return createHash('sha256')
+    .update(`${lat.toFixed(4)},${lng.toFixed(4)}`)
+    .digest('hex').slice(0, 16)
 }
 
-// ── MOCK SECTION ──────────────────────────────────────────────────────────
-// Replace with real Google Routes API v2 call when key is available:
-//   POST https://routes.googleapis.com/directions/v2:computeRoutes
-//   Headers: { 'X-Goog-Api-Key': process.env.GOOGLE_ROUTES_API_KEY }
-//   Body: { origin: { address: origin_text },
-//           destination: { address: destination_text },
-//           travelMode: 'DRIVING', computeAlternativeRoutes: true }
-function mockAlternatives(origin: string, destination: string) {
-  const seed = (origin.length * 31 + destination.length * 17) % 40
-  const base = 15_000 + seed * 1_000
-  return [
-    { route_id: 'mock_a', distance_m: base,                    duration_s: Math.round(base / 10), summary: 'Via Federal Highway',       polyline: null },
-    { route_id: 'mock_b', distance_m: Math.round(base * 1.15), duration_s: Math.round(base / 13), summary: 'Via ELITE Highway (Faster)', polyline: null },
-    { route_id: 'mock_c', distance_m: Math.round(base * 0.92), duration_s: Math.round(base / 8),  summary: 'Via Old Road (Shorter)',     polyline: null },
-  ]
+function routeLabel(index: number, distanceM: number): string {
+  const labels = ['Fastest route', 'Alternative route', 'Scenic route']
+  return labels[index] ?? `Route ${index + 1} (${(distanceM / 1000).toFixed(1)} km)`
 }
-// ── END MOCK SECTION ───────────────────────────────────────────────────────
+
+async function fetchOsrmRoutes(
+  originLat: number, originLng: number,
+  destLat:   number, destLng:   number,
+  profile:   string,
+): Promise<RouteAlternative[]> {
+  // OSRM uses lng,lat order (reversed from standard)
+  const coords = `${originLng},${originLat};${destLng},${destLat}`
+  const url = `https://router.project-osrm.org/route/v1/${profile}/${coords}`
+            + `?overview=full&geometries=geojson&alternatives=3&steps=false`
+
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'myexpensio/1.0 (effort.myexpensio@gmail.com)' },
+    signal:  AbortSignal.timeout(10_000),
+  })
+
+  if (!res.ok) throw new Error(`OSRM ${res.status}: ${res.statusText}`)
+
+  const json = await res.json() as { code: string; routes?: OsrmRoute[] }
+  if (json.code !== 'Ok' || !json.routes?.length) {
+    throw new Error(`OSRM returned code: ${json.code}`)
+  }
+
+  return json.routes.map((r, i) => ({
+    route_id:   `osrm_${i}`,
+    distance_m: Math.round(r.distance),
+    duration_s: Math.round(r.duration),
+    summary:    r.legs[0]?.summary?.trim() || routeLabel(i, r.distance),
+    geometry:   r.geometry,
+  }))
+}
 
 export async function POST(request: NextRequest) {
-
-  // ── Auth ────────────────────────────────────────────────────────────────
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return err('UNAUTHENTICATED', 'Login required.', 401)
@@ -54,38 +97,33 @@ export async function POST(request: NextRequest) {
   const org = await getActiveOrg()
   if (!org) return err('NO_ORG', 'No organisation found.', 400)
 
-  // ── Parse body ──────────────────────────────────────────────────────────
   const body = await request.json().catch(() => ({})) as {
-    origin_text?:      string
-    destination_text?: string
+    origin_text?:      string;  origin_lat?:  number;  origin_lng?:  number
+    destination_text?: string;  destination_lat?: number; destination_lng?: number
     travel_mode?:      string
   }
 
-  const origin_text      = body.origin_text?.trim()
-  const destination_text = body.destination_text?.trim()
-  const travel_mode      = body.travel_mode ?? 'DRIVING'
+  const {
+    origin_text, origin_lat, origin_lng,
+    destination_text, destination_lat, destination_lng,
+    travel_mode = 'DRIVING',
+  } = body
 
-  if (!origin_text || !destination_text) {
+  if (!origin_text || !destination_text)
     return err('VALIDATION_ERROR', 'origin_text and destination_text are required.', 400)
-  }
+  if (origin_lat == null || origin_lng == null || destination_lat == null || destination_lng == null)
+    return err('VALIDATION_ERROR', 'Coordinates required: origin_lat/lng, destination_lat/lng.', 400)
 
-  const origin_hash = hashText(origin_text)
-  const dest_hash   = hashText(destination_text)
+  const profile     = OSRM_PROFILE[travel_mode] ?? 'driving'
+  const origin_hash = hashCoord(origin_lat, origin_lng)
+  const dest_hash   = hashCoord(destination_lat, destination_lng)
 
-  // ── ADMIN bypass ────────────────────────────────────────────────────────
-  // Users with profiles.role = ADMIN are never subject to route limits.
-  // This lets the developer/ops team test without consuming Free quota.
-  // The check happens here (before cache + limit) so ADMIN calls don't
-  // even increment the counter — they skip the whole gate entirely.
+  // ADMIN bypass
   const { data: callerProfile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
+    .from('profiles').select('role').eq('id', user.id).single()
   const isAdmin = callerProfile?.role === 'ADMIN'
 
-  // ── Cache check (no quota consumed on hit) ──────────────────────────────
+  // Cache check — no quota consumed on hit
   const { data: cached } = await supabase
     .from('routes_cache')
     .select('response_payload')
@@ -94,85 +132,63 @@ export async function POST(request: NextRequest) {
     .eq('travel_mode',      travel_mode)
     .gt('expires_at',       new Date().toISOString())
     .order('created_at',    { ascending: false })
-    .limit(1)
-    .maybeSingle()
+    .limit(1).maybeSingle()
 
   if (cached?.response_payload) {
     const usage = await getUsage(supabase, org.org_id, isAdmin)
     return NextResponse.json({ cached: true, alternatives: cached.response_payload, usage })
   }
 
-  // ── Free tier limit gate ─────────────────────────────────────────────────
-  // ADMIN users bypass the limit entirely (for dev/ops testing).
-  // PRO orgs bypass inside the DB function itself.
-  // FREE orgs are enforced atomically via SECURITY DEFINER function.
+  // Free tier gate
   if (!isAdmin) {
     const { data: allowed, error: limitErr } = await supabase
       .rpc('increment_routes_usage', { p_org_id: org.org_id })
 
     if (limitErr) {
       console.error('[POST /api/routes/alternatives] increment_routes_usage:', limitErr.message)
-      return err('SERVER_ERROR', 'Failed to check usage limits. ' + limitErr.message, 500)
+      return err('SERVER_ERROR', 'Failed to check usage limits.', 500)
     }
 
     if (allowed === false) {
       const periodEnd = new Date(
-        new Date().getFullYear(),
-        new Date().getMonth() + 1,
-        0
+        new Date().getFullYear(), new Date().getMonth() + 1, 0
       ).toISOString().slice(0, 10)
-
-      return err(
-        'LIMIT_REACHED',
-        "You've used your 2 free route calculations for this month. Upgrade to Pro for unlimited routes.",
-        429,
-        { limit: 2, used: 2, period_end: periodEnd }
-      )
+      return err('LIMIT_REACHED',
+        "You've used your 2 free route calculations for this month.",
+        429, { limit: 2, used: 2, period_end: periodEnd })
     }
   }
 
-  // ── Generate alternatives ───────────────────────────────────────────────
-  const alternatives = mockAlternatives(origin_text, destination_text)
+  // Call OSRM
+  let alternatives: RouteAlternative[]
+  try {
+    alternatives = await fetchOsrmRoutes(
+      origin_lat, origin_lng, destination_lat, destination_lng, profile
+    )
+  } catch (e: unknown) {
+    console.error('[POST /api/routes/alternatives] OSRM:', (e as Error).message)
+    return err('UPSTREAM_ERROR', 'Routing service unavailable. Please try again.', 502)
+  }
 
-  // ── Store in cache (24h TTL) ────────────────────────────────────────────
-  const { error: cacheErr } = await supabase.from('routes_cache').insert({
-    origin_hash,
-    destination_hash: dest_hash,
-    travel_mode,
-    request_payload:  { origin_text, destination_text },
+  // Cache 24h
+  await supabase.from('routes_cache').insert({
+    origin_hash, destination_hash: dest_hash, travel_mode,
+    request_payload:  { origin_text, destination_text, origin_lat, origin_lng, destination_lat, destination_lng },
     response_payload: alternatives,
     expires_at:       new Date(Date.now() + 86_400_000).toISOString(),
   })
-
-  if (cacheErr) {
-    // Non-fatal — log but don't block the response
-    console.warn('[POST /api/routes/alternatives] cache insert failed:', cacheErr.message)
-  }
 
   const usage = await getUsage(supabase, org.org_id, isAdmin)
   return NextResponse.json({ cached: false, alternatives, usage })
 }
 
-// ── Usage helper ────────────────────────────────────────────────────────────
-
 async function getUsage(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  org_id:   string,
-  isAdmin:  boolean,
+  org_id: string, isAdmin: boolean,
 ) {
-  const periodStart = new Date()
-  periodStart.setDate(1)
-  const key = periodStart.toISOString().slice(0, 10)
-
+  const key = new Date().toISOString().slice(0, 7) + '-01'
   const { data } = await supabase
-    .from('usage_counters')
-    .select('routes_calls')
-    .eq('org_id',       org_id)
-    .eq('period_start', key)
-    .maybeSingle()
-
-  return {
-    routes_used:  data?.routes_calls ?? 0,
-    routes_limit: isAdmin ? null : 2,   // null = unlimited
-  }
+    .from('usage_counters').select('routes_calls')
+    .eq('org_id', org_id).eq('period_start', key).maybeSingle()
+  return { routes_used: data?.routes_calls ?? 0, routes_limit: isAdmin ? null : 2 }
 }

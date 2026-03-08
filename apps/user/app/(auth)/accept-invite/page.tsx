@@ -159,7 +159,7 @@ function AcceptInviteContent() {
   if (pageState === 'success') {
     return (
       <Layout>
-        <div style={S.iconCircle('#f0fdf4', '#16a34a')}>✓</div>
+        <div style={iconCircle('#f0fdf4', '#16a34a')}>✓</div>
         <h1 style={S.title}>Welcome aboard!</h1>
         <p style={S.subtitle}>You've joined <strong>{invite?.org_name}</strong>. Taking you to the app…</p>
       </Layout>
@@ -173,7 +173,7 @@ function AcceptInviteContent() {
     }
     return (
       <Layout>
-        <div style={S.iconCircle('#fef2f2', '#dc2626')}>✕</div>
+        <div style={iconCircle('#fef2f2', '#dc2626')}>✕</div>
         <h1 style={S.title}>{info.title}</h1>
         <p style={S.subtitle}>{info.hint}</p>
         <a href="/login" style={S.outlineBtn}>Back to Login</a>
@@ -418,9 +418,6 @@ function iconCircle(bg: string, color: string): React.CSSProperties {
     color,
   }
 }
-
-// Attach as method so TSX can call S.iconCircle(...)
-S.iconCircle = iconCircle as unknown as React.CSSProperties
 
 // ── Export (wrapped in Suspense for useSearchParams) ─────────────────────
 

@@ -30,9 +30,10 @@ export async function POST(request: NextRequest) {
     route_id?:   string
     distance_m?: number
     summary?:    string
+    duration_s?: number   // estimated travel time — used to compute ended_at
   }
 
-  const { trip_id, route_id, distance_m, summary } = body
+  const { trip_id, route_id, distance_m, summary, duration_s } = body
 
   if (!trip_id)                          return err('VALIDATION_ERROR', 'trip_id is required.', 400)
   if (!route_id)                         return err('VALIDATION_ERROR', 'route_id is required.', 400)
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest) {
   // ── Fetch trip ─────────────────────────────────────────────────────────
   const { data: trip, error: tripError } = await supabase
     .from('trips')
-    .select('id, org_id, status, calculation_mode, odometer_mode, odometer_distance_m')
+    .select('id, org_id, status, calculation_mode, odometer_mode, odometer_distance_m, started_at')
     .eq('id', trip_id)
     .eq('org_id', org.org_id)
     .single()
@@ -76,12 +77,22 @@ export async function POST(request: NextRequest) {
     return err('VALIDATION_ERROR', (e as Error).message, 400)
   }
 
+  // Compute ended_at:
+  // - If duration_s provided → started_at + duration_s (estimated arrival)
+  // - Fallback → same as started_at (better than "right now" for a historical route)
+  let ended_at: string
+  if (duration_s && duration_s > 0 && trip.started_at) {
+    ended_at = new Date(new Date(trip.started_at).getTime() + duration_s * 1000).toISOString()
+  } else {
+    ended_at = trip.started_at ?? new Date().toISOString()
+  }
+
   // ── Write finalisation ─────────────────────────────────────────────────
   const { data: updated, error: updateError } = await supabase
     .from('trips')
     .update({
       status:                    'FINAL',
-      ended_at:                  new Date().toISOString(),
+      ended_at,
       selected_route_distance_m: distance_m,
       final_distance_m,
       distance_source,

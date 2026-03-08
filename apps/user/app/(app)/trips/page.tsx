@@ -1,7 +1,7 @@
 // apps/user/app/(app)/trips/page.tsx
 // Trips list — Server Component.
 // Shows all trips for the user's org, newest first.
-// Two floating action buttons: Start Trip (GPS) + Plan Trip (Route).
+// Two floating action buttons: Start Trip (GPS) + Mileage Calculator (Route).
 
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
@@ -142,7 +142,7 @@ export default async function TripsPage() {
         <div style={S.empty}>
           <span style={{ fontSize: 36 }}>🗺</span>
           <p style={S.emptyTitle}>No trips yet</p>
-          <p style={S.emptyText}>Start a GPS trip or plan a route to get started.</p>
+          <p style={S.emptyText}>Start a GPS trip or use the Mileage Calculator to record a route.</p>
         </div>
       ) : (
         <div style={S.list}>
@@ -152,7 +152,7 @@ export default async function TripsPage() {
 
       {/* ── Floating actions ─────────────────────────────────────────── */}
       <div style={S.fab}>
-        <Link href="/trips/plan" style={S.fabSecondary}>🗺 Plan Trip</Link>
+        <Link href="/trips/plan" style={S.fabSecondary}>📐 Mileage Calculator</Link>
         <Link href="/trips/start" style={S.fabPrimary}>▶ Start Trip</Link>
       </div>
 

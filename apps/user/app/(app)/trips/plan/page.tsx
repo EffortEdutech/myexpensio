@@ -1,25 +1,39 @@
 'use client'
 // apps/user/app/(app)/trips/plan/page.tsx
 //
-// Plan Trip — origin/destination → route alternatives → select → save trip.
+// Mileage Calculator — utility to calculate route distance for a trip on a specific date.
 //
-// Gating behaviour:
-//   FREE  → 2 route-calcs/month enforced server-side.
-//           Usage bar shown on mount so user knows their status BEFORE submitting.
-//           LIMIT_REACHED → LimitReached panel with GPS fallback CTA.
-//   PRO   → Unlimited. "Pro — Unlimited" badge shown.
-//   ADMIN → Unlimited bypass. "Admin — Unlimited" badge shown.
+// Flow:
+//   1. Set trip date (defaults to today)
+//   2. Tap map or search → set origin + destination pins
+//   3. "Calculate Route" → OSRM returns real alternatives drawn on map
+//   4. Select a route → distance confirmed
+//   5a. "Add to My Trips" → saves FINAL trip with chosen date + distance → trip detail
+//   5b. "Discard"         → nothing saved → back to trips list
+//
+// Gating: FREE=2/month | ADMIN=unlimited | PRO=unlimited
 
-import { useState, useEffect } from 'react'
-import { useRouter }           from 'next/navigation'
-import Link                    from 'next/link'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
+import Link          from 'next/link'
+import dynamic       from 'next/dynamic'
+import type { LatLng, RouteAlternativeMapData } from '@/components/RouteMap'
 
-type RouteAlt = {
-  route_id:   string
-  distance_m: number
-  duration_s: number
-  summary:    string
+const RouteMap = dynamic(() => import('@/components/RouteMap'), {
+  ssr:     false,
+  loading: () => <div style={S.mapPlaceholder}>🗺 Loading map…</div>,
+})
+
+// ── Types ──────────────────────────────────────────────────────────────────
+
+type GeocodeSuggestion = {
+  place_id:     number
+  display_name: string
+  lat:          number
+  lon:          number
 }
+
+type RouteAlt = RouteAlternativeMapData
 
 type UsageInfo = {
   tier:         'FREE' | 'PRO'
@@ -30,190 +44,120 @@ type UsageInfo = {
   routes_limit: number | null
 }
 
-type Step = 'input' | 'alternatives' | 'selecting' | 'limit_reached'
+type LocationValue = {
+  text: string
+  lat:  number
+  lng:  number
+}
+
+type Step = 'input' | 'alternatives' | 'confirming' | 'limit_reached'
+
+// ── Helpers ────────────────────────────────────────────────────────────────
 
 const fmtKm  = (m: number) => (m / 1000).toFixed(2) + ' km'
 const fmtMin = (s: number) => {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60)
   return h > 0 ? `${h}h ${m}m` : `${m} min`
 }
-function fmtMonthEnd(iso: string) {
-  return new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' })
-}
+const fmtMonthEnd = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' })
 
-export default function PlanTripPage() {
-  const router = useRouter()
+const todayISO = () => new Date().toISOString().slice(0, 10)
 
-  const [step,         setStep]         = useState<Step>('input')
-  const [origin,       setOrigin]       = useState('')
-  const [destination,  setDestination]  = useState('')
-  const [alts,         setAlts]         = useState<RouteAlt[]>([])
-  const [usage,        setUsage]        = useState<UsageInfo | null>(null)
-  const [selectedId,   setSelectedId]   = useState<string | null>(null)
-  const [loading,      setLoading]      = useState(false)
-  const [usageLoading, setUsageLoading] = useState(true)
-  const [error,        setError]        = useState<string | null>(null)
+// ── AddressInput ───────────────────────────────────────────────────────────
 
-  // ── Load usage on mount ───────────────────────────────────────────────────
+function AddressInput({ label, pinEmoji, value, disabled, onSelect, onClear }: {
+  label:    string
+  pinEmoji: string
+  value:    LocationValue | null
+  disabled: boolean
+  onSelect: (loc: LocationValue) => void
+  onClear:  () => void
+}) {
+  const [query,       setQuery]       = useState(value?.text ?? '')
+  const [suggestions, setSuggestions] = useState<GeocodeSuggestion[]>([])
+  const [open,        setOpen]        = useState(false)
+  const [searching,   setSearching]   = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => {
-    async function loadUsage() {
-      try {
-        const res  = await fetch('/api/usage')
-        const json = await res.json()
-        if (res.ok) setUsage(json as UsageInfo)
-      } catch { /* non-critical */ }
-      finally  { setUsageLoading(false) }
-    }
-    loadUsage()
+  useEffect(() => { setQuery(value?.text ?? '') }, [value])
+
+  const search = useCallback(async (q: string) => {
+    if (q.length < 3) { setSuggestions([]); setOpen(false); return }
+    setSearching(true)
+    try {
+      const res  = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`)
+      const json = await res.json()
+      if (res.ok) { setSuggestions(json.results ?? []); setOpen(true) }
+    } catch { /* ignore */ }
+    finally { setSearching(false) }
   }, [])
 
-  // ── Get routes ────────────────────────────────────────────────────────────
-
-  async function handleGetRoutes(e: React.FormEvent) {
-    e.preventDefault()
-    if (!origin.trim() || !destination.trim()) { setError('Enter both origin and destination.'); return }
-    setError(null); setLoading(true)
-
-    const res  = await fetch('/api/routes/alternatives', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body:   JSON.stringify({ origin_text: origin.trim(), destination_text: destination.trim(), travel_mode: 'DRIVING' }),
-    })
-    const json = await res.json()
-    setLoading(false)
-
-    if (res.status === 429 && json.error?.code === 'LIMIT_REACHED') { setStep('limit_reached'); return }
-    if (!res.ok) { setError(json.error?.message ?? 'Failed to get routes.'); return }
-
-    setAlts(json.alternatives ?? [])
-    if (json.usage) setUsage(prev => prev ? { ...prev, ...json.usage } : json.usage)
-    setStep('alternatives')
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const q = e.target.value
+    setQuery(q)
+    if (!q) { onClear(); setSuggestions([]); setOpen(false); return }
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => search(q), 400)
   }
 
-  // ── Select route ──────────────────────────────────────────────────────────
-
-  async function handleSelect(alt: RouteAlt) {
-    if (loading) return
-    setSelectedId(alt.route_id); setLoading(true); setError(null); setStep('selecting')
-
-    const cr = await fetch('/api/trips', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body:   JSON.stringify({ calculation_mode: 'SELECTED_ROUTE', origin_text: origin.trim(), destination_text: destination.trim() }),
-    })
-    const cj = await cr.json()
-    if (!cr.ok) { setError(cj.error?.message ?? 'Failed to create trip.'); setStep('alternatives'); setLoading(false); return }
-
-    const sr = await fetch('/api/routes/select', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body:   JSON.stringify({ trip_id: cj.trip.id, route_id: alt.route_id, distance_m: alt.distance_m, summary: alt.summary }),
-    })
-    const sj = await sr.json()
-    if (!sr.ok) { setError(sj.error?.message ?? 'Failed to save route.'); setStep('alternatives'); setLoading(false); return }
-
-    router.push(`/trips/${cj.trip.id}`)
-  }
-
-  const isUnlimited = !usage || usage.is_admin || usage.tier === 'PRO' || usage.routes_limit === null
-  const limit       = usage?.routes_limit ?? 2
-  const isAtLimit   = !isUnlimited && (usage?.routes_used ?? 0) >= limit
-  const isNearLimit = !isUnlimited && !isAtLimit && (usage?.routes_used ?? 0) >= limit - 1
+  const shortName = (name: string) => name.split(',').slice(0, 2).join(',').trim()
 
   return (
-    <div style={S.page}>
-
-      <div style={S.titleRow}>
-        <Link href="/trips" style={S.backLink}>← Trips</Link>
-        <h1 style={S.title}>Plan a Trip</h1>
+    <div style={{ position: 'relative' }}>
+      <label style={S.label}><span style={{ marginRight: 5 }}>{pinEmoji}</span>{label}</label>
+      <div style={{ position: 'relative' }}>
+        <input
+          type="text" value={query} onChange={handleChange}
+          onFocus={() => suggestions.length > 0 && setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 180)}
+          placeholder={`Search or tap map…`}
+          disabled={disabled}
+          style={{ ...S.input, borderColor: value ? '#16a34a' : '#d1d5db' }}
+          autoComplete="off"
+        />
+        {searching && <span style={S.inputRight}>⏳</span>}
+        {value && !searching && (
+          <button onClick={e => { e.preventDefault(); onClear(); setQuery('') }} style={S.clearBtn} tabIndex={-1}>✕</button>
+        )}
       </div>
-
-      {/* Usage widget */}
-      <UsageWidget usage={usage} loading={usageLoading}
-        isUnlimited={isUnlimited} isAtLimit={isAtLimit} isNearLimit={isNearLimit} />
-
-      {/* Input form */}
-      {step !== 'limit_reached' && (
-        <form onSubmit={handleGetRoutes} style={S.form}>
-          <Field label="From">
-            <input value={origin} onChange={e => setOrigin(e.target.value)}
-              placeholder="e.g. Kuala Lumpur City Centre" style={S.input}
-              disabled={loading || isAtLimit} />
-          </Field>
-          <Field label="To">
-            <input value={destination} onChange={e => setDestination(e.target.value)}
-              placeholder="e.g. Shah Alam" style={S.input}
-              disabled={loading || isAtLimit} />
-          </Field>
-          {error && <div style={S.errorBox}>{error}</div>}
-          <button type="submit"
-            style={{ ...S.btnPrimary, opacity: (loading || isAtLimit) ? 0.55 : 1 }}
-            disabled={loading || isAtLimit}>
-            {loading && step === 'input' ? '⏳ Getting routes…' : '🗺 Get Routes'}
-          </button>
-        </form>
-      )}
-
-      {/* Alternatives */}
-      {(step === 'alternatives' || step === 'selecting') && alts.length > 0 && (
-        <div style={S.altSection}>
-          <p style={S.altTitle}>Choose a route</p>
-          {alts.map(alt => {
-            const isSel = selectedId === alt.route_id
-            return (
-              <button key={alt.route_id} onClick={() => handleSelect(alt)} disabled={loading}
-                style={{ ...S.altCard, borderColor: isSel ? '#0f172a' : '#e2e8f0',
-                  backgroundColor: isSel ? '#f8fafc' : '#fff', opacity: loading && !isSel ? 0.45 : 1 }}>
-                <div style={S.altRow}>
-                  <span style={S.altSummary}>{alt.summary}</span>
-                  <span style={{ fontSize: 13, color: isSel && loading ? '#2563eb' : '#64748b', fontWeight: 500 }}>
-                    {isSel && loading ? 'Saving…' : 'Select →'}
-                  </span>
-                </div>
-                <div style={S.altStats}>
-                  <span style={S.altDist}>{fmtKm(alt.distance_m)}</span>
-                  <span style={{ color: '#cbd5e1' }}>·</span>
-                  <span style={{ fontSize: 13, color: '#64748b' }}>{fmtMin(alt.duration_s)}</span>
-                </div>
-              </button>
-            )
-          })}
+      {open && suggestions.length > 0 && (
+        <div style={S.dropdown}>
+          {suggestions.map(s => (
+            <button key={s.place_id} onMouseDown={() => {
+              setSuggestions([]); setOpen(false)
+              onSelect({ text: s.display_name, lat: s.lat, lng: s.lon })
+            }} style={S.dropdownItem}>
+              <span style={S.dropdownMain}>{shortName(s.display_name)}</span>
+              <span style={S.dropdownSub}>{s.display_name}</span>
+            </button>
+          ))}
         </div>
       )}
-
-      {/* Limit reached */}
-      {step === 'limit_reached' && (
-        <LimitReachedPanel
-          periodEnd={usage?.period_end}
-          onUseGps={() => router.push('/trips/start')}
-          onBack={() => setStep('input')} />
-      )}
-
     </div>
   )
 }
 
-// ── UsageWidget ───────────────────────────────────────────────────────────────
+// ── UsageWidget ────────────────────────────────────────────────────────────
 
-function UsageWidget({ usage, loading, isUnlimited, isAtLimit, isNearLimit }:
-  { usage: UsageInfo | null; loading: boolean; isUnlimited: boolean; isAtLimit: boolean; isNearLimit: boolean }) {
-
+function UsageWidget({ usage, loading, isUnlimited, isAtLimit, isNearLimit }: {
+  usage: UsageInfo | null; loading: boolean
+  isUnlimited: boolean; isAtLimit: boolean; isNearLimit: boolean
+}) {
   if (loading) return <div style={S.usageSkeleton} />
-
   if (usage?.is_admin) return (
     <div style={{ ...S.usageBadge, backgroundColor: '#fdf4ff', borderColor: '#e9d5ff', color: '#7c3aed' }}>
-      🛡 Admin — Unlimited route calculations
+      🛡 Admin — Unlimited calculations
     </div>
   )
-
   if (usage?.tier === 'PRO') return (
     <div style={{ ...S.usageBadge, backgroundColor: '#f0fdf4', borderColor: '#bbf7d0', color: '#16a34a' }}>
-      ✦ Pro — Unlimited route calculations
+      ✦ Pro — Unlimited calculations
     </div>
   )
-
   if (!usage) return null
 
-  const used     = usage.routes_used
-  const lim      = usage.routes_limit ?? 2
+  const used = usage.routes_used, lim = usage.routes_limit ?? 2
   const pct      = Math.min(100, Math.round((used / lim) * 100))
   const barColor = isAtLimit ? '#dc2626' : isNearLimit ? '#d97706' : '#0f172a'
   const bgColor  = isAtLimit ? '#fef2f2' : isNearLimit ? '#fffbeb' : '#f8fafc'
@@ -225,39 +169,30 @@ function UsageWidget({ usage, loading, isUnlimited, isAtLimit, isNearLimit }:
         <span style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>Route calculations</span>
         <span style={{ fontSize: 13, fontWeight: 700, color: barColor }}>{used} / {lim} this month</span>
       </div>
-      <div style={S.barTrack}>
-        <div style={{ ...S.barFill, width: `${pct}%`, backgroundColor: barColor }} />
-      </div>
-      {isAtLimit && (
-        <p style={{ margin: 0, fontSize: 12, color: '#dc2626', fontWeight: 500 }}>
-          Limit reached — use GPS Tracking or upgrade to Pro.
-        </p>
-      )}
-      {isNearLimit && !isAtLimit && (
-        <p style={{ margin: 0, fontSize: 12, color: '#d97706' }}>
-          {lim - used} calculation{lim - used !== 1 ? 's' : ''} remaining this month.
-        </p>
-      )}
+      <div style={S.barTrack}><div style={{ ...S.barFill, width: `${pct}%`, backgroundColor: barColor }} /></div>
+      {isAtLimit   && <p style={{ margin: 0, fontSize: 12, color: '#dc2626', fontWeight: 500 }}>Limit reached — use GPS Tracking or upgrade to Pro.</p>}
+      {isNearLimit && !isAtLimit && <p style={{ margin: 0, fontSize: 12, color: '#d97706' }}>{lim - used} calculation{lim - used !== 1 ? 's' : ''} remaining this month.</p>}
     </div>
   )
 }
 
-// ── LimitReachedPanel ─────────────────────────────────────────────────────────
+// ── LimitReachedPanel ──────────────────────────────────────────────────────
 
-function LimitReachedPanel({ periodEnd, onUseGps, onBack }:
-  { periodEnd?: string; onUseGps: () => void; onBack: () => void }) {
+function LimitReachedPanel({ periodEnd, onUseGps, onBack }: {
+  periodEnd?: string; onUseGps: () => void; onBack: () => void
+}) {
   return (
     <div style={S.limitBox}>
       <span style={{ fontSize: 44 }}>🔒</span>
-      <p style={S.limitTitle}>Monthly Route Limit Reached</p>
+      <p style={S.limitTitle}>Monthly Calculation Limit Reached</p>
       <p style={S.limitText}>
-        You've used your 2 free route calculations for this month.
+        You've used your 2 free route calculations this month.
         {periodEnd && <> Resets on <strong>{fmtMonthEnd(periodEnd)}</strong>.</>}
       </p>
       <div style={S.limitActions}>
         <button onClick={onUseGps} style={S.btnPrimary}>📍 Use GPS Tracking instead</button>
         <div style={S.upgradeHint}>
-          <span style={{ fontSize: 12, color: '#64748b' }}>Need more route calculations?</span>
+          <span style={{ fontSize: 12, color: '#64748b' }}>Need unlimited calculations?</span>
           <span style={{ fontSize: 12, color: '#7c3aed', fontWeight: 600 }}>Upgrade to Pro — coming soon</span>
         </div>
         <button onClick={onBack} style={S.btnGhost}>← Back</button>
@@ -266,45 +201,374 @@ function LimitReachedPanel({ periodEnd, onUseGps, onBack }:
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+// ── Main page ──────────────────────────────────────────────────────────────
+
+export default function MileageCalculatorPage() {
+  const router = useRouter()
+
+  const [step,          setStep]          = useState<Step>('input')
+  const [tripDate,      setTripDate]      = useState(todayISO())
+  const [tripTime,      setTripTime]      = useState('08:00')
+  const [origin,        setOrigin]        = useState<LocationValue | null>(null)
+  const [destination,   setDestination]   = useState<LocationValue | null>(null)
+  const [alts,          setAlts]          = useState<RouteAlt[]>([])
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+  const [usage,         setUsage]         = useState<UsageInfo | null>(null)
+  const [loading,       setLoading]       = useState(false)
+  const [usageLoading,  setUsageLoading]  = useState(true)
+  const [error,         setError]         = useState<string | null>(null)
+  const [geocoding,     setGeocoding]     = useState<'origin' | 'dest' | null>(null)
+
+  useEffect(() => {
+    fetch('/api/usage').then(r => r.json())
+      .then(j => setUsage(j as UsageInfo)).catch(() => {})
+      .finally(() => setUsageLoading(false))
+  }, [])
+
+  const isUnlimited = !usage || usage.is_admin || usage.tier === 'PRO' || usage.routes_limit === null
+  const limit       = usage?.routes_limit ?? 2
+  const isAtLimit   = !isUnlimited && (usage?.routes_used ?? 0) >= limit
+  const isNearLimit = !isUnlimited && !isAtLimit && (usage?.routes_used ?? 0) >= limit - 1
+
+  // ── Reverse geocode ────────────────────────────────────────────────────────
+
+  async function reverseGeocode(lat: number, lng: number): Promise<string> {
+    try {
+      const res  = await fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`)
+      const json = await res.json()
+      return json.short_name ?? json.display_name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+    } catch {
+      return `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+    }
+  }
+
+  // ── Map pin handlers ───────────────────────────────────────────────────────
+
+  const handleOriginSet = useCallback(async (ll: LatLng) => {
+    setGeocoding('origin')
+    const text = await reverseGeocode(ll[0], ll[1])
+    setOrigin({ text, lat: ll[0], lng: ll[1] })
+    setAlts([]); setSelectedIndex(null)
+    if (step === 'alternatives') setStep('input')
+    setGeocoding(null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step])
+
+  const handleDestSet = useCallback(async (ll: LatLng) => {
+    setGeocoding('dest')
+    const text = await reverseGeocode(ll[0], ll[1])
+    setDestination({ text, lat: ll[0], lng: ll[1] })
+    setAlts([]); setSelectedIndex(null)
+    if (step === 'alternatives') setStep('input')
+    setGeocoding(null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step])
+
+  // ── Calculate routes ───────────────────────────────────────────────────────
+
+  async function handleCalculate(e: React.FormEvent) {
+    e.preventDefault()
+    if (!origin || !destination) {
+      setError('Set both origin and destination — tap the map or use the search fields.')
+      return
+    }
+    setError(null); setLoading(true)
+
+    const res  = await fetch('/api/routes/alternatives', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        origin_text:      origin.text,      origin_lat:       origin.lat,      origin_lng:       origin.lng,
+        destination_text: destination.text, destination_lat:  destination.lat, destination_lng:  destination.lng,
+        travel_mode:      'DRIVING',
+      }),
+    })
+    const json = await res.json()
+    setLoading(false)
+
+    if (res.status === 429 && json.error?.code === 'LIMIT_REACHED') { setStep('limit_reached'); return }
+    if (!res.ok) { setError(json.error?.message ?? 'Failed to calculate route.'); return }
+
+    setAlts(json.alternatives ?? [])
+    setSelectedIndex(0)
+    if (json.usage) setUsage(prev => prev ? { ...prev, ...json.usage } : json.usage)
+    setStep('alternatives')
+  }
+
+  // ── Add to trips ───────────────────────────────────────────────────────────
+
+  async function handleAddToTrips() {
+    if (selectedIndex === null || !origin || !destination) return
+    const alt = alts[selectedIndex]
+    setLoading(true); setError(null); setStep('confirming')
+
+    try {
+      // Build ISO timestamp from user-selected date + time
+      // Use a format that avoids timezone drift: parse as local time
+      const localDateTimeStr = `${tripDate}T${tripTime}:00`
+      const startedAt = new Date(localDateTimeStr).toISOString()
+
+      // ── Step 1: Create trip ──────────────────────────────────────────────
+      const cr = await fetch('/api/trips', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          calculation_mode: 'SELECTED_ROUTE',
+          origin_text:      origin.text,
+          destination_text: destination.text,
+          started_at:       startedAt,
+        }),
+      })
+      const cj = await cr.json()
+
+      if (!cr.ok) {
+        setError(cj.error?.message ?? 'Failed to create trip. Please try again.')
+        setStep('alternatives'); setLoading(false); return
+      }
+
+      // Guard: ensure we got a trip back with an id
+      if (!cj.trip?.id) {
+        setError('Trip was created but returned no ID. Please check My Trips.')
+        setStep('alternatives'); setLoading(false); return
+      }
+
+      // ── Step 2: Save selected route + finalise trip ──────────────────────
+      const sr = await fetch('/api/routes/select', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          trip_id:    cj.trip.id,
+          route_id:   alt.route_id,
+          distance_m: alt.distance_m,
+          duration_s: alt.duration_s,   // used to estimate ended_at
+          summary:    alt.summary,
+        }),
+      })
+      const sj = await sr.json()
+
+      if (!sr.ok) {
+        setError(sj.error?.message ?? 'Route saved but finalisation failed. Trip is in My Trips as Draft.')
+        setStep('alternatives'); setLoading(false); return
+      }
+
+      // ── Success: go to trip detail ───────────────────────────────────────
+      router.push(`/trips/${cj.trip.id}`)
+
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Unexpected error. Please try again.'
+      setError(msg)
+      setStep('alternatives')
+      setLoading(false)
+    }
+  }
+
+  // ── Discard ────────────────────────────────────────────────────────────────
+
+  function handleDiscard() {
+    router.push('/trips')
+  }
+
+  // ── Computed ───────────────────────────────────────────────────────────────
+
+  const originLatLng: LatLng | null = origin      ? [origin.lat,      origin.lng]      : null
+  const destLatLng:   LatLng | null = destination  ? [destination.lat,  destination.lng] : null
+  const mapMode     = step === 'alternatives' || step === 'confirming' ? 'routing' : 'pinning'
+  const canCalculate = !!origin && !!destination && !isAtLimit && !loading && !geocoding
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <label style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>{label}</label>
-      {children}
+    <div style={S.page}>
+
+      {/* Header */}
+      <div style={S.titleRow}>
+        <Link href="/trips" style={S.backLink}>← My Trips</Link>
+        <h1 style={S.title}>Mileage Calculator</h1>
+        <p style={S.subtitle}>Calculate route distance and save it as a trip record.</p>
+      </div>
+
+      {/* Usage widget */}
+      <UsageWidget usage={usage} loading={usageLoading}
+        isUnlimited={isUnlimited} isAtLimit={isAtLimit} isNearLimit={isNearLimit} />
+
+      {/* Limit reached */}
+      {step === 'limit_reached' && (
+        <LimitReachedPanel
+          periodEnd={usage?.period_end}
+          onUseGps={() => router.push('/trips/start')}
+          onBack={() => setStep('input')} />
+      )}
+
+      {/* Trip date + time */}
+      <div>
+        <label style={S.label}>📅 Trip Date &amp; Time</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            type="date"
+            value={tripDate}
+            max={todayISO()}
+            onChange={e => setTripDate(e.target.value)}
+            disabled={loading}
+            style={{ ...S.input, flex: 2 }}
+          />
+          <input
+            type="time"
+            value={tripTime}
+            onChange={e => setTripTime(e.target.value)}
+            disabled={loading}
+            style={{ ...S.input, flex: 1, paddingRight: 14 }}
+          />
+        </div>
+      </div>
+
+
+      {/* Map — always visible */}
+      {step !== 'limit_reached' && (
+        <RouteMap
+          mode={mapMode}
+          originLatLng={originLatLng}
+          destLatLng={destLatLng}
+          routes={alts}
+          selectedIndex={selectedIndex}
+          onOriginSet={handleOriginSet}
+          onDestSet={handleDestSet}
+          onRouteClick={i => setSelectedIndex(i)}
+        />
+      )}
+
+      {/* Form */}
+      {step !== 'limit_reached' && (
+        <form onSubmit={handleCalculate} style={S.form}>
+
+          {/* Origin */}
+          <AddressInput
+            label="Origin" pinEmoji="🟢" value={origin} disabled={loading}
+            onSelect={loc => { setOrigin(loc); setAlts([]); setSelectedIndex(null); if (step === 'alternatives') setStep('input') }}
+            onClear={() => { setOrigin(null); setAlts([]); setSelectedIndex(null); setStep('input') }}
+          />
+          {geocoding === 'origin' && <p style={S.geocodingHint}>📍 Resolving address…</p>}
+
+          {/* Destination */}
+          <AddressInput
+            label="Destination" pinEmoji="🔴" value={destination} disabled={loading}
+            onSelect={loc => { setDestination(loc); setAlts([]); setSelectedIndex(null); if (step === 'alternatives') setStep('input') }}
+            onClear={() => { setDestination(null); setAlts([]); setSelectedIndex(null); setStep('input') }}
+          />
+          {geocoding === 'dest' && <p style={S.geocodingHint}>📍 Resolving address…</p>}
+
+          {error && <div style={S.errorBox}>{error}</div>}
+
+          <button
+            type="submit"
+            style={{ ...S.btnCalculate, opacity: canCalculate ? 1 : 0.45 }}
+            disabled={!canCalculate}
+          >
+            {loading && step === 'input' ? '⏳ Calculating…' : '📐 Calculate Route'}
+          </button>
+        </form>
+      )}
+
+      {/* Route results */}
+      {(step === 'alternatives' || step === 'confirming') && alts.length > 0 && (
+        <div style={S.resultsSection}>
+
+          <p style={S.resultsTitle}>Route Options</p>
+          <p style={S.resultsHint}>Select a route — tap a card or tap the line on the map</p>
+
+          {alts.map((alt, i) => {
+            const isSel = i === selectedIndex
+            return (
+              <button key={alt.route_id} onClick={() => setSelectedIndex(i)}
+                disabled={loading}
+                style={{ ...S.altCard, borderColor: isSel ? '#2563eb' : '#e2e8f0', backgroundColor: isSel ? '#eff6ff' : '#fff' }}>
+                {isSel && <span style={S.altBadge}>✓ Selected</span>}
+                <span style={S.altSummary}>{alt.summary}</span>
+                <div style={S.altStats}>
+                  <span style={S.altDist}>{fmtKm(alt.distance_m)}</span>
+                  <span style={{ color: '#cbd5e1' }}>·</span>
+                  <span style={{ fontSize: 13, color: '#64748b' }}>{fmtMin(alt.duration_s)}</span>
+                </div>
+              </button>
+            )
+          })}
+
+          {/* Add to Trips / Discard */}
+          {selectedIndex !== null && (
+            <div style={S.actionRow}>
+              <button
+                onClick={handleAddToTrips}
+                disabled={loading}
+                style={{ ...S.btnAdd, opacity: loading ? 0.55 : 1 }}
+              >
+                {step === 'confirming' ? '⏳ Saving…' : `✅ Add to My Trips — ${fmtKm(alts[selectedIndex].distance_m)}`}
+              </button>
+              <button
+                onClick={handleDiscard}
+                disabled={loading}
+                style={S.btnDiscard}
+              >
+                ✕ Discard
+              </button>
+            </div>
+          )}
+
+        </div>
+      )}
+
     </div>
   )
 }
 
+// ── Styles ─────────────────────────────────────────────────────────────────
+
 const S: Record<string, React.CSSProperties> = {
-  page:       { display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 40 },
-  titleRow:   { display: 'flex', flexDirection: 'column', gap: 4 },
-  title:      { fontSize: 22, fontWeight: 800, color: '#0f172a', margin: 0 },
-  backLink:   { fontSize: 13, color: '#64748b', textDecoration: 'none', fontWeight: 500 },
-  usageSkeleton: { height: 52, borderRadius: 10, backgroundColor: '#f1f5f9' },
-  usageBadge: {
-    display: 'flex', alignItems: 'center', gap: 6,
-    padding: '9px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600,
-    borderWidth: 1, borderStyle: 'solid',
-  },
-  usageBox:   { display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 14px', borderRadius: 10, borderWidth: 1, borderStyle: 'solid' },
-  usageRow:   { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  barTrack:   { height: 6, backgroundColor: '#e2e8f0', borderRadius: 3, overflow: 'hidden' },
-  barFill:    { height: '100%', borderRadius: 3, transition: 'width 0.3s ease' },
-  form:       { display: 'flex', flexDirection: 'column', gap: 14 },
-  input:      { paddingTop: 11, paddingBottom: 11, paddingLeft: 14, paddingRight: 14, border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, color: '#0f172a', WebkitTextFillColor: '#0f172a', outline: 'none', backgroundColor: '#fff', boxSizing: 'border-box', width: '100%' },
-  errorBox:   { padding: '10px 12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' },
-  btnPrimary: { padding: '13px 20px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', width: '100%' },
-  altSection: { display: 'flex', flexDirection: 'column', gap: 8 },
-  altTitle:   { fontSize: 15, fontWeight: 700, color: '#0f172a', margin: 0 },
-  altCard:    { display: 'flex', flexDirection: 'column', gap: 6, width: '100%', backgroundColor: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 12, padding: '14px 16px', cursor: 'pointer', textAlign: 'left', transition: 'border-color 0.15s' },
-  altRow:     { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  altSummary: { fontSize: 14, fontWeight: 600, color: '#0f172a' },
-  altStats:   { display: 'flex', alignItems: 'center', gap: 6 },
-  altDist:    { fontSize: 15, fontWeight: 800, color: '#0f172a' },
-  limitBox:   { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '32px 20px', textAlign: 'center', backgroundColor: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 16 },
-  limitTitle: { fontSize: 18, fontWeight: 700, color: '#0f172a', margin: 0 },
-  limitText:  { fontSize: 13, color: '#64748b', margin: 0, lineHeight: 1.7, maxWidth: 300 },
-  limitActions:{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', alignItems: 'center' },
-  upgradeHint:{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '10px 16px', backgroundColor: '#fdf4ff', border: '1px solid #e9d5ff', borderRadius: 10, width: '100%' },
-  btnGhost:   { padding: '10px 0', backgroundColor: 'transparent', border: 'none', fontSize: 13, color: '#64748b', cursor: 'pointer' },
+  page:         { display: 'flex', flexDirection: 'column', gap: 14, paddingBottom: 60 },
+  titleRow:     { display: 'flex', flexDirection: 'column', gap: 4 },
+  title:        { fontSize: 22, fontWeight: 800, color: '#0f172a', margin: 0 },
+  subtitle:     { fontSize: 13, color: '#64748b', margin: 0, lineHeight: 1.5 },
+  backLink:     { fontSize: 13, color: '#64748b', textDecoration: 'none', fontWeight: 500 },
+
+  usageSkeleton:{ height: 52, borderRadius: 10, backgroundColor: '#f1f5f9' },
+  usageBadge:   { display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600, borderWidth: 1, borderStyle: 'solid' },
+  usageBox:     { display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 14px', borderRadius: 10, borderWidth: 1, borderStyle: 'solid' },
+  usageRow:     { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  barTrack:     { height: 6, backgroundColor: '#e2e8f0', borderRadius: 3, overflow: 'hidden' },
+  barFill:      { height: '100%', borderRadius: 3, transition: 'width 0.3s ease' },
+
+  mapPlaceholder:{ height: 360, backgroundColor: '#f1f5f9', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#94a3b8', border: '1.5px solid #e2e8f0' },
+
+  form:         { display: 'flex', flexDirection: 'column', gap: 12 },
+  label:        { fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 5 },
+  input:        { width: '100%', paddingTop: 11, paddingBottom: 11, paddingLeft: 14, paddingRight: 38, border: '1.5px solid #d1d5db', borderRadius: 8, fontSize: 14, color: '#0f172a', WebkitTextFillColor: '#0f172a', outline: 'none', backgroundColor: '#fff', boxSizing: 'border-box' },
+  inputRight:   { position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 14, pointerEvents: 'none' },
+  clearBtn:     { position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#94a3b8', padding: '2px 4px', lineHeight: 1 },
+  geocodingHint:{ margin: '-6px 0 0', fontSize: 12, color: '#64748b' },
+  errorBox:     { padding: '10px 12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' },
+  btnCalculate: { padding: '13px 20px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', width: '100%' },
+
+  dropdown:     { position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, boxShadow: '0 4px 20px rgba(0,0,0,0.10)', zIndex: 999, overflow: 'hidden', marginTop: 4 },
+  dropdownItem: { display: 'flex', flexDirection: 'column', gap: 2, width: '100%', padding: '10px 14px', border: 'none', borderBottom: '1px solid #f8fafc', backgroundColor: '#fff', cursor: 'pointer', textAlign: 'left' },
+  dropdownMain: { fontSize: 14, fontWeight: 600, color: '#0f172a' },
+  dropdownSub:  { fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+
+  resultsSection:{ display: 'flex', flexDirection: 'column', gap: 8 },
+  resultsTitle: { fontSize: 15, fontWeight: 700, color: '#0f172a', margin: 0 },
+  resultsHint:  { fontSize: 12, color: '#94a3b8', margin: '-4px 0 0' },
+  altCard:      { display: 'flex', flexDirection: 'column', gap: 6, width: '100%', border: '2px solid #e2e8f0', borderRadius: 12, padding: '14px 16px', cursor: 'pointer', textAlign: 'left', transition: 'border-color 0.15s, background-color 0.15s', position: 'relative' },
+  altBadge:     { position: 'absolute', top: 10, right: 12, fontSize: 11, fontWeight: 700, color: '#2563eb', backgroundColor: '#dbeafe', padding: '2px 8px', borderRadius: 6 },
+  altSummary:   { fontSize: 14, fontWeight: 600, color: '#0f172a' },
+  altStats:     { display: 'flex', alignItems: 'center', gap: 6 },
+  altDist:      { fontSize: 16, fontWeight: 800, color: '#0f172a' },
+
+  actionRow:    { display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 },
+  btnAdd:       { padding: '14px 20px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', width: '100%' },
+  btnDiscard:   { padding: '12px 20px', backgroundColor: '#fff', color: '#64748b', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', width: '100%' },
+
+  limitBox:     { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '32px 20px', textAlign: 'center', backgroundColor: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 16 },
+  limitTitle:   { fontSize: 18, fontWeight: 700, color: '#0f172a', margin: 0 },
+  limitText:    { fontSize: 13, color: '#64748b', margin: 0, lineHeight: 1.7, maxWidth: 300 },
+  limitActions: { display: 'flex', flexDirection: 'column', gap: 10, width: '100%', alignItems: 'center' },
+  upgradeHint:  { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '10px 16px', backgroundColor: '#fdf4ff', border: '1px solid #e9d5ff', borderRadius: 10, width: '100%' },
+  btnPrimary:   { padding: '13px 20px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', width: '100%' },
+  btnGhost:     { padding: '10px 0', backgroundColor: 'transparent', border: 'none', fontSize: 13, color: '#64748b', cursor: 'pointer' },
 }

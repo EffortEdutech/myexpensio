@@ -63,9 +63,10 @@ export async function POST(request: NextRequest) {
     calculation_mode?: string
     origin_text?:      string
     destination_text?: string
+    started_at?:       string   // ISO string — caller supplies trip date+time
   }
 
-  const { calculation_mode, origin_text, destination_text } = body
+  const { calculation_mode, origin_text, destination_text, started_at } = body
 
   if (!calculation_mode || !['GPS_TRACKING', 'SELECTED_ROUTE'].includes(calculation_mode)) {
     return err('VALIDATION_ERROR', 'calculation_mode must be GPS_TRACKING or SELECTED_ROUTE.', 400)
@@ -77,6 +78,15 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Use caller-supplied started_at if provided and valid, otherwise fall back to now
+  let resolvedStartedAt: string
+  if (started_at) {
+    const parsed = new Date(started_at)
+    resolvedStartedAt = isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString()
+  } else {
+    resolvedStartedAt = new Date().toISOString()
+  }
+
   const { data: trip, error } = await supabase
     .from('trips')
     .insert({
@@ -84,7 +94,7 @@ export async function POST(request: NextRequest) {
       user_id:          user.id,
       calculation_mode,
       status:           'DRAFT',
-      started_at:       new Date().toISOString(),
+      started_at:       resolvedStartedAt,
       origin_text:      origin_text?.trim()      ?? null,
       destination_text: destination_text?.trim() ?? null,
       odometer_mode:    'NONE',
