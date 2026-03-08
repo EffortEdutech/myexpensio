@@ -402,10 +402,20 @@ export function DocumentScanner({
       }, 400)
     } catch (e: unknown) {
       const msg = (e as Error).message ?? ''
-      if (/denied|permission|not allowed/i.test(msg)) setState('DENIED')
-      else { setState('FAILED'); setMsg('Camera error: ' + msg) }
+      console.log('[CAM] error:', msg)
+      if (/denied|permission|not allowed/i.test(msg)) {
+        setState('DENIED')
+      } else if (/not found|notfound|no device|could not start|notreadable/i.test(msg)) {
+        // No camera hardware detected — close scanner immediately
+        console.log('[CAM] no camera detected — closing scanner')
+        stopCamera()
+        onClose()
+      } else {
+        setState('FAILED')
+        setMsg('Camera error: ' + msg)
+      }
     }
-  }, [detectCorners, drawQuad, purpose])
+  }, [detectCorners, drawQuad, purpose, stopCamera, onClose])
 
   // ── Capture still frame ───────────────────────────────────────────────────
 
