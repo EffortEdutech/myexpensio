@@ -82,6 +82,9 @@ export default function StartTripPage() {
   const prevPoint   = useRef<{ lat: number; lng: number } | null>(null)
   const distanceRef = useRef(0)
   const firstPosRef = useRef<GeolocationPosition | null>(null)
+  // Resume seeds — loaded from API before tracking starts
+  const seedElapsedRef = useRef(0)
+  const seedSeqRef     = useRef(0)
 
   function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
     const R  = 6_371_000
@@ -130,20 +133,33 @@ export default function StartTripPage() {
   }, [tripId, flush, router])
 
   // ── Begin live tracking (called after trip_id is confirmed) ───────────
-  const beginTracking = useCallback((id: string, firstPos: GeolocationPosition) => {
+  const beginTracking = useCallback((
+    id: string,
+    firstPos: GeolocationPosition,
+    seedElapsed = 0,  // seconds already elapsed from trip start (resume)
+    seedSeq     = 0,  // existing point count already in DB (resume)
+  ) => {
     setState('tracking')
+
+    // Seed elapsed — resume continues from trip's started_at, not from zero
+    setElapsed(seedElapsed)
     tickTimer.current = setInterval(() => setElapsed(e => e + 1), 1000)
 
     const { latitude: lat, longitude: lng, accuracy } = firstPos.coords
-    seqRef.current = 1
+    seqRef.current = seedSeq   // continue seq after existing DB points
     prevPoint.current = { lat, lng }
     setLiveAccuracy(accuracy)
+    setPointCount(seedSeq)     // show existing count; new points add on top
+
+    // Enqueue first fix as the next point
+    seqRef.current += 1
     pointsQueue.current.push({
-      seq: 1, lat, lng,
+      seq:         seqRef.current,
+      lat, lng,
       accuracy_m:  accuracy,
       recorded_at: new Date(firstPos.timestamp).toISOString(),
     })
-    setPointCount(1)
+    setPointCount(seqRef.current)
 
     watchId.current = navigator.geolocation.watchPosition(
       (pos) => {
@@ -217,6 +233,22 @@ export default function StartTripPage() {
     router.push('/trips')
   }, [router])
 
+  // ── Resume: fetch trip data to seed elapsed + point count ────────────
+  useEffect(() => {
+    if (!resumeId) return
+    fetch(`/api/trips/${resumeId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.trip) return
+        const startedAt = new Date(data.trip.started_at).getTime()
+        const elapsedSec = Math.floor((Date.now() - startedAt) / 1000)
+        seedElapsedRef.current = Math.max(0, elapsedSec)
+        seedSeqRef.current     = data.trip.point_count ?? 0
+      })
+      .catch(() => { /* non-fatal — seeds stay at 0 */ })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // ── Init: request GPS, get first fix ──────────────────────────────────
   useEffect(() => {
     let cancelled = false
@@ -234,13 +266,13 @@ export default function StartTripPage() {
         setLiveAccuracy(pos.coords.accuracy)
 
         if (resumeId) {
-          // RESUME: once we have a fix, go straight to tracking
-          // Stop pre-watcher, begin tracking with existing trip_id
+          // RESUME: stop pre-watcher, begin tracking with seeded counters
           if (preWatchId.current !== null) {
             navigator.geolocation.clearWatch(preWatchId.current)
             preWatchId.current = null
           }
-          beginTracking(resumeId, pos)
+          // Use seeds loaded from API (set before GPS fix arrived)
+          beginTracking(resumeId, pos, seedElapsedRef.current, seedSeqRef.current)
         } else {
           // NEW: show ready screen, wait for user confirm
           setState(prev => prev === 'requesting' ? 'ready' : prev)

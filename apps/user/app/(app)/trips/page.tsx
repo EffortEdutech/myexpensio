@@ -25,18 +25,25 @@ type Trip = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+// Always render in Malaysia time (UTC+8) regardless of server timezone.
+// Vercel servers run UTC — without explicit timeZone, times show UTC not MYR.
+const MY_TZ = 'Asia/Kuala_Lumpur'
+
 function fmtDate(iso: string | null): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString('en-MY', {
+    timeZone: MY_TZ,
     weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
   })
 }
 
 function fmtTime(iso: string | null): string {
   if (!iso) return ''
-  return new Date(iso).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleTimeString('en-MY', {
+    timeZone: MY_TZ,
+    hour: '2-digit', minute: '2-digit',
+  })
 }
-
 const SOURCE_BADGE: Record<string, { label: string; bg: string; color: string }> = {
   GPS:               { label: 'GPS',       bg: '#f0fdf4', color: '#16a34a' },
   SELECTED_ROUTE:    { label: 'Route',     bg: '#eff6ff', color: '#2563eb' },
