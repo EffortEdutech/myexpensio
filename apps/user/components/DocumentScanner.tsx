@@ -187,13 +187,13 @@ export function DocumentScanner({
     cv: any,
     imageData: ImageData,
   ): Quad | null => {
-    let src: unknown, gray: unknown, blur: unknown,
-        edges: unknown, contours: unknown, hier: unknown
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let src: any, gray: any, blur: any, edges: any, contours: any, hier: any
     try {
-      src     = cv.matFromImageData(imageData)
-      gray    = new cv.Mat()
-      blur    = new cv.Mat()
-      edges   = new cv.Mat()
+      src      = cv.matFromImageData(imageData)
+      gray     = new cv.Mat()
+      blur     = new cv.Mat()
+      edges    = new cv.Mat()
       contours = new cv.MatVector()
       hier     = new cv.Mat()
 
@@ -249,8 +249,8 @@ export function DocumentScanner({
     const H = Math.round(Math.max(ptDist(q[0], q[3]), ptDist(q[1], q[2])))
     if (W < 60 || H < 60) return false
 
-    let src: unknown, dst: unknown, srcPts: unknown, dstPts: unknown,
-        M: unknown, enhanced: unknown
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let src: any, dst: any, srcPts: any, dstPts: any, M: any, enhanced: any
     try {
       src = cv.matFromImageData(imageData)
 
