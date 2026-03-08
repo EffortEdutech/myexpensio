@@ -18,6 +18,8 @@ type Claim = {
   currency:     string
   submitted_at: string | null
   created_at:   string
+  // Joined from claim_items — used to compute live total for DRAFT claims
+  claim_items:  { amount: number }[]
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -92,7 +94,11 @@ function ClaimCard({ claim }: { claim: Claim }) {
 
       {/* Col 3 — amount */}
       <div style={S.colAmount}>
-        <span style={S.amount}>{fmtMyr(claim.total_amount)}</span>
+        <span style={S.amount}>{fmtMyr(
+          claim.status === 'DRAFT'
+            ? (claim.claim_items ?? []).reduce((s, i) => s + (Number(i.amount) || 0), 0)
+            : claim.total_amount
+        )}</span>
         <span style={S.cardArrow}>›</span>
       </div>
 
@@ -120,7 +126,8 @@ export default async function ClaimsPage({
       .from('claims')
       .select(`
         id, status, title, period_start, period_end,
-        total_amount, currency, submitted_at, created_at
+        total_amount, currency, submitted_at, created_at,
+        claim_items(amount)
       `)
       .eq('org_id', org.org_id)
       .order('created_at', { ascending: false })
