@@ -93,29 +93,35 @@ function loadOpenCV(): Promise<any> {
     }
 
     script.onload = () => {
-      console.log('[CV] 2. script.onload fired')
-      console.log('[CV] 3. window.cv =', w.cv)
-      console.log('[CV] 3. window.cv?.Mat =', w.cv?.Mat)
-      console.log('[CV] 3. typeof window.cv =', typeof w.cv)
+      console.log('[CV] onload — cv object exists:', !!w.cv, '| Mat ready:', !!w.cv?.Mat)
 
+      function done() {
+        if (resolved) return
+        resolved = true
+        console.log('[CV] READY — window.cv.Mat:', !!w.cv?.Mat)
+        _cvCache = w.cv
+        resolve(_cvCache)
+      }
+
+      // cv object exists but Mat not yet registered — bindings load async after HEAP.
+      // Hook onRuntimeInitialized on the cv object itself (not window.Module).
+      if (w.cv && !w.cv.Mat) {
+        console.log('[CV] hooking cv.onRuntimeInitialized')
+        w.cv.onRuntimeInitialized = () => {
+          console.log('[CV] onRuntimeInitialized fired — Mat:', !!w.cv?.Mat)
+          done()
+        }
+      }
+
+      // Also poll as safety net — in case hook already fired before we set it
       let attempts = 0
       const poll = () => {
         if (resolved) return
-        if (w.cv?.Mat) {
-          console.log('[CV] 4. window.cv.Mat found after', attempts, 'polls — READY')
-          done()
-          return
-        }
-        if (attempts === 0 || attempts % 10 === 0) {
-          console.log('[CV] polling... attempt', attempts, '| window.cv =', w.cv, '| window.cv?.Mat =', w.cv?.Mat)
-        }
+        if (w.cv?.Mat) { console.log('[CV] poll resolved at attempt', attempts); done(); return }
         if (++attempts < 200) setTimeout(poll, 100)
-        else {
-          console.error('[CV] TIMEOUT — window.cv after 20s:', w.cv)
-          reject(new Error('Scanner engine loaded but did not initialise in 20s.'))
-        }
+        else reject(new Error('OpenCV WASM loaded but bindings did not register in 20s.'))
       }
-      poll()
+      setTimeout(poll, 100)
     }
 
     document.head.appendChild(script)
@@ -347,14 +353,28 @@ export function DocumentScanner({
     setState('LOADING_CV')
     setMsg('Requesting camera…')
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: false,
-      })
+      console.log('[CAM] requesting getUserMedia...')
+
+      // Try rear camera first, fall back to any camera (handles desktop/laptop)
+      let stream: MediaStream | null = null
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: false,
+        })
+        console.log('[CAM] got rear/environment camera')
+      } catch {
+        console.log('[CAM] environment camera failed — trying any camera')
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        console.log('[CAM] got fallback camera')
+      }
+
       streamRef.current = stream
       const video = videoRef.current!
+      console.log('[CAM] videoRef.current:', video)
       video.srcObject = stream
       await video.play()
+      console.log('[CAM] video.play() done — videoWidth:', video.videoWidth, 'videoHeight:', video.videoHeight)
 
       setState('CAMERA')
       setMsg(purpose === 'ODOMETER' ? 'Point at odometer reading' : 'Point at receipt or document')
