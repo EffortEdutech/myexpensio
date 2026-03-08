@@ -19,7 +19,7 @@ const BUCKET          = 'receipts'
 const SIGN_EXPIRY_SEC = 60          // 60s to start the upload
 const MAX_SIZE_BYTES  = 5_242_880   // 5 MB
 
-const ALLOWED_PURPOSES      = ['RECEIPT'] as const
+const ALLOWED_PURPOSES      = ['RECEIPT', 'ODOMETER'] as const
 const ALLOWED_CONTENT_TYPES = [
   'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic',
 ]
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Validate ──────────────────────────────────────────────────────────────
-  const purpose      = body.purpose?.toUpperCase() ?? ''
+  const purpose      = (body.purpose ?? 'RECEIPT').toUpperCase()
   const content_type = body.content_type ?? ''
   const file_name    = body.file_name    ?? 'upload'
 
@@ -61,13 +61,17 @@ export async function POST(request: NextRequest) {
     return err('VALIDATION_ERROR', 'Unsupported file type. Use JPEG, PNG, or WebP.', 400)
 
   // ── Build storage path ────────────────────────────────────────────────────
-  // Pattern: receipts/{org_id}/{user_id}/{timestamp}_{sanitised_name}
-  const ext       = content_type === 'image/png' ? 'png'
+  // RECEIPT  → {org_id}/{user_id}/{ts}_{name}.{ext}
+  // ODOMETER → {org_id}/{user_id}/odometer/{ts}_{name}.{ext}
+  const ext       = content_type === 'image/png'  ? 'png'
                   : content_type === 'image/webp' ? 'webp'
                   : 'jpg'
   const ts        = Date.now()
   const safeName  = sanitiseFilename(file_name.replace(/\.[^.]+$/, ''))
-  const storagePath = `${org.org_id}/${user.id}/${ts}_${safeName}.${ext}`
+  const folder    = purpose === 'ODOMETER'
+                  ? `${org.org_id}/${user.id}/odometer`
+                  : `${org.org_id}/${user.id}`
+  const storagePath = `${folder}/${ts}_${safeName}.${ext}`
 
   // ── Generate signed upload URL ────────────────────────────────────────────
   const { data, error } = await supabase.storage

@@ -180,6 +180,7 @@ export function ReceiptUploader({
   // is 100% untouched — scanner simply hands off a Blob.
   async function handleScanComplete(blob: Blob) {
     setScannerOpen(false)
+    // Always force image/jpeg type regardless of what the camera returned
     const file = new File([blob], `scan_${Date.now()}.jpg`, { type: 'image/jpeg' })
     await handleFile(file)
   }

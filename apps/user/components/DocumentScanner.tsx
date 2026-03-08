@@ -89,8 +89,10 @@ export function DocumentScanner({ onScanComplete, onClose, purpose = 'RECEIPT' }
 
     canvas.toBlob(blob => {
       if (!blob) return
+      // Ensure mime type is always set — some Android browsers return blob with empty type
+      const safeBlob = blob.type ? blob : new Blob([blob], { type: 'image/jpeg' })
       stopCamera()
-      onScanComplete(blob)
+      onScanComplete(safeBlob)
     }, 'image/jpeg', 0.92)
   }, [stopCamera, onScanComplete])
 
