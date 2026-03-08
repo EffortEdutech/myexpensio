@@ -351,7 +351,7 @@ export function DocumentScanner({
 
   const startCamera = useCallback(async () => {
     setState('LOADING_CV')
-    setMsg('Requesting camera…')
+    setMsg('Opening camera…')
     try {
       console.log('[CAM] requesting getUserMedia...')
 
@@ -424,7 +424,9 @@ export function DocumentScanner({
     setQuad(q)
     quadRef.current = q
     setState('CAPTURED')
-    setMsg('Drag corners to align edges, then tap Process')
+    setMsg(cvRef.current
+      ? 'Drag corners to align edges, then tap Process'
+      : 'Photo captured. Loading image processor… tap Process when ready.')
 
     // Draw initial adjust overlay
     const adj = adjCanvas.current!
@@ -439,6 +441,20 @@ export function DocumentScanner({
     const q = quadRef.current
     if (!q) return
     setState('PROCESSING')
+
+    // If OpenCV not yet ready (still loading in background), wait for it now
+    if (!cvRef.current) {
+      setMsg('Loading image processor… please wait')
+      try {
+        const cv = await loadOpenCV()
+        cvRef.current = cv
+      } catch {
+        setState('FAILED')
+        setMsg('Image processor failed to load. Please retake.')
+        return
+      }
+    }
+
     setMsg('Correcting perspective and enhancing…')
     await new Promise(r => setTimeout(r, 30))   // flush render
     const ok = await processCapture(q)
@@ -469,20 +485,21 @@ export function DocumentScanner({
 
   useEffect(() => {
     let mounted = true
-    console.log('[CV] useEffect fired — calling loadOpenCV()')
-    setMsg('Loading scanner engine… (first use ~8 MB, cached after)')
+    // Start camera immediately — no need to wait for OpenCV.
+    // OpenCV is only needed after photo capture for perspective warp.
+    // Load it in parallel so it is ready by the time user taps shutter.
+    startCamera()
+
     loadOpenCV()
       .then(cv => {
-        console.log('[CV] loadOpenCV() resolved — cv:', cv, '| mounted:', mounted)
         if (!mounted) return
+        console.log('[CV] OpenCV ready (loaded in background)')
         cvRef.current = cv
-        startCamera()
       })
       .catch((err) => {
-        console.error('[CV] loadOpenCV() rejected:', err)
-        if (!mounted) return
-        setState('FAILED')
-        setMsg(err?.message ?? 'Could not load scanner engine.')
+        // Non-fatal at this stage — warn but keep camera running.
+        // If user taps shutter and cv is still null, we show error then.
+        console.warn('[CV] OpenCV background load failed:', err?.message)
       })
     return () => { mounted = false; stopCamera() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
