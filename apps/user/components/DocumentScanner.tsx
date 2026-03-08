@@ -72,44 +72,47 @@ function loadOpenCV(): Promise<any> {
     // Already loaded by a previous component instance this session
     if (w.cv?.Mat) { _cvCache = w.cv; resolve(_cvCache); return }
 
-    // Self-hosted in /public/opencv.js — served from your own Vercel deployment.
-    // No external CDN dependency, no CORS, no mystery hangs.
-    // See RUNBOOK: download once with:
-    //   curl -L -o apps/user/public/opencv.js "https://docs.opencv.org/4.10.0/opencv.js"
-    const CDN = '/opencv.js'
+    let resolved = false
+    function done() {
+      if (resolved) return
+      resolved = true
+      _cvCache = w.cv
+      resolve(_cvCache)
+    }
+
+    // ── KEY FIX ────────────────────────────────────────────────────────────
+    // opencv.js is an Emscripten WASM build. It looks for window.Module
+    // at parse time and calls Module.onRuntimeInitialized when WASM is ready.
+    // This MUST be set BEFORE the <script> tag is appended — if set inside
+    // onload it is already too late and the callback is never called.
+    // ───────────────────────────────────────────────────────────────────────
+    w.Module = {
+      onRuntimeInitialized() {
+        // At this point window.cv is fully ready
+        done()
+      },
+    }
 
     const script = document.createElement('script')
     script.async = true
-    script.src   = CDN
+    script.src   = '/opencv.js'   // self-hosted in apps/user/public/opencv.js
 
     script.onerror = () => {
       document.head.removeChild(script)
-      reject(new Error('Could not load scanner engine. Check your internet connection and try again.'))
+      reject(new Error('Could not load opencv.js — make sure apps/user/public/opencv.js exists.'))
     }
 
+    // Belt-and-braces poll — catches edge case where Module callback
+    // fired before we could hook it (should not happen, but be safe)
     script.onload = () => {
-      // WASM needs time to compile after script parses — hook onRuntimeInitialized
-      // and also poll as a safety net in case the hook was set before we got here.
-      function done() {
-        _cvCache = w.cv
-        resolve(_cvCache)
-      }
-
-      if (w.cv?.Mat) { done(); return }
-
-      if (w.cv) {
-        const orig = w.cv.onRuntimeInitialized
-        w.cv.onRuntimeInitialized = () => { orig?.(); done() }
-      }
-
-      // Poll fallback — some builds fire onRuntimeInitialized before onload
       let attempts = 0
       const poll = () => {
+        if (resolved) return
         if (w.cv?.Mat) { done(); return }
-        if (++attempts < 150) setTimeout(poll, 100)   // up to 15 seconds
-        else reject(new Error('Scanner engine loaded but failed to initialise. Please try again.'))
+        if (++attempts < 200) setTimeout(poll, 100)   // poll up to 20s
+        else reject(new Error('Scanner engine loaded but WASM did not initialise.'))
       }
-      setTimeout(poll, 200)
+      setTimeout(poll, 100)
     }
 
     document.head.appendChild(script)
