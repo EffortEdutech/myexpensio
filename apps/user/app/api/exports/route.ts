@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
       .single()
     if (jobErr) console.error('[POST /api/exports] insert error:', jobErr.message)
     else jobId = job?.id ?? null
-  } catch (e) {
+  } catch (e: unknown) {
     console.error('[POST /api/exports] insert exception:', e)
   }
 

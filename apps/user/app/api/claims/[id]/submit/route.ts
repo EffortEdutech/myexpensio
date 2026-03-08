@@ -46,7 +46,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
   // Must have at least 1 item
   const { count, error: countErr } = await supabase
     .from('claim_items')
-    .select('id', { count: 'exact', head: true })
+    .select('*', { count: 'exact', head: true })
     .eq('claim_id', claim_id)
 
   if (countErr) {

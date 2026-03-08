@@ -49,7 +49,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
   // Point count (for summary display)
   const { count: pointCount } = await supabase
     .from('trip_points')
-    .select('id', { count: 'exact', head: true })
+    .select('*', { count: 'exact', head: true })
     .eq('trip_id', id)
 
   return NextResponse.json({ trip: { ...trip, point_count: pointCount ?? 0 } })
@@ -79,9 +79,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   // (A submitted claim's mileage item's trip_id must not be changed post-submit)
   const { count: submittedCount } = await supabase
     .from('claim_items')
-    .select('id', { count: 'exact', head: true })
+    .select('*', { count: 'exact', head: true })
     .eq('trip_id', id)
-    .eq('claims.status', 'SUBMITTED')
 
   // Note: the join filter above isn't perfect in Supabase JS.
   // The DB-level RLS on claim_items blocks edits to SUBMITTED claim items,
@@ -194,7 +193,6 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
       .from('claim_items')
       .select('id, claims!inner(status)')
       .eq('trip_id', id)
-      .eq('claims.status', 'SUBMITTED')
       .limit(1)
 
     if (linkedItems && linkedItems.length > 0) {

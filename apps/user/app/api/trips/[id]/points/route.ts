@@ -83,7 +83,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   const { error: insertError, count } = await supabase
     .from('trip_points')
     .upsert(rows, { onConflict: 'trip_id,seq', ignoreDuplicates: true })
-    .select('id', { count: 'exact', head: true })
+    .select('id')
 
   if (insertError) {
     console.error('[POST /api/trips/[id]/points]', insertError.message)
