@@ -46,30 +46,72 @@ let _cvCache: any = null
 let _cvPromise: Promise<any> | null = null
 
 // ── OpenCV loader ─────────────────────────────────────────────────────────────
-// Uses dynamic import() — no CDN, no <script> tag, no network hang.
-// @techstark/opencv-js must be in package.json (pnpm add @techstark/opencv-js).
-// The package exports a Promise that resolves when WASM is ready — we just await it.
+// MUST use <script> tag — never dynamic import() or require().
+// Bundlers (Turbopack/webpack) cannot parse opencv.js (8MB WASM wrapper) and
+// will throw "Maximum call stack size exceeded" trying to do so.
+//
+// Correct dist path inside @techstark/opencv-js npm package: dist/opencv.js
+// jsDelivr serves this reliably from edge nodes globally.
+//
+// Loading sequence:
+//   1. Inject <script> tag pointing to dist/opencv.js on jsDelivr
+//   2. Script sets window.cv (a WASM module object)
+//   3. window.cv.onRuntimeInitialized fires when WASM is compiled + ready
+//   4. Confirm window.cv.Mat exists (the definitive "ready" signal)
+//   5. Cache in _cvCache — subsequent opens are instant (no re-download)
 //
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function loadOpenCV(): Promise<any> {
   if (_cvCache) return Promise.resolve(_cvCache)
   if (_cvPromise) return _cvPromise
 
-  _cvPromise = (async () => {
-    // Dynamic import — Next.js will code-split this into a separate chunk.
-    // The ~8MB WASM is only downloaded when the scanner is first opened.
+  _cvPromise = new Promise((resolve, reject) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cvModule: any = (await import('@techstark/opencv-js')).default
+    const w = window as any
 
-    // The package exports either a ready cv object OR a Promise that resolves to one
-    const cv = cvModule instanceof Promise ? await cvModule : await new Promise<any>((resolve) => {
-      if (cvModule.Mat) { resolve(cvModule); return }
-      cvModule.onRuntimeInitialized = () => resolve(cvModule)
-    })
+    // Already loaded by a previous component instance this session
+    if (w.cv?.Mat) { _cvCache = w.cv; resolve(_cvCache); return }
 
-    _cvCache = cv
-    return cv
-  })()
+    // Correct URL: dist/opencv.js inside the published npm package
+    // This is the only file that sets window.cv correctly for browser use
+    const CDN = 'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.12.0-release.1/dist/opencv.js'
+
+    const script = document.createElement('script')
+    script.async = true
+    script.src   = CDN
+
+    script.onerror = () => {
+      document.head.removeChild(script)
+      reject(new Error('Could not load scanner engine. Check your internet connection and try again.'))
+    }
+
+    script.onload = () => {
+      // WASM needs time to compile after script parses — hook onRuntimeInitialized
+      // and also poll as a safety net in case the hook was set before we got here.
+      function done() {
+        _cvCache = w.cv
+        resolve(_cvCache)
+      }
+
+      if (w.cv?.Mat) { done(); return }
+
+      if (w.cv) {
+        const orig = w.cv.onRuntimeInitialized
+        w.cv.onRuntimeInitialized = () => { orig?.(); done() }
+      }
+
+      // Poll fallback — some builds fire onRuntimeInitialized before onload
+      let attempts = 0
+      const poll = () => {
+        if (w.cv?.Mat) { done(); return }
+        if (++attempts < 150) setTimeout(poll, 100)   // up to 15 seconds
+        else reject(new Error('Scanner engine loaded but failed to initialise. Please try again.'))
+      }
+      setTimeout(poll, 200)
+    }
+
+    document.head.appendChild(script)
+  })
 
   return _cvPromise
 }
