@@ -15,6 +15,23 @@ function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
 }
 
+// Direct SUM fallback — used if recalc RPC is unavailable
+async function sumAndUpdateTotal(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  claim_id: string,
+): Promise<number> {
+  const { data: items } = await supabase
+    .from('claim_items')
+    .select('amount')
+    .eq('claim_id', claim_id)
+  const total = (items ?? []).reduce((sum, i) => sum + (Number(i.amount) || 0), 0)
+  await supabase
+    .from('claims')
+    .update({ total_amount: total, updated_at: new Date().toISOString() })
+    .eq('id', claim_id)
+  return total
+}
+
 export async function POST(request: NextRequest, { params }: Params) {
   const { id: claim_id } = await params
   const supabase = await createClient()
@@ -131,13 +148,17 @@ export async function POST(request: NextRequest, { params }: Params) {
       return err('SERVER_ERROR', 'Failed to add mileage item.', 500)
     }
 
-    // Recalc claim total
-    const { data: newTotal } = await supabase
+    // Recalc claim total — fallback to direct SUM if RPC unavailable
+    const { data: rpcTotal1, error: recalcErr1 } = await supabase
       .rpc('recalc_claim_total', { p_claim_id: claim_id })
+    const newTotal1 = recalcErr1
+      ? await sumAndUpdateTotal(supabase, claim_id)
+      : Number(rpcTotal1 ?? item_amt)
+    if (recalcErr1) console.error('[POST items] MILEAGE recalc RPC:', recalcErr1.message)
 
     return NextResponse.json({
       item,
-      claim_total: { currency: 'MYR', amount: newTotal ?? item_amt },
+      claim_total: { currency: 'MYR', amount: newTotal1 },
     }, { status: 201 })
   }
 
@@ -229,12 +250,17 @@ export async function POST(request: NextRequest, { params }: Params) {
       return err('SERVER_ERROR', `DB error: ${insertErr.message}`, 500)
     }
 
-    const { data: newTotal } = await supabase
+    // Recalc claim total — fallback to direct SUM if RPC unavailable
+    const { data: rpcTotal2, error: recalcErr2 } = await supabase
       .rpc('recalc_claim_total', { p_claim_id: claim_id })
+    const newTotal2 = recalcErr2
+      ? await sumAndUpdateTotal(supabase, claim_id)
+      : Number(rpcTotal2 ?? item_amount)
+    if (recalcErr2) console.error('[POST items] MEAL/LODGING recalc RPC:', recalcErr2.message)
 
     return NextResponse.json({
       item,
-      claim_total: { currency: 'MYR', amount: newTotal ?? item_amount },
+      claim_total: { currency: 'MYR', amount: newTotal2 },
     }, { status: 201 })
   }
 

@@ -8,6 +8,9 @@
 //
 // After this call, NO edits are possible (Phase 1 baseline lock).
 // The total_amount stored here is the audit snapshot used for exports.
+//
+// Resilience: if recalc_claim_total RPC is unavailable, falls back to
+// a direct SUM query so submission is never blocked by an RPC issue.
 
 import { createClient } from '@/lib/supabase/server'
 import { getActiveOrg }  from '@/lib/org'
@@ -17,6 +20,18 @@ type Params = { params: Promise<{ id: string }> }
 
 function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
+}
+
+// Direct SUM fallback — used if RPC fails
+async function sumItemsDirectly(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  claim_id: string,
+): Promise<number> {
+  const { data: items } = await supabase
+    .from('claim_items')
+    .select('amount')
+    .eq('claim_id', claim_id)
+  return (items ?? []).reduce((sum, i) => sum + (Number(i.amount) || 0), 0)
 }
 
 export async function POST(_req: NextRequest, { params }: Params) {
@@ -58,23 +73,35 @@ export async function POST(_req: NextRequest, { params }: Params) {
     return err('VALIDATION_ERROR', 'Cannot submit a claim with no items. Add at least one item first.', 400)
   }
 
-  // Final recalc — snapshot the total at submission time
-  const { data: finalTotal, error: calcErr } = await supabase
+  // ── Final recalc — try RPC first, fall back to direct SUM ─────────────
+  let finalTotal: number
+
+  const { data: rpcTotal, error: calcErr } = await supabase
     .rpc('recalc_claim_total', { p_claim_id: claim_id })
 
   if (calcErr) {
-    console.error('[POST /api/claims/[id]/submit] recalc:', calcErr.message)
-    return err('SERVER_ERROR', 'Failed to calculate claim total.', 500)
+    // RPC unavailable — log, fall back to direct SUM, update total manually
+    console.error('[POST /api/claims/[id]/submit] recalc RPC failed:', calcErr.message, '— using direct SUM fallback')
+    finalTotal = await sumItemsDirectly(supabase, claim_id)
+
+    // Write corrected total back to claims row before locking
+    await supabase
+      .from('claims')
+      .update({ total_amount: finalTotal, updated_at: new Date().toISOString() })
+      .eq('id', claim_id)
+      .eq('org_id', org.org_id)
+  } else {
+    finalTotal = Number(rpcTotal ?? 0)
   }
 
-  // Lock the claim
+  // ── Lock the claim ─────────────────────────────────────────────────────
   const now = new Date().toISOString()
   const { data: submitted, error: submitErr } = await supabase
     .from('claims')
     .update({
       status:       'SUBMITTED',
       submitted_at: now,
-      total_amount: finalTotal ?? 0,
+      total_amount: finalTotal,
       updated_at:   now,
     })
     .eq('id', claim_id)
@@ -87,7 +114,5 @@ export async function POST(_req: NextRequest, { params }: Params) {
     return err('SERVER_ERROR', 'Failed to submit claim.', 500)
   }
 
-  return NextResponse.json({
-    claim: submitted,
-  })
+  return NextResponse.json({ claim: submitted })
 }

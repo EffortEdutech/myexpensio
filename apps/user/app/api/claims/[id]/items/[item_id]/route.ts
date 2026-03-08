@@ -202,8 +202,14 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     return err('SERVER_ERROR', 'Failed to update item.', 500)
   }
 
-  // Recalculate claim total
-  await supabase.rpc('recalc_claim_total', { p_claim_id: claim_id })
+  // Recalculate claim total — fallback to direct SUM if RPC unavailable
+  const { error: recalcErr } = await supabase.rpc('recalc_claim_total', { p_claim_id: claim_id })
+  if (recalcErr) {
+    console.error('[PATCH items/[item_id]] recalc RPC:', recalcErr.message, '— using direct SUM')
+    const { data: allItems } = await supabase.from('claim_items').select('amount').eq('claim_id', claim_id)
+    const total = (allItems ?? []).reduce((s, i) => s + (Number(i.amount) || 0), 0)
+    await supabase.from('claims').update({ total_amount: total, updated_at: new Date().toISOString() }).eq('id', claim_id)
+  }
 
   // Return updated item
   const { data: updated } = await supabase
