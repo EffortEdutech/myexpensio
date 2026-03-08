@@ -67,7 +67,8 @@ export async function GET(request: NextRequest) {
     return err('INVITE_EXPIRED', 'This invitation has expired. Please ask your admin to send a new one.', 410)
   }
 
-  const org = invite.organizations as { id: string; name: string } | null
+  const orgRaw = invite.organizations as { id: string; name: string }[] | { id: string; name: string } | null
+  const org = Array.isArray(orgRaw) ? (orgRaw[0] ?? null) : orgRaw
 
   return NextResponse.json({
     invite: {
