@@ -82,27 +82,44 @@ function loadOpenCV(): Promise<any> {
 
     const script = document.createElement('script')
     script.async = true
-    script.src   = '/opencv.js'   // self-hosted in apps/user/public/opencv.js
+    script.src   = '/opencv.js'
 
-    script.onerror = () => {
+    console.log('[CV] 1. Appending script tag — src:', script.src)
+
+    script.onerror = (e) => {
+      console.error('[CV] 2. script.onerror fired — file not found or network error', e)
       document.head.removeChild(script)
-      reject(new Error('Could not load opencv.js — make sure apps/user/public/opencv.js exists.'))
+      reject(new Error('Could not load opencv.js — check apps/user/public/opencv.js exists.'))
     }
 
     script.onload = () => {
-      // Poll for window.cv.Mat — the definitive signal that WASM is compiled and ready.
-      // opencv.js sets window.cv synchronously but WASM compilation is async (~1-3s).
+      console.log('[CV] 2. script.onload fired')
+      console.log('[CV] 3. window.cv =', w.cv)
+      console.log('[CV] 3. window.cv?.Mat =', w.cv?.Mat)
+      console.log('[CV] 3. typeof window.cv =', typeof w.cv)
+
       let attempts = 0
       const poll = () => {
         if (resolved) return
-        if (w.cv?.Mat) { done(); return }
-        if (++attempts < 200) setTimeout(poll, 100)   // poll every 100ms, up to 20s
-        else reject(new Error('Scanner engine loaded but did not initialise in 20s.'))
+        if (w.cv?.Mat) {
+          console.log('[CV] 4. window.cv.Mat found after', attempts, 'polls — READY')
+          done()
+          return
+        }
+        if (attempts === 0 || attempts % 10 === 0) {
+          console.log('[CV] polling... attempt', attempts, '| window.cv =', w.cv, '| window.cv?.Mat =', w.cv?.Mat)
+        }
+        if (++attempts < 200) setTimeout(poll, 100)
+        else {
+          console.error('[CV] TIMEOUT — window.cv after 20s:', w.cv)
+          reject(new Error('Scanner engine loaded but did not initialise in 20s.'))
+        }
       }
       poll()
     }
 
     document.head.appendChild(script)
+    console.log('[CV] 1b. Script tag appended to head')
   })
 
   return _cvPromise
@@ -432,17 +449,20 @@ export function DocumentScanner({
 
   useEffect(() => {
     let mounted = true
+    console.log('[CV] useEffect fired — calling loadOpenCV()')
     setMsg('Loading scanner engine… (first use ~8 MB, cached after)')
     loadOpenCV()
       .then(cv => {
+        console.log('[CV] loadOpenCV() resolved — cv:', cv, '| mounted:', mounted)
         if (!mounted) return
         cvRef.current = cv
         startCamera()
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error('[CV] loadOpenCV() rejected:', err)
         if (!mounted) return
         setState('FAILED')
-        setMsg('Could not load scanner engine. Check your internet connection and try again.')
+        setMsg(err?.message ?? 'Could not load scanner engine.')
       })
     return () => { mounted = false; stopCamera() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
