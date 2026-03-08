@@ -160,8 +160,8 @@ export default async function HomePage() {
 
       {/* ── Quick actions ─────────────────────────────────────────── */}
       <div style={S.quickGrid}>
-        <QuickAction href="/trips?action=start" icon="▶" label="Start Trip"  color="#16a34a" />
-        <QuickAction href="/trips?action=plan"  icon="🗺" label="Plan Trip"  color="#2563eb" />
+        <QuickAction href="/trips/start"          icon="▶" label="Start Trip"  color="#16a34a" />
+        <QuickAction href="/trips/plan"          icon="🗺" label="Plan Trip"  color="#2563eb" />
         <QuickAction href="/claims?action=new"  icon="＋" label="New Claim"  color="#7c3aed" />
         <QuickAction href="/claims?tab=export"  icon="↓" label="Export"      color="#0891b2" />
       </div>
@@ -197,7 +197,7 @@ export default async function HomePage() {
           icon="🗺"
           message="No trips yet. Start tracking your first trip."
           cta="Start Trip"
-          href="/trips?action=start"
+          href="/trips/start"
         />
       ) : (
         <div style={S.list}>
