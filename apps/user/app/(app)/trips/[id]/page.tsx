@@ -434,7 +434,7 @@ export default function TripDetailPage() {
       )}
 
       {isDraft && isGps && (
-        <Link href="/trips/start"
+        <Link href={`/trips/start?resume=${trip.id}`}
           style={{ padding: '13px 20px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 10, textDecoration: 'none', fontSize: 14, fontWeight: 700, textAlign: 'center' }}>
           🔴 Trip in Progress — Return to Tracker
         </Link>

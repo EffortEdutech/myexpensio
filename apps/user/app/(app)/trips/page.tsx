@@ -128,7 +128,7 @@ export default async function TripsPage() {
 
       {/* ── Active trip banner ───────────────────────────────────────── */}
       {inProgress.length > 0 && (
-        <Link href={`/trips/${inProgress[0].id}/active`} style={S.activeBanner}>
+        <Link href={`/trips/start?resume=${inProgress[0].id}`} style={S.activeBanner}>
           <span style={S.activeGlow} />
           <span style={S.activeBannerText}>
             🔴 Trip in progress — tap to return
@@ -153,7 +153,13 @@ export default async function TripsPage() {
       {/* ── Floating actions ─────────────────────────────────────────── */}
       <div style={S.fab}>
         <Link href="/trips/plan" style={S.fabSecondary}>📐 Mileage Calculator</Link>
-        <Link href="/trips/start" style={S.fabPrimary}>▶ Start Trip</Link>
+        {inProgress.length > 0 ? (
+          <Link href={`/trips/start?resume=${inProgress[0].id}`} style={S.fabPrimary}>
+            🔴 Return to Tracker
+          </Link>
+        ) : (
+          <Link href="/trips/start" style={S.fabPrimary}>▶ Start Trip</Link>
+        )}
       </div>
 
     </div>
