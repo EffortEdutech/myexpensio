@@ -33,7 +33,7 @@ type Trip = {
   started_at: string
 }
 
-type ModalType = 'MILEAGE' | 'MEAL' | 'LODGING' | null
+type ModalType = 'MILEAGE' | 'MEAL' | 'LODGING' | 'EDIT_MEAL' | 'EDIT_LODGING' | null
 
 type MealRates = {
   morning: number
@@ -77,8 +77,8 @@ const SESSION_META = [
 // ── Item Card ─────────────────────────────────────────────────────────────────
 // Layout: [date] | [icon type · sub] | [amount × delete]
 
-function ItemCard({ item, onDelete, locked }: {
-  item: ClaimItem; onDelete: (id: string) => void; locked: boolean
+function ItemCard({ item, onDelete, onEdit, locked }: {
+  item: ClaimItem; onDelete: (id: string) => void; onEdit: (item: ClaimItem) => void; locked: boolean
 }) {
   const [deleting, setDeleting] = useState(false)
 
@@ -119,15 +119,23 @@ function ItemCard({ item, onDelete, locked }: {
         {item.notes && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2, fontStyle: 'italic' }}>{item.notes}</div>}
       </div>
 
-      {/* Col 3 — amount + delete */}
+      {/* Col 3 — amount + actions */}
       <div style={S.iAmt}>
         <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{fmtMyr(item.amount)}</span>
         {!locked && (
-          <button
-            onClick={() => { if (confirm('Remove this item?')) { setDeleting(true); onDelete(item.id) } }}
-            disabled={deleting}
-            style={{ padding: '2px 6px', backgroundColor: 'transparent', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13 }}
-          >✕</button>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {(item.type === 'MEAL' || item.type === 'LODGING') && (
+              <button
+                onClick={() => onEdit(item)}
+                style={{ padding: '2px 6px', backgroundColor: 'transparent', border: 'none', color: '#3b82f6', cursor: 'pointer', fontSize: 12 }}
+              >✏</button>
+            )}
+            <button
+              onClick={() => { if (confirm('Remove this item?')) { setDeleting(true); onDelete(item.id) } }}
+              disabled={deleting}
+              style={{ padding: '2px 6px', backgroundColor: 'transparent', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13 }}
+            >✕</button>
+          </div>
         )}
       </div>
     </div>
@@ -222,7 +230,7 @@ function MileageModal({ onAdd, onClose, alreadyAddedTripIds }: {
 // Meal: checkboxes — Full Day OR individual sessions (mutually exclusive for Full Day).
 // Each ticked session → one claim_item row.
 
-function ExpenseModal({ type, onAdd, onClose }: {
+function ExpenseModal({ type, onAdd, onClose, editMode = false, initialData, itemId }: {
   type: 'MEAL' | 'LODGING'
   onAdd: (data: {
     mode: string; amount?: number; rate?: number; merchant?: string; notes?: string
@@ -231,27 +239,44 @@ function ExpenseModal({ type, onAdd, onClose }: {
     lodging_check_in?: string; lodging_check_out?: string
   }) => Promise<void>
   onClose: () => void
+  editMode?: boolean
+  itemId?:   string
+  initialData?: Partial<ClaimItem>
 }) {
   const today = new Date().toISOString().slice(0, 10)
 
-  // Shared
-  const [mode,      setMode]      = useState<'FIXED_RATE' | 'RECEIPT'>('FIXED_RATE')
-  const [claimDate, setClaimDate] = useState(today)
-  const [merchant,  setMerchant]  = useState('')
-  const [notes,     setNotes]     = useState('')
-  const [amount,    setAmount]    = useState('')
+  // Shared — seeded from initialData when editing
+  const initMode    = (initialData?.mode as 'FIXED_RATE' | 'RECEIPT') ?? 'FIXED_RATE'
+  const initDate    = initialData?.claim_date?.slice(0, 10) ?? today
+  const initMerchant = initialData?.merchant ?? ''
+  const initNotes   = initialData?.notes     ?? ''
+  const initAmount  = initialData?.amount    ? String(initialData.amount) : ''
+  const initCheckIn  = initialData?.lodging_check_in?.slice(0, 10)  ?? today
+  const initCheckOut = initialData?.lodging_check_out?.slice(0, 10) ?? today
+  const initNights   = initialData?.qty ? String(initialData.qty) : '1'
+  const initSession  = initialData?.meal_session ?? ''
+  const initFullDay  = initSession === 'FULL_DAY'
+  const initSessions = initSession && !initFullDay && initSession !== ''
+    ? new Set([initSession as 'MORNING' | 'NOON' | 'EVENING'])
+    : new Set<'MORNING' | 'NOON' | 'EVENING'>()
+
+  const [mode,      setMode]      = useState<'FIXED_RATE' | 'RECEIPT'>(initMode)
+  const [claimDate, setClaimDate] = useState(initDate)
+  const [merchant,  setMerchant]  = useState(initMerchant)
+  const [notes,     setNotes]     = useState(initNotes)
+  const [amount,    setAmount]    = useState(initAmount)
   const [saving,    setSaving]    = useState(false)
   const [error,     setError]     = useState<string | null>(null)
 
   // MEAL
-  const [fullDay,   setFullDay]   = useState(false)
-  const [sessions,  setSessions]  = useState<Set<'MORNING' | 'NOON' | 'EVENING'>>(new Set())
+  const [fullDay,   setFullDay]   = useState(initFullDay)
+  const [sessions,  setSessions]  = useState<Set<'MORNING' | 'NOON' | 'EVENING'>>(initSessions)
   const [rates,     setRates]     = useState<MealRates>({ morning: 20, noon: 30, evening: 30, fullDay: 60 })
 
   // LODGING
-  const [checkIn,      setCheckIn]      = useState(today)
-  const [checkOut,     setCheckOut]     = useState(today)
-  const [nights,       setNights]       = useState('1')
+  const [checkIn,      setCheckIn]      = useState(initCheckIn)
+  const [checkOut,     setCheckOut]     = useState(initCheckOut)
+  const [nights,       setNights]       = useState(initNights)
   const [lodgingRate,  setLodgingRate]  = useState<number>(120)
 
   // Receipt upload path (for RECEIPT mode)
@@ -358,7 +383,7 @@ function ExpenseModal({ type, onAdd, onClose }: {
     setSaving(true); setError(null)
     try {
       await onAdd({
-        mode, claim_date: claimDate,
+        mode, claim_date: checkIn, // check-in IS the claim date for lodging
         nights: nightCount,
         lodging_check_in: checkIn, lodging_check_out: checkOut,
         // FIXED_RATE: compute rate × nights; RECEIPT: use entered amount
@@ -376,7 +401,7 @@ function ExpenseModal({ type, onAdd, onClose }: {
   const nightCount = parseInt(nights) || 1
   const lodgingTotal = lodgingRate * nightCount
 
-  const btnLabel = saving ? 'Adding…'
+  const btnLabel = saving ? (editMode ? 'Saving…' : 'Adding…')
     : type === 'LODGING'
       ? mode === 'FIXED_RATE'
         ? `Add Lodging · MYR ${lodgingTotal.toFixed(2)}`
@@ -406,13 +431,15 @@ function ExpenseModal({ type, onAdd, onClose }: {
   )
 
   return (
-    <Modal title={type === 'MEAL' ? 'Add Meal' : 'Add Lodging'} onClose={onClose} footer={footer}>
+    <Modal title={editMode ? (type === 'MEAL' ? 'Edit Meal' : 'Edit Lodging') : (type === 'MEAL' ? 'Add Meal' : 'Add Lodging')} onClose={onClose} footer={footer}>
 
-      {/* Date */}
-      <div style={S.field}>
-        <label style={S.label}>Date <span style={{ color: '#dc2626' }}>*</span></label>
-        <input type="date" value={claimDate} onChange={e => setClaimDate(e.target.value)} style={S.input} />
-      </div>
+      {/* Date — Meal only; Lodging uses Check-in as the claim date */}
+      {type === 'MEAL' && (
+        <div style={S.field}>
+          <label style={S.label}>Date <span style={{ color: '#dc2626' }}>*</span></label>
+          <input type="date" value={claimDate} onChange={e => setClaimDate(e.target.value)} style={S.input} />
+        </div>
+      )}
 
       {/* ── MEAL checkboxes — only shown in FIXED_RATE mode ─────── */}
       {type === 'MEAL' && mode === 'FIXED_RATE' && (
@@ -626,6 +653,7 @@ export default function ClaimDetailPage() {
   const [deleting,      setDeleting]      = useState(false)
   const [deleteErr,     setDeleteErr]     = useState<string | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [editingItem,   setEditingItem]   = useState<ClaimItem | null>(null)
 
   const load = useCallback(async () => {
     const res  = await fetch(`/api/claims/${id}`)
@@ -670,6 +698,22 @@ export default function ClaimDetailPage() {
   async function deleteItem(itemId: string) {
     await fetch(`/api/claims/${id}/items/${itemId}`, { method: 'DELETE' })
     await load()
+  }
+
+  async function updateExpense(itemId: string, type: 'MEAL' | 'LODGING', data: Record<string, unknown>) {
+    const { receipt_path, ...rest } = data as Record<string, unknown>
+    const body = {
+      type,
+      ...rest,
+      ...(receipt_path ? { receipt_url: receipt_path } : {}),
+    }
+    const res  = await fetch(`/api/claims/${id}/items/${itemId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body:   JSON.stringify(body),
+    })
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error?.message ?? 'Failed to update.')
+    await load(); setEditingItem(null); setModal(null)
   }
 
   async function handleSubmit() {
@@ -767,7 +811,7 @@ export default function ClaimDetailPage() {
                   return 0
                 }
               }).map(item => (
-                <ItemCard key={item.id} item={item} onDelete={deleteItem} locked={locked} />
+                <ItemCard key={item.id} item={item} onDelete={deleteItem} onEdit={item => { setEditingItem(item); setModal(item.type === 'MEAL' ? 'EDIT_MEAL' : 'EDIT_LODGING') }} locked={locked} />
               ))}
             </div>
         }
@@ -865,6 +909,20 @@ export default function ClaimDetailPage() {
       )}
       {modal === 'LODGING' && (
         <ExpenseModal type="LODGING" onAdd={d => addExpense('LODGING', d)} onClose={() => setModal(null)} />
+      )}
+      {modal === 'EDIT_MEAL' && editingItem && (
+        <ExpenseModal
+          type="MEAL" editMode initialData={editingItem} itemId={editingItem.id}
+          onAdd={d => updateExpense(editingItem.id, 'MEAL', d)}
+          onClose={() => { setModal(null); setEditingItem(null) }}
+        />
+      )}
+      {modal === 'EDIT_LODGING' && editingItem && (
+        <ExpenseModal
+          type="LODGING" editMode initialData={editingItem} itemId={editingItem.id}
+          onAdd={d => updateExpense(editingItem.id, 'LODGING', d)}
+          onClose={() => { setModal(null); setEditingItem(null) }}
+        />
       )}
 
     </div>
