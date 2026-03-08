@@ -178,7 +178,7 @@ export async function POST(request: NextRequest) {
       const pdfBuf = await generatePDF(supabase, pdfData, body.signature_data_url ?? null)
       const pdfFilename = `myexpensio_claim_${dateStamp}.pdf`
 
-      return new NextResponse(pdfBuf, {
+      return new NextResponse(new Uint8Array(pdfBuf), {
         status: 200,
         headers: {
           'Content-Type':        'application/pdf',
@@ -200,7 +200,7 @@ export async function POST(request: NextRequest) {
 
   // XLSX
   const buf = await generateXLSX(rows)
-  return new NextResponse(buf, {
+  return new NextResponse(new Uint8Array(buf), {
     status: 200,
     headers: {
       'Content-Type':        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

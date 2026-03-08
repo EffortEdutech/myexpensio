@@ -64,9 +64,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
     })
   }
 
-  // XLSX
+  // XLSX — wrap Buffer in Uint8Array for BodyInit compatibility
   const buf = await generateXLSX(rows)
-  return new NextResponse(buf, {
+  return new NextResponse(new Uint8Array(buf), {
     status:  200,
     headers: {
       'Content-Type':        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
