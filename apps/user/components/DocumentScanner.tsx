@@ -80,19 +80,6 @@ function loadOpenCV(): Promise<any> {
       resolve(_cvCache)
     }
 
-    // ── KEY FIX ────────────────────────────────────────────────────────────
-    // opencv.js is an Emscripten WASM build. It looks for window.Module
-    // at parse time and calls Module.onRuntimeInitialized when WASM is ready.
-    // This MUST be set BEFORE the <script> tag is appended — if set inside
-    // onload it is already too late and the callback is never called.
-    // ───────────────────────────────────────────────────────────────────────
-    w.Module = {
-      onRuntimeInitialized() {
-        // At this point window.cv is fully ready
-        done()
-      },
-    }
-
     const script = document.createElement('script')
     script.async = true
     script.src   = '/opencv.js'   // self-hosted in apps/user/public/opencv.js
@@ -102,17 +89,17 @@ function loadOpenCV(): Promise<any> {
       reject(new Error('Could not load opencv.js — make sure apps/user/public/opencv.js exists.'))
     }
 
-    // Belt-and-braces poll — catches edge case where Module callback
-    // fired before we could hook it (should not happen, but be safe)
     script.onload = () => {
+      // Poll for window.cv.Mat — the definitive signal that WASM is compiled and ready.
+      // opencv.js sets window.cv synchronously but WASM compilation is async (~1-3s).
       let attempts = 0
       const poll = () => {
         if (resolved) return
         if (w.cv?.Mat) { done(); return }
-        if (++attempts < 200) setTimeout(poll, 100)   // poll up to 20s
-        else reject(new Error('Scanner engine loaded but WASM did not initialise.'))
+        if (++attempts < 200) setTimeout(poll, 100)   // poll every 100ms, up to 20s
+        else reject(new Error('Scanner engine loaded but did not initialise in 20s.'))
       }
-      setTimeout(poll, 100)
+      poll()
     }
 
     document.head.appendChild(script)
