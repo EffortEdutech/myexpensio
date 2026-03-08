@@ -45,93 +45,32 @@ let _cvCache: any = null
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _cvPromise: Promise<any> | null = null
 
+// ── OpenCV loader ─────────────────────────────────────────────────────────────
+// Uses dynamic import() — no CDN, no <script> tag, no network hang.
+// @techstark/opencv-js must be in package.json (pnpm add @techstark/opencv-js).
+// The package exports a Promise that resolves when WASM is ready — we just await it.
+//
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function loadOpenCV(): Promise<any> {
   if (_cvCache) return Promise.resolve(_cvCache)
   if (_cvPromise) return _cvPromise
 
-  // CDN order: jsDelivr first (global edge CDN, fast)
-  //             docs.opencv.org second (documentation server, slow — last resort)
-  const URLS = [
-    'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/opencv.js',
-    'https://cdn.jsdelivr.net/npm/opencv-browser@1.0.0/dist/opencv.js',
-    'https://docs.opencv.org/4.x/opencv.js',
-  ]
-
-  const SCRIPT_TIMEOUT_MS = 15_000   // give each URL 15s before trying next
-
-  function tryLoad(urls: string[], reject: (e: Error) => void, resolve: (cv: any) => void) {
-    if (urls.length === 0) {
-      reject(new Error('Could not load scanner engine. Check your internet connection and try again.'))
-      return
-    }
+  _cvPromise = (async () => {
+    // Dynamic import — Next.js will code-split this into a separate chunk.
+    // The ~8MB WASM is only downloaded when the scanner is first opened.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w    = window as any
-    const url  = urls[0]
-    const rest = urls.slice(1)
-    let   done = false   // prevent double-resolve / double-reject
+    const cvModule: any = (await import('@techstark/opencv-js')).default
 
-    function advance(reason: string) {
-      if (done) return
-      done = true
-      clearTimeout(timeoutHandle)
-      // Remove script tag cleanly before trying next
-      try { document.head.removeChild(script) } catch { /* already removed */ }
-      console.warn(`[DocumentScanner] ${reason} — trying next URL`)
-      tryLoad(rest, reject, resolve)
-    }
+    // The package exports either a ready cv object OR a Promise that resolves to one
+    const cv = cvModule instanceof Promise ? await cvModule : await new Promise<any>((resolve) => {
+      if (cvModule.Mat) { resolve(cvModule); return }
+      cvModule.onRuntimeInitialized = () => resolve(cvModule)
+    })
 
-    function succeed() {
-      if (done) return
-      done = true
-      clearTimeout(timeoutHandle)
-      _cvCache = w.cv
-      resolve(_cvCache)
-    }
+    _cvCache = cv
+    return cv
+  })()
 
-    const script = document.createElement('script')
-    script.async = true
-    script.src   = url
-
-    // Hard timeout — fires if script loads but WASM hangs, OR if server is just slow
-    const timeoutHandle = setTimeout(
-      () => advance(`Timed out after ${SCRIPT_TIMEOUT_MS / 1000}s loading ${url}`),
-      SCRIPT_TIMEOUT_MS,
-    )
-
-    script.onerror = () => advance(`Network error loading ${url}`)
-
-    script.onload = () => {
-      // Script tag loaded — now wait for WASM runtime to initialise.
-      // cv.Mat is the reliable "ready" signal.
-      if (w.cv?.Mat) { succeed(); return }
-
-      // Hook onRuntimeInitialized (fires when WASM is compiled and ready)
-      if (w.cv && !w.cv.Mat) {
-        const orig = w.cv.onRuntimeInitialized
-        w.cv.onRuntimeInitialized = () => { orig?.(); if (w.cv?.Mat) succeed() }
-      }
-
-      // Belt-and-braces poll — catches cases where hook fires before we set it
-      const poll = (attempts = 0) => {
-        if (done) return
-        if (w.cv?.Mat) { succeed(); return }
-        if (attempts < 80) setTimeout(() => poll(attempts + 1), 100)
-        // else let the hard timeout handle it
-      }
-      setTimeout(() => poll(), 150)
-    }
-
-    document.head.appendChild(script)
-  }
-
-  _cvPromise = new Promise((resolve, reject) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any
-    // Already loaded by a prior instance on this page — instant
-    if (w.cv?.Mat) { _cvCache = w.cv; resolve(_cvCache); return }
-    tryLoad(URLS, reject, resolve)
-  })
   return _cvPromise
 }
 
