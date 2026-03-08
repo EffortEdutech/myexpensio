@@ -18,6 +18,7 @@
 //   />
 
 import { useState, useRef, useCallback } from 'react'
+import { DocumentScanner } from '@/components/DocumentScanner'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ type Props = {
   disabled?:   boolean
   purpose?:    'RECEIPT' | 'ODOMETER'   // controls storage subfolder; default RECEIPT
   label?:      string                   // overrides button + done-state label text
+  enableScan?:  boolean                 // show 📷 Scan button (DocumentScanner)
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -74,16 +76,18 @@ async function compressImage(file: File): Promise<Blob> {
 export function ReceiptUploader({
   storagePath,
   onUploaded,
-  disabled = false,
-  purpose  = 'RECEIPT',
+  disabled    = false,
+  purpose     = 'RECEIPT',
   label,
+  enableScan  = false,
 }: Props) {
   const [state,      setState]    = useState<UploadState>(storagePath ? 'DONE' : 'IDLE')
   const [progress,   setProgress] = useState(0)       // 0–100
   const [errMsg,     setErrMsg]   = useState<string | null>(null)
   const [viewUrl,    setViewUrl]  = useState<string | null>(null)
   const [currentPath, setCurrentPath] = useState<string | null>(storagePath ?? null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef    = useRef<HTMLInputElement>(null)
+  const [scannerOpen, setScannerOpen] = useState(false)
 
   // ── Load view URL when we have a stored path ──────────────────────────────
 
@@ -170,6 +174,16 @@ export function ReceiptUploader({
     inputRef.current?.click()
   }
 
+  // Called by DocumentScanner when user confirms processed image.
+  // Converts the blob to a synthetic File and runs through the normal
+  // compress → sign → upload pipeline. Existing ReceiptUploader logic
+  // is 100% untouched — scanner simply hands off a Blob.
+  async function handleScanComplete(blob: Blob) {
+    setScannerOpen(false)
+    const file = new File([blob], `scan_${Date.now()}.jpg`, { type: 'image/jpeg' })
+    await handleFile(file)
+  }
+
   function handleRemove() {
     setState('IDLE'); setCurrentPath(null); setViewUrl(null); setErrMsg(null)
     onUploaded('')   // signal parent: receipt removed
@@ -190,19 +204,48 @@ export function ReceiptUploader({
         disabled={disabled || busy}
       />
 
-      {/* ── IDLE: tap to upload ────────────────────────────────────────── */}
-      {state === 'IDLE' && (
-        <button
-          onClick={() => inputRef.current?.click()}
-          disabled={disabled}
-          style={{ ...S.uploadBtn, opacity: disabled ? 0.45 : 1 }}
-        >
-          <span style={{ fontSize: 18 }}>{purpose === 'ODOMETER' ? '📷' : '📎'}</span>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>
-            {label ?? (purpose === 'ODOMETER' ? 'Attach Odometer Photo' : 'Attach Receipt')}
-          </span>
-          <span style={{ fontSize: 10, color: '#94a3b8' }}>JPEG · PNG · WebP · Max 5 MB</span>
-        </button>
+      {/* ── IDLE: gallery button + optional scan button ─────────────── */}
+      {state === 'IDLE' && !scannerOpen && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+
+          {/* 📷 Scan button — only shown when enableScan=true */}
+          {enableScan && !disabled && (
+            <button
+              onClick={() => setScannerOpen(true)}
+              style={S.scanBtn}
+            >
+              <span style={{ fontSize: 18 }}>📷</span>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>Scan Document</span>
+                <span style={{ fontSize: 10, color: '#64748b' }}>Camera · auto edge detect · perspective fix</span>
+              </div>
+              <span style={{ fontSize: 12, color: '#94a3b8', marginLeft: 'auto' }}>›</span>
+            </button>
+          )}
+
+          {/* 📎 Gallery / file upload — always present, unchanged */}
+          <button
+            onClick={() => inputRef.current?.click()}
+            disabled={disabled}
+            style={{ ...S.uploadBtn, opacity: disabled ? 0.45 : 1 }}
+          >
+            <span style={{ fontSize: 18 }}>{purpose === 'ODOMETER' ? '📷' : '📎'}</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>
+              {label ?? (purpose === 'ODOMETER' ? 'Attach from Gallery' : 'Attach from Gallery')}
+            </span>
+            <span style={{ fontSize: 10, color: '#94a3b8' }}>JPEG · PNG · WebP · Max 5 MB</span>
+          </button>
+
+        </div>
+      )}
+
+      {/* ── DocumentScanner overlay — rendered as modal, isolated ────── */}
+      {enableScan && scannerOpen && (
+        <DocumentScanner
+          purpose={purpose}
+          onScanComplete={handleScanComplete}
+          onClose={() => setScannerOpen(false)}
+        />
       )}
 
       {/* ── BUSY: progress ────────────────────────────────────────────── */}
@@ -367,6 +410,15 @@ const S: Record<string, React.CSSProperties> = {
     borderWidth: 1, borderStyle: 'solid', borderColor: '#fca5a5',
     borderRadius: 6, paddingTop: 4, paddingBottom: 4,
     paddingLeft: 10, paddingRight: 10, cursor: 'pointer',
+  },
+  scanBtn: {
+    display: 'flex', alignItems: 'center',
+    gap: 10, padding: '12px 14px',
+    borderWidth: 2, borderStyle: 'solid', borderColor: '#0f172a',
+    borderRadius: 10, cursor: 'pointer',
+    backgroundColor: '#0f172a',
+    width: '100%',
+    textAlign: 'left' as const,
   },
   linkBtn:      {
     fontSize: 12, fontWeight: 500, color: '#3b82f6',
