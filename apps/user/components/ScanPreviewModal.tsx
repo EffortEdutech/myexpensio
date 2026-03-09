@@ -121,9 +121,10 @@ export function ScanPreviewModal({
   // ── Ops label map ──────────────────────────────────────────────────────────
   function opLabel(op: string): string {
     const map: Record<string, string> = {
+      denoise:                   '✓ Noise removed',
       perspective_warp:          '✓ Perspective corrected',
-      no_warp_corners_not_found: '⚠ Edges not detected — original angle kept',
-      auto_contrast:             '✓ Contrast enhanced',
+      no_warp_corners_not_found: '⚠ Angle correction skipped — corners not detected',
+      clahe_enhancement:         '✓ Local contrast enhanced (CLAHE)',
       sharpen:                   '✓ Sharpened',
       brightness_contrast:       '✓ Brightness boosted',
     }
