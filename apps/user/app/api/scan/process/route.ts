@@ -29,11 +29,12 @@ export async function POST(req: NextRequest) {
 
   // ── Parse body ───────────────────────────────────────────────────────────
   const body = await req.json().catch(() => ({})) as {
-    image?: string
-    mode?:  string
+    image?:   string
+    mode?:    string
+    corners?: number[][]   // [[x,y]*4] from ScanPreviewModal — RECEIPT only
   }
 
-  const { image, mode = 'RECEIPT' } = body
+  const { image, mode = 'RECEIPT', corners } = body
 
   if (!image) return err('VALIDATION_ERROR', 'image is required.', 400)
   if (!['RECEIPT', 'ODOMETER'].includes(mode)) {
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest) {
         'Content-Type':  'application/json',
         'X-Scan-Secret': SCAN_API_SECRET,
       },
-      body: JSON.stringify({ image, mode }),
+      body: JSON.stringify({ image, mode, corners: corners ?? null }),
       signal: AbortSignal.timeout(30_000),
     })
 
