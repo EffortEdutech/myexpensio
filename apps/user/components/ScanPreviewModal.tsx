@@ -1,20 +1,19 @@
 'use client'
 // apps/user/components/ScanPreviewModal.tsx
 //
-// Shows captured photo from DocumentScanner.
-// Provides three actions:
-//   ↩ Retake    — discard, reopen camera
-//   ⚡ Enhance  — send to Python OpenCV API, show before/after
-//   ✓ Use Photo — confirm and upload (original or enhanced)
+// Shows captured photo with 4 draggable corner handles (RECEIPT mode).
+// User drags corners to align with receipt edges.
+// Tap ⚡ Enhance → sends image + user corners to Python API.
+// Shows before/after toggle after processing.
 //
-// Props:
-//   blob        — raw JPEG blob from DocumentScanner
-//   purpose     — 'RECEIPT' | 'ODOMETER' controls processing mode
-//   onConfirm   — called with final blob to proceed to upload
-//   onRetake    — user wants to retake photo
-//   onClose     — user cancels entirely
+// Corner order: [TL, TR, BR, BL] in original image pixel coordinates.
+// Python receives these and uses them directly for warpPerspective.
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+
+type Corner    = [number, number]   // [x, y] in original image px
+type EnhState  = 'IDLE' | 'PROCESSING' | 'DONE' | 'FAILED'
+type ViewMode  = 'ORIGINAL' | 'ENHANCED'
 
 type Props = {
   blob:      Blob
@@ -24,8 +23,8 @@ type Props = {
   onClose:   () => void
 }
 
-type EnhanceState = 'IDLE' | 'PROCESSING' | 'DONE' | 'FAILED'
-type ViewMode     = 'ORIGINAL' | 'ENHANCED'
+const HANDLE_R     = 24            // handle touch radius on canvas (px)
+const CORNER_LABEL = ['TL','TR','BR','BL']
 
 export function ScanPreviewModal({
   blob,
@@ -34,111 +33,342 @@ export function ScanPreviewModal({
   onRetake,
   onClose,
 }: Props) {
-  const [originalUrl,  setOriginalUrl]  = useState<string | null>(null)
-  const [enhancedUrl,  setEnhancedUrl]  = useState<string | null>(null)
-  const [enhancedBlob, setEnhancedBlob] = useState<Blob | null>(null)
-  const [enhState,     setEnhState]     = useState<EnhanceState>('IDLE')
+  // ── Refs ──────────────────────────────────────────────────────────────────
+  const canvasRef      = useRef<HTMLCanvasElement>(null)
+  const containerRef   = useRef<HTMLDivElement>(null)
+  const imgElRef       = useRef<HTMLImageElement | null>(null)
+  const origUrlRef     = useRef<string | null>(null)
+  const enhUrlRef      = useRef<string | null>(null)
+  const draggingRef    = useRef<number>(-1)         // index of corner being dragged
+  const origSizeRef    = useRef({ w: 1, h: 1 })    // original image pixel size
+  const cornersRef     = useRef<Corner[]>([         // kept in sync with state
+    [0, 0], [0, 0], [0, 0], [0, 0]
+  ])
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  const [imageLoaded,  setImageLoaded]  = useState(false)
+  const [corners,      setCorners]      = useState<Corner[]>([
+    [0, 0], [0, 0], [0, 0], [0, 0]
+  ])
+  const [enhState,     setEnhState]     = useState<EnhState>('IDLE')
   const [enhError,     setEnhError]     = useState<string | null>(null)
   const [viewMode,     setViewMode]     = useState<ViewMode>('ORIGINAL')
+  const [enhancedBlob, setEnhancedBlob] = useState<Blob | null>(null)
+  const [enhancedUrl,  setEnhancedUrl]  = useState<string | null>(null)
   const [appliedOps,   setAppliedOps]   = useState<string[]>([])
 
-  const originalUrlRef = useRef<string | null>(null)
-  const enhancedUrlRef = useRef<string | null>(null)
+  const isReceipt = purpose === 'RECEIPT'
+  const mode      = isReceipt ? 'RECEIPT' : 'ODOMETER'
+  const label     = isReceipt ? 'Receipt Photo' : 'Odometer Photo'
 
-  const label = purpose === 'ODOMETER' ? 'Odometer Photo' : 'Receipt Photo'
-  const mode  = purpose === 'ODOMETER' ? 'ODOMETER' : 'RECEIPT'
+  // Keep cornersRef in sync so draw callbacks always have latest
+  useEffect(() => { cornersRef.current = corners }, [corners])
 
-  // ── Create object URL from original blob ─────────────────────────────────
+  // ── Load blob → HTMLImageElement ──────────────────────────────────────────
   useEffect(() => {
     const url = URL.createObjectURL(blob)
-    originalUrlRef.current = url
-    setOriginalUrl(url)
+    origUrlRef.current = url
+
+    const img = new Image()
+    img.onload = () => {
+      imgElRef.current       = img
+      origSizeRef.current    = { w: img.naturalWidth, h: img.naturalHeight }
+
+      // Default corners = full image rectangle
+      const initCorners: Corner[] = [
+        [0,                  0                 ],   // TL
+        [img.naturalWidth,   0                 ],   // TR
+        [img.naturalWidth,   img.naturalHeight ],   // BR
+        [0,                  img.naturalHeight ],   // BL
+      ]
+      cornersRef.current = initCorners
+      setCorners(initCorners)
+      setImageLoaded(true)
+    }
+    img.src = url
+
     return () => {
       URL.revokeObjectURL(url)
-      if (enhancedUrlRef.current) URL.revokeObjectURL(enhancedUrlRef.current)
+      if (enhUrlRef.current) URL.revokeObjectURL(enhUrlRef.current)
     }
   }, [blob])
 
-  // ── Enhance — call Python API via Next.js proxy ───────────────────────────
+  // ── Canvas geometry helpers ───────────────────────────────────────────────
+
+  function getDrawRect(canvas: HTMLCanvasElement) {
+    const { w: origW, h: origH } = origSizeRef.current
+    const scale = Math.min(canvas.width / origW, canvas.height / origH)
+    const drawW = origW * scale
+    const drawH = origH * scale
+    const drawX = (canvas.width  - drawW) / 2
+    const drawY = (canvas.height - drawH) / 2
+    return { drawX, drawY, drawW, drawH, scale }
+  }
+
+  // Original image coord → canvas coord
+  function toCanvas(ox: number, oy: number,
+                    drawX: number, drawY: number, scale: number): [number, number] {
+    return [drawX + ox * scale, drawY + oy * scale]
+  }
+
+  // Canvas coord → original image coord (clamped to image bounds)
+  function toOrig(cx: number, cy: number,
+                  drawX: number, drawY: number, scale: number): Corner {
+    const { w: origW, h: origH } = origSizeRef.current
+    return [
+      Math.max(0, Math.min(origW, (cx - drawX) / scale)),
+      Math.max(0, Math.min(origH, (cy - drawY) / scale)),
+    ]
+  }
+
+  // ── Draw canvas ───────────────────────────────────────────────────────────
+  const drawCanvas = useCallback((sourceImg: HTMLImageElement | null,
+                                  activCorners: Corner[]) => {
+    const canvas = canvasRef.current
+    if (!canvas || !sourceImg) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const { drawX, drawY, drawW, drawH, scale } = getDrawRect(canvas)
+
+    // Background
+    ctx.fillStyle = '#000'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+    // Image
+    ctx.drawImage(sourceImg, drawX, drawY, drawW, drawH)
+
+    // Corner handles and overlay — RECEIPT only
+    if (!isReceipt) return
+
+    // Convert corners to canvas coordinates
+    const cPts = activCorners.map(([ox, oy]) =>
+      toCanvas(ox, oy, drawX, drawY, scale)
+    )
+
+    // Dark overlay OUTSIDE the quad using even-odd rule
+    // This lets the image show through the quad selection area
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'
+    ctx.beginPath()
+    ctx.rect(drawX, drawY, drawW, drawH)     // outer rect
+    ctx.moveTo(cPts[0][0], cPts[0][1])       // inner quad (hole)
+    cPts.forEach(([x, y]) => ctx.lineTo(x, y))
+    ctx.closePath()
+    ctx.fill('evenodd')
+
+    // Quad border — dashed green line
+    ctx.strokeStyle = '#10b981'
+    ctx.lineWidth   = 2.5
+    ctx.setLineDash([10, 5])
+    ctx.beginPath()
+    ctx.moveTo(cPts[0][0], cPts[0][1])
+    cPts.forEach(([x, y]) => ctx.lineTo(x, y))
+    ctx.closePath()
+    ctx.stroke()
+    ctx.setLineDash([])
+
+    // Corner handles
+    cPts.forEach(([cx, cy], i) => {
+      // Outer glow ring
+      ctx.beginPath()
+      ctx.arc(cx, cy, HANDLE_R, 0, Math.PI * 2)
+      ctx.fillStyle   = 'rgba(16,185,129,0.20)'
+      ctx.fill()
+      ctx.strokeStyle = '#10b981'
+      ctx.lineWidth   = 2.5
+      ctx.stroke()
+
+      // Inner solid dot
+      ctx.beginPath()
+      ctx.arc(cx, cy, 7, 0, Math.PI * 2)
+      ctx.fillStyle = '#10b981'
+      ctx.fill()
+
+      // Corner label above handle
+      const labelX = cx
+      const labelY = cy - HANDLE_R - 8
+      ctx.fillStyle    = 'rgba(0,0,0,0.65)'
+      ctx.beginPath()
+      ctx.roundRect(labelX - 14, labelY - 11, 28, 18, 4)
+      ctx.fill()
+      ctx.fillStyle    = '#d1fae5'
+      ctx.font         = 'bold 11px system-ui, sans-serif'
+      ctx.textAlign    = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(CORNER_LABEL[i], labelX, labelY)
+    })
+
+    // Bottom hint text
+    ctx.fillStyle    = 'rgba(255,255,255,0.55)'
+    ctx.font         = '12px system-ui, sans-serif'
+    ctx.textAlign    = 'center'
+    ctx.textBaseline = 'bottom'
+    ctx.fillText('Drag corner handles to align with receipt edges',
+                  canvas.width / 2, canvas.height - 6)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReceipt])
+
+  // ── Resize observer — keep canvas filling its container ──────────────────
+  useEffect(() => {
+    const canvas    = canvasRef.current
+    const container = containerRef.current
+    if (!canvas || !container) return
+
+    function resize() {
+      const r      = container!.getBoundingClientRect()
+      canvas!.width  = r.width
+      canvas!.height = r.height
+      // Redraw after resize
+      const src = (viewMode === 'ENHANCED' && enhancedUrl)
+        ? (() => { const i = new Image(); i.src = enhancedUrl; return i })()
+        : imgElRef.current
+      drawCanvas(src, cornersRef.current)
+    }
+
+    resize()
+    const ro = new ResizeObserver(resize)
+    ro.observe(container)
+    return () => ro.disconnect()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageLoaded])
+
+  // ── Redraw when corners or viewMode changes ───────────────────────────────
+  useEffect(() => {
+    if (!imageLoaded) return
+    if (viewMode === 'ENHANCED' && enhancedUrl) {
+      const eImg  = new Image()
+      eImg.onload = () => drawCanvas(eImg, corners)
+      eImg.src    = enhancedUrl
+    } else {
+      drawCanvas(imgElRef.current, corners)
+    }
+  }, [corners, viewMode, enhancedUrl, imageLoaded, drawCanvas])
+
+  // ── Pointer events for corner dragging ───────────────────────────────────
+
+  function getCanvasPos(e: React.PointerEvent<HTMLCanvasElement>): [number, number] {
+    const rect = canvasRef.current!.getBoundingClientRect()
+    return [e.clientX - rect.left, e.clientY - rect.top]
+  }
+
+  function findClosestCorner(cx: number, cy: number): number {
+    const canvas              = canvasRef.current!
+    const { drawX, drawY, scale } = getDrawRect(canvas)
+    let closest = -1
+    let minDist = HANDLE_R * 2.5   // generous touch target
+
+    cornersRef.current.forEach(([ox, oy], i) => {
+      const [hx, hy] = toCanvas(ox, oy, drawX, drawY, scale)
+      const dist     = Math.hypot(cx - hx, cy - hy)
+      if (dist < minDist) { minDist = dist; closest = i }
+    })
+    return closest
+  }
+
+  function handlePointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (!isReceipt || enhState === 'PROCESSING') return
+    const [cx, cy] = getCanvasPos(e)
+    const idx      = findClosestCorner(cx, cy)
+    if (idx >= 0) {
+      draggingRef.current = idx
+      canvasRef.current!.setPointerCapture(e.pointerId)
+    }
+  }
+
+  function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (draggingRef.current < 0) return
+    const canvas              = canvasRef.current!
+    const [cx, cy]            = getCanvasPos(e)
+    const { drawX, drawY, scale } = getDrawRect(canvas)
+    const newOrig             = toOrig(cx, cy, drawX, drawY, scale)
+
+    setCorners(prev => {
+      const next             = [...prev] as Corner[]
+      next[draggingRef.current] = newOrig
+      return next
+    })
+  }
+
+  function handlePointerUp() { draggingRef.current = -1 }
+
+  // ── Enhance — send image + corners to Python API ──────────────────────────
   const handleEnhance = useCallback(async () => {
     setEnhState('PROCESSING')
     setEnhError(null)
 
     try {
-      // Convert blob to base64
+      // Read blob as base64
       const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload  = () => {
-          const result = reader.result as string
-          // Strip data URI prefix — send raw base64 only
-          resolve(result.split(',')[1] ?? result)
-        }
+        const reader   = new FileReader()
+        reader.onload  = () => resolve((reader.result as string).split(',')[1] ?? '')
         reader.onerror = () => reject(new Error('Could not read image.'))
         reader.readAsDataURL(blob)
       })
 
-      // POST to Next.js proxy (which forwards to Python service)
+      const payload: Record<string, unknown> = { image: base64, mode }
+
+      // Send user-defined corners for RECEIPT
+      // Python will use these directly — no auto-detection needed
+      if (isReceipt) {
+        payload.corners = cornersRef.current.map(([x, y]) =>
+          [Math.round(x), Math.round(y)]
+        )
+      }
+
       const res  = await fetch('/api/scan/process', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ image: base64, mode }),
+        body:    JSON.stringify(payload),
       })
 
       const json = await res.json()
+      if (!res.ok) throw new Error(json?.error?.message ?? `Error ${res.status}`)
 
-      if (!res.ok) {
-        throw new Error(json?.error?.message ?? `Server error ${res.status}`)
-      }
-
-      // Decode result base64 → blob
-      const binary     = atob(json.result)
-      const bytes      = new Uint8Array(binary.length)
+      // Decode result base64 → Blob
+      const binary  = atob(json.result)
+      const bytes   = new Uint8Array(binary.length)
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-      const resultBlob = new Blob([bytes], { type: 'image/jpeg' })
+      const rBlob   = new Blob([bytes], { type: 'image/jpeg' })
 
-      // Create object URL for preview
-      const url = URL.createObjectURL(resultBlob)
-      enhancedUrlRef.current = url
+      if (enhUrlRef.current) URL.revokeObjectURL(enhUrlRef.current)
+      const url = URL.createObjectURL(rBlob)
+      enhUrlRef.current = url
       setEnhancedUrl(url)
-      setEnhancedBlob(resultBlob)
+      setEnhancedBlob(rBlob)
       setAppliedOps(json.applied ?? [])
       setEnhState('DONE')
-      setViewMode('ENHANCED')    // auto-switch to enhanced view
+      setViewMode('ENHANCED')
     } catch (e: unknown) {
-      const msg = (e as Error).message ?? 'Enhancement failed.'
-      setEnhError(msg)
+      setEnhError((e as Error).message ?? 'Enhancement failed.')
       setEnhState('FAILED')
     }
-  }, [blob, mode])
+  }, [blob, mode, isReceipt])
 
-  // ── Confirm ────────────────────────────────────────────────────────────────
+  // ── Confirm ───────────────────────────────────────────────────────────────
   function handleConfirm() {
-    // Use enhanced blob if available + user is viewing enhanced
-    const finalBlob = (viewMode === 'ENHANCED' && enhancedBlob) ? enhancedBlob : blob
-    onConfirm(finalBlob)
+    onConfirm((viewMode === 'ENHANCED' && enhancedBlob) ? enhancedBlob : blob)
   }
 
-  // ── Ops label map ──────────────────────────────────────────────────────────
+  // ── Ops label map ─────────────────────────────────────────────────────────
   function opLabel(op: string): string {
     const map: Record<string, string> = {
-      denoise:                   '✓ Noise removed',
-      perspective_warp:          '✓ Perspective corrected',
-      no_warp_corners_not_found: '⚠ Angle correction skipped — corners not detected',
-      clahe_enhancement:         '✓ Local contrast enhanced (CLAHE)',
-      sharpen:                   '✓ Sharpened',
-      brightness_contrast:       '✓ Brightness boosted',
+      denoise:                         '✓ Noise removed',
+      perspective_warp_user:           '✓ Perspective corrected (your corners)',
+      perspective_warp_hough:          '✓ Perspective corrected (auto)',
+      perspective_warp_bright_region:  '✓ Perspective corrected (brightness)',
+      no_warp_corners_not_found:       '⚠ Angle correction skipped',
+      clahe_enhancement:               '✓ Local contrast enhanced',
+      sharpen:                         '✓ Sharpened',
     }
     return map[op] ?? op
   }
 
-  const currentUrl = viewMode === 'ENHANCED' && enhancedUrl ? enhancedUrl : originalUrl
-
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={S.backdrop}>
       <div style={S.sheet}>
 
-        {/* ── Header ───────────────────────────────────────────────────── */}
+        {/* ── Header ─────────────────────────────────────────────────── */}
         <div style={S.header}>
           <div style={S.headerLeft}>
             <span style={{ fontSize: 18 }}>🖼</span>
@@ -147,53 +377,60 @@ export function ScanPreviewModal({
           <button onClick={onClose} style={S.closeBtn}>✕</button>
         </div>
 
-        {/* ── Before / After toggle (visible after enhance) ─────────────── */}
+        {/* ── Before/After toggle ────────────────────────────────────── */}
         {enhState === 'DONE' && (
           <div style={S.toggleBar}>
             <button
-              onClick={() => setViewMode('ORIGINAL')}
               style={{ ...S.toggleBtn, ...(viewMode === 'ORIGINAL' ? S.toggleActive : {}) }}
+              onClick={() => setViewMode('ORIGINAL')}
             >
               Original
             </button>
             <button
-              onClick={() => setViewMode('ENHANCED')}
               style={{ ...S.toggleBtn, ...(viewMode === 'ENHANCED' ? S.toggleActive : {}) }}
+              onClick={() => setViewMode('ENHANCED')}
             >
               Enhanced
             </button>
           </div>
         )}
 
-        {/* ── Image area ───────────────────────────────────────────────── */}
-        <div style={S.imageArea}>
-          {currentUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={currentUrl}
-              alt={viewMode === 'ENHANCED' ? 'Enhanced photo' : 'Original photo'}
-              style={S.image}
-            />
-          ) : (
+        {/* ── Canvas — image + corner handles ────────────────────────── */}
+        <div ref={containerRef} style={S.canvasArea}>
+          {!imageLoaded && (
             <div style={S.center}>
               <div style={S.spinner} />
             </div>
           )}
+          <canvas
+            ref={canvasRef}
+            style={{
+              display:    imageLoaded ? 'block' : 'none',
+              width:      '100%',
+              height:     '100%',
+              touchAction: 'none',    // prevent scroll while dragging
+              cursor:     isReceipt ? 'crosshair' : 'default',
+            }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+          />
 
           {/* Processing overlay */}
           {enhState === 'PROCESSING' && (
             <div style={S.processingOverlay}>
               <div style={S.spinner} />
               <p style={S.processingText}>
-                {mode === 'RECEIPT'
-                  ? 'Detecting edges + correcting perspective…'
+                {isReceipt
+                  ? 'Applying perspective correction + enhancement…'
                   : 'Enhancing sharpness and contrast…'}
               </p>
             </div>
           )}
         </div>
 
-        {/* ── Applied ops (after enhance) ───────────────────────────────── */}
+        {/* ── Ops list after enhance ──────────────────────────────────── */}
         {enhState === 'DONE' && appliedOps.length > 0 && (
           <div style={S.opsBar}>
             {appliedOps.map(op => (
@@ -207,28 +444,32 @@ export function ScanPreviewModal({
           </div>
         )}
 
-        {/* ── Error bar ────────────────────────────────────────────────── */}
+        {/* ── Error bar ───────────────────────────────────────────────── */}
         {enhState === 'FAILED' && enhError && (
           <div style={S.errorBar}>
-            <span style={{ fontSize: 14 }}>⚠️</span>
+            <span>⚠️</span>
             <span style={S.errorText}>{enhError}</span>
           </div>
         )}
 
-        {/* ── Info bar (idle state) ─────────────────────────────────────── */}
-        {enhState === 'IDLE' && (
+        {/* ── Info bar ────────────────────────────────────────────────── */}
+        {enhState === 'IDLE' && isReceipt && (
           <div style={S.infoBar}>
             <span style={S.infoText}>
-              {purpose === 'ODOMETER'
-                ? '📷 Tap Enhance to sharpen digits. Use Photo to save as-is.'
-                : '🧾 Tap Enhance to auto-correct angle + contrast.'}
+              ↖ Drag the 4 green handles to align with receipt edges, then tap ⚡ Enhance
+            </span>
+          </div>
+        )}
+        {enhState === 'IDLE' && !isReceipt && (
+          <div style={S.infoBar}>
+            <span style={S.infoText}>
+              📷 Tap ⚡ Enhance to sharpen the odometer reading
             </span>
           </div>
         )}
 
-        {/* ── Actions ──────────────────────────────────────────────────── */}
+        {/* ── Actions ─────────────────────────────────────────────────── */}
         <div style={S.actions}>
-
           <button
             onClick={onRetake}
             style={S.btnRetake}
@@ -237,7 +478,6 @@ export function ScanPreviewModal({
             ↩ Retake
           </button>
 
-          {/* Enhance button — shows spinner while processing, retry if failed */}
           {enhState !== 'DONE' && (
             <button
               onClick={handleEnhance}
@@ -247,8 +487,8 @@ export function ScanPreviewModal({
               }}
               disabled={enhState === 'PROCESSING'}
             >
-              {enhState === 'PROCESSING' ? '⚙ Enhancing…'
-                : enhState === 'FAILED'  ? '↺ Retry Enhance'
+              {enhState === 'PROCESSING' ? '⚙ Processing…'
+                : enhState === 'FAILED'  ? '↺ Retry'
                 : '⚡ Enhance'}
             </button>
           )}
@@ -262,7 +502,6 @@ export function ScanPreviewModal({
               ? '✓ Use Enhanced'
               : '✓ Use Photo'}
           </button>
-
         </div>
 
       </div>
@@ -301,8 +540,8 @@ const S: Record<string, React.CSSProperties> = {
     color: '#475569', fontSize: 18, cursor: 'pointer', padding: '4px 8px',
   },
   toggleBar: {
-    display: 'flex', gap: 0,
-    padding: '8px 18px',
+    display: 'flex',
+    padding: '8px 18px', gap: 0,
     borderBottom: '1px solid rgba(255,255,255,0.08)',
     flexShrink: 0,
   },
@@ -316,34 +555,30 @@ const S: Record<string, React.CSSProperties> = {
     color: '#34d399',
     borderColor: 'rgba(16,185,129,0.4)',
   },
-  imageArea: {
+  canvasArea: {
     flex: 1, position: 'relative',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#020617', overflow: 'hidden', padding: 12,
-  },
-  image: {
-    maxWidth: '100%', maxHeight: '100%',
-    objectFit: 'contain', borderRadius: 8,
-    boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
+    backgroundColor: '#000',
+    overflow: 'hidden',
   },
   center: {
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-  },
-  processingOverlay: {
     position: 'absolute', inset: 0,
-    backgroundColor: 'rgba(2,6,23,0.8)',
-    display: 'flex', flexDirection: 'column',
-    alignItems: 'center', justifyContent: 'center', gap: 16,
-  },
-  processingText: {
-    fontSize: 14, color: '#93c5fd', margin: 0,
-    textAlign: 'center', maxWidth: 260,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   spinner: {
     width: 44, height: 44, borderRadius: '50%',
     border: '3px solid rgba(255,255,255,0.1)',
     borderTop: '3px solid #3b82f6',
     animation: 'spin 0.75s linear infinite',
+  },
+  processingOverlay: {
+    position: 'absolute', inset: 0,
+    backgroundColor: 'rgba(2,6,23,0.82)',
+    display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center', gap: 16,
+  },
+  processingText: {
+    fontSize: 14, color: '#93c5fd', margin: 0,
+    textAlign: 'center', maxWidth: 280, lineHeight: 1.6,
   },
   opsBar: {
     display: 'flex', flexDirection: 'column', gap: 4,
@@ -352,7 +587,7 @@ const S: Record<string, React.CSSProperties> = {
     borderTop: '1px solid rgba(16,185,129,0.15)',
     flexShrink: 0,
   },
-  opChip: { fontSize: 12, fontWeight: 500 },
+  opChip:   { fontSize: 12, fontWeight: 500 },
   errorBar: {
     display: 'flex', alignItems: 'center', gap: 10,
     padding: '10px 18px',
@@ -363,14 +598,14 @@ const S: Record<string, React.CSSProperties> = {
   errorText: { fontSize: 12, color: '#fca5a5', flex: 1 },
   infoBar: {
     padding: '10px 18px',
-    backgroundColor: 'rgba(59,130,246,0.08)',
-    borderTop: '1px solid rgba(59,130,246,0.15)',
+    backgroundColor: 'rgba(59,130,246,0.07)',
+    borderTop: '1px solid rgba(59,130,246,0.12)',
     flexShrink: 0,
   },
-  infoText: { fontSize: 12, color: '#93c5fd' },
+  infoText: { fontSize: 12, color: '#93c5fd', lineHeight: 1.5 },
   actions: {
     display: 'flex', gap: 10,
-    padding: '16px 18px 32px',
+    padding: '14px 18px 32px',
     flexShrink: 0,
   },
   btnRetake: {
@@ -382,8 +617,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   btnEnhance: {
     flex: 1, padding: '13px 0',
-    backgroundColor: '#1e3a5f',
-    color: '#7dd3fc',
+    backgroundColor: '#1e3a5f', color: '#7dd3fc',
     border: '1px solid #1d4ed8',
     borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer',
     boxShadow: '0 2px 8px rgba(29,78,216,0.3)',

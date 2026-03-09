@@ -1,15 +1,16 @@
 'use client'
 // apps/user/components/DocumentScanner.tsx
 //
-// Step 1 (current): Camera open → capture photo → return JPEG blob.
-// Image processing (OpenCV) will be added separately in a later step.
+// Opens the device NATIVE camera (full zoom, flash, HDR — everything the
+// phone manufacturer built) via <input capture="environment">.
+// Returns a JPEG blob to the parent via onScanComplete.
 //
 // Props:
-//   onScanComplete  — called with captured JPEG Blob
-//   onClose         — called when user cancels
-//   purpose         — 'RECEIPT' | 'ODOMETER' (label only)
+//   onScanComplete — called with captured JPEG Blob
+//   onClose        — called when user cancels
+//   purpose        — 'RECEIPT' | 'ODOMETER' (label only)
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 type Props = {
   onScanComplete: (blob: Blob) => void
@@ -18,208 +19,92 @@ type Props = {
 }
 
 export function DocumentScanner({ onScanComplete, onClose, purpose = 'RECEIPT' }: Props) {
-  const [ready, setReady] = useState(false)   // camera stream is live
-  const [error, setError] = useState<string | null>(null)
+  const inputRef   = useRef<HTMLInputElement>(null)
+  const [waiting, setWaiting] = useState(true)
 
-  const videoRef  = useRef<HTMLVideoElement>(null)
-  const streamRef = useRef<MediaStream | null>(null)
+  const label = purpose === 'ODOMETER' ? 'odometer' : 'receipt'
 
-  const label = purpose === 'ODOMETER' ? 'Scan Odometer' : 'Scan Receipt'
-
-  // ── Stop camera ──────────────────────────────────────────────────────────
-  const stopCamera = useCallback(() => {
-    streamRef.current?.getTracks().forEach(t => t.stop())
-    streamRef.current = null
+  // Auto-open native camera picker on mount
+  useEffect(() => {
+    const t = setTimeout(() => {
+      inputRef.current?.click()
+    }, 120)   // small delay — iOS needs the element to be in DOM first
+    return () => clearTimeout(t)
   }, [])
 
-  const cancel = useCallback(() => { stopCamera(); onClose() }, [stopCamera, onClose])
-
-  // ── Start camera ─────────────────────────────────────────────────────────
+  // Detect cancel — window regains focus but no file was selected
   useEffect(() => {
-    let mounted = true
-
-    async function start() {
-      try {
-        let stream: MediaStream
-        try {
-          // Prefer rear camera on mobile
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: 'environment' } },
-            audio: false,
-          })
-        } catch {
-          // Fallback — any camera (desktop webcam)
-          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-        }
-
-        if (!mounted) { stream.getTracks().forEach(t => t.stop()); return }
-
-        streamRef.current = stream
-        const video = videoRef.current!
-        video.srcObject = stream
-        await video.play()
-        setReady(true)
-      } catch (e: unknown) {
-        if (!mounted) return
-        const msg = (e as Error).message ?? ''
-        if (/denied|permission|not allowed/i.test(msg)) {
-          setError('Camera permission denied. Allow camera access in your browser settings.')
-        } else if (/not found|no device|notfound|notreadable/i.test(msg)) {
-          // No camera — close silently
+    function onFocus() {
+      // Wait a tick for onChange to fire first if a file was picked
+      setTimeout(() => {
+        if (inputRef.current && !inputRef.current.files?.length) {
           onClose()
-        } else {
-          setError('Camera error: ' + msg)
         }
-      }
+      }, 400)
     }
+    window.addEventListener('focus', onFocus, { once: true })
+    return () => window.removeEventListener('focus', onFocus)
+  }, [onClose])
 
-    start()
-    return () => { mounted = false; stopCamera() }
-  }, [stopCamera, onClose])
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setWaiting(false)
+    const file = e.target.files?.[0]
+    if (!file) { onClose(); return }
 
-  // ── Capture ───────────────────────────────────────────────────────────────
-  const capture = useCallback(() => {
-    const video = videoRef.current
-    if (!video) return
+    // Force image/jpeg — some Android browsers return empty type
+    const blob = new Blob([file], { type: 'image/jpeg' })
+    onScanComplete(blob)
+  }
 
-    const canvas = document.createElement('canvas')
-    canvas.width  = video.videoWidth
-    canvas.height = video.videoHeight
-    canvas.getContext('2d')!.drawImage(video, 0, 0)
-
-    canvas.toBlob(blob => {
-      if (!blob) return
-      // Ensure mime type is always set — some Android browsers return blob with empty type
-      const safeBlob = blob.type ? blob : new Blob([blob], { type: 'image/jpeg' })
-      stopCamera()
-      onScanComplete(safeBlob)
-    }, 'image/jpeg', 0.92)
-  }, [stopCamera, onScanComplete])
-
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={S.backdrop}>
-      <div style={S.sheet}>
+    <>
+      {/* Hidden native camera input */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleChange}
+        style={{ display: 'none' }}
+      />
 
-        {/* Header */}
-        <div style={S.header}>
-          <span style={S.title}>📷 {label}</span>
-          <button onClick={cancel} style={S.closeBtn}>✕</button>
+      {/* Minimal overlay shown while picker is opening */}
+      {waiting && (
+        <div style={S.backdrop}>
+          <div style={S.sheet}>
+            <p style={S.hint}>📷 Opening camera for {label}…</p>
+            <button onClick={onClose} style={S.cancelBtn}>Cancel</button>
+          </div>
         </div>
-
-        {/* Body */}
-        <div style={S.body}>
-
-          {/* Error state */}
-          {error && (
-            <div style={S.center}>
-              <span style={{ fontSize: 40 }}>⚠️</span>
-              <p style={S.errMsg}>{error}</p>
-              <button onClick={cancel} style={S.btnCancel}>Close</button>
-            </div>
-          )}
-
-          {/* Camera loading */}
-          {!error && !ready && (
-            <div style={S.center}>
-              <div style={S.spinner} />
-              <p style={S.hint}>Opening camera…</p>
-            </div>
-          )}
-
-          {/* Live viewfinder */}
-          {!error && (
-            <video
-              ref={videoRef}
-              playsInline
-              muted
-              style={{ ...S.video, display: ready ? 'block' : 'none' }}
-            />
-          )}
-
-          {/* Shutter button */}
-          {ready && !error && (
-            <button onClick={capture} style={S.shutterWrap} aria-label="Capture photo">
-              <div style={S.shutterRing}>
-                <div style={S.shutterInner} />
-              </div>
-            </button>
-          )}
-        </div>
-
-      </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
+      )}
+    </>
   )
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
 const S: Record<string, React.CSSProperties> = {
   backdrop: {
     position: 'fixed', inset: 0,
-    backgroundColor: 'rgba(0,0,0,0.92)',
+    backgroundColor: 'rgba(2,6,23,0.85)',
     zIndex: 3000,
     display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
   },
   sheet: {
     backgroundColor: '#0f172a',
     borderRadius: '18px 18px 0 0',
-    width: '100%', maxWidth: 640, height: '95vh',
-    display: 'flex', flexDirection: 'column', overflow: 'hidden',
-  },
-  header: {
-    display: 'flex', alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '14px 18px',
-    borderBottom: '1px solid rgba(255,255,255,0.08)',
-    flexShrink: 0,
-  },
-  title:   { fontSize: 15, fontWeight: 700, color: '#f1f5f9' },
-  closeBtn: {
-    background: 'none', border: 'none',
-    color: '#64748b', fontSize: 18, cursor: 'pointer', padding: '4px 8px',
-  },
-  body: {
-    flex: 1, position: 'relative',
-    backgroundColor: '#000',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  video: {
-    width: '100%', height: '100%', objectFit: 'cover', display: 'block',
-  },
-  center: {
+    width: '100%', maxWidth: 640,
+    padding: '32px 24px 48px',
     display: 'flex', flexDirection: 'column',
-    alignItems: 'center', justifyContent: 'center',
-    gap: 16, padding: 32, textAlign: 'center',
+    alignItems: 'center', gap: 24,
   },
-  spinner: {
-    width: 44, height: 44, borderRadius: '50%',
-    border: '3px solid rgba(255,255,255,0.1)',
-    borderTop: '3px solid #3b82f6',
-    animation: 'spin 0.75s linear infinite',
+  hint: {
+    fontSize: 16, color: '#94a3b8',
+    margin: 0, textAlign: 'center',
   },
-  hint:   { fontSize: 14, color: '#94a3b8', margin: 0 },
-  errMsg: { fontSize: 14, color: '#f87171', margin: 0, maxWidth: 280, lineHeight: 1.6 },
-  shutterWrap: {
-    position: 'absolute', bottom: 28,
-    left: '50%', transform: 'translateX(-50%)',
-    background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-  },
-  shutterRing: {
-    width: 72, height: 72, borderRadius: '50%',
-    border: '3px solid rgba(255,255,255,0.8)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  shutterInner: {
-    width: 54, height: 54, borderRadius: '50%',
-    backgroundColor: '#fff',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-  },
-  btnCancel: {
-    padding: '10px 24px', backgroundColor: 'rgba(255,255,255,0.1)',
-    color: '#e2e8f0', border: '1px solid rgba(255,255,255,0.15)',
-    borderRadius: 10, fontSize: 14, cursor: 'pointer',
+  cancelBtn: {
+    padding: '12px 40px',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    color: '#e2e8f0',
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: 12, fontSize: 15, cursor: 'pointer',
   },
 }
