@@ -1,11 +1,19 @@
 'use client'
 // apps/user/app/(app)/claims/[id]/page.tsx
+// ─────────────────────────────────────────────────────────────────────────────
+// Claim detail: view + edit (DRAFT only).
+// New in this version:
+//   • TollParkingModal has "Paid by TNG" toggle.
+//     - Checked  → no amount input; item saved with mode:'TNG', amount:0.
+//                  Amount will be linked from TNG Importer later.
+//     - Unchecked → manual amount (Visa / cash / other).
+//   • ItemCard shows amber "TNG · Link pending" badge when mode=TNG.
+// ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter }              from 'next/navigation'
 import Link                                  from 'next/link'
-
-import { ReceiptUploader } from '@/components/ReceiptUploader'
+import { ReceiptUploader }                   from '@/components/ReceiptUploader'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -33,19 +41,20 @@ type Trip = {
   started_at: string
 }
 
-type ModalType = 'MILEAGE' | 'MEAL' | 'LODGING' | 'EDIT_MEAL' | 'EDIT_LODGING' | null
+type ModalType =
+  | 'MILEAGE' | 'MEAL' | 'LODGING'
+  | 'EDIT_MEAL' | 'EDIT_LODGING'
+  | 'TOLL' | 'PARKING' | 'TRANSPORT'
+  | null
 
-type MealRates = {
-  morning: number
-  noon:    number
-  evening: number
-  fullDay: number
-}
+type TransportType = 'TAXI' | 'GRAB' | 'TRAIN' | 'FLIGHT'
+
+type MealRates = { morning: number; noon: number; evening: number; fullDay: number }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
-const fmtMyr = (n: number) => 'MYR ' + Number(n).toFixed(2)
-const fmtKm  = (m: number | null) => m ? (m / 1000).toFixed(2) + ' km' : '—'
+const fmtMyr  = (n: number) => 'MYR ' + Number(n).toFixed(2)
+const fmtKm   = (m: number | null) => m ? (m / 1000).toFixed(2) + ' km' : '—'
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
@@ -62,7 +71,11 @@ function periodLabel(start: string | null, end: string | null) {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const TYPE_ICON: Record<string, string> = { MILEAGE: '🚗', MEAL: '🍽', LODGING: '🏨' }
+const TYPE_ICON: Record<string, string> = {
+  MILEAGE: '🚗', MEAL: '🍽', LODGING: '🏨',
+  TOLL: '🛣️', PARKING: '🅿️',
+  TAXI: '🚕', GRAB: '🟢', TRAIN: '🚆', FLIGHT: '✈️',
+}
 
 const SESSION_LABEL: Record<string, string> = {
   FULL_DAY: 'Full Day', MORNING: 'Morning', NOON: 'Noon', EVENING: 'Evening',
@@ -74,17 +87,34 @@ const SESSION_META = [
   { key: 'EVENING' as const, icon: '🌙', label: 'Evening', sub: 'Dinner',    rateKey: 'evening' as const },
 ]
 
+const TRANSPORT_META: { type: TransportType; icon: string; label: string }[] = [
+  { type: 'GRAB',   icon: '🟢', label: 'Grab'   },
+  { type: 'TAXI',   icon: '🚕', label: 'Taxi'   },
+  { type: 'TRAIN',  icon: '🚆', label: 'Train'  },
+  { type: 'FLIGHT', icon: '✈️', label: 'Flight' },
+]
+
 // ── Item Card ─────────────────────────────────────────────────────────────────
-// Layout: [date] | [icon type · sub] | [amount × delete]
 
 function ItemCard({ item, onDelete, onEdit, locked }: {
-  item: ClaimItem; onDelete: (id: string) => void; onEdit: (item: ClaimItem) => void; locked: boolean
+  item: ClaimItem
+  onDelete: (id: string) => void
+  onEdit: (item: ClaimItem) => void
+  locked: boolean
 }) {
   const [deleting, setDeleting] = useState(false)
+
+  const isTngPending = item.mode === 'TNG'
 
   function sub() {
     if (item.type === 'MILEAGE')
       return `${fmtKm(item.qty ? item.qty * 1000 : null)} × MYR ${item.rate?.toFixed(2)}/km`
+    if (item.type === 'TOLL' || item.type === 'PARKING') {
+      const loc = item.merchant || (item.type === 'TOLL' ? 'Toll' : 'Parking')
+      return isTngPending ? loc : loc
+    }
+    if (['TAXI', 'GRAB', 'TRAIN', 'FLIGHT'].includes(item.type))
+      return item.merchant || item.type.charAt(0) + item.type.slice(1).toLowerCase()
     const parts: string[] = []
     if (item.meal_session) parts.push(SESSION_LABEL[item.meal_session] ?? item.meal_session)
     if (item.type === 'LODGING' && item.qty) parts.push(`${item.qty} night${item.qty !== 1 ? 's' : ''}`)
@@ -92,6 +122,8 @@ function ItemCard({ item, onDelete, onEdit, locked }: {
     if (item.merchant) parts.push(item.merchant)
     return parts.join(' · ') || (item.mode === 'RECEIPT' ? 'Receipt' : 'Fixed rate')
   }
+
+  const canEdit = item.type === 'MEAL' || item.type === 'LODGING'
 
   return (
     <div style={S.itemCard}>
@@ -102,41 +134,77 @@ function ItemCard({ item, onDelete, onEdit, locked }: {
         </span>
       </div>
 
-      {/* Col 2 — type + sub */}
+      {/* Col 2 — icon + label + sub */}
       <div style={S.iBody}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 13 }}>{TYPE_ICON[item.type] ?? '📄'}</span>
           <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>{item.type}</span>
-          {item.receipt_url && (
-            <span style={{ fontSize: 9, fontWeight: 700, paddingTop: 1, paddingBottom: 1,
-              paddingLeft: 5, paddingRight: 5, borderRadius: 6,
-              backgroundColor: '#f0fdf4', color: '#15803d' }}>
-              🧾
+
+          {/* TNG pending badge */}
+          {isTngPending && (
+            <span style={{
+              fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 6,
+              backgroundColor: '#fef9c3', color: '#854d0e', letterSpacing: 0.3,
+            }}>
+              TNG · Link pending
             </span>
+          )}
+
+          {item.receipt_url && (
+            <span style={{
+              fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 6,
+              backgroundColor: '#f0fdf4', color: '#15803d',
+            }}>🧾</span>
           )}
         </div>
         <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{sub()}</div>
-        {item.notes && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2, fontStyle: 'italic' }}>{item.notes}</div>}
+        {item.notes && (
+          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2, fontStyle: 'italic' }}>
+            {item.notes}
+          </div>
+        )}
       </div>
 
       {/* Col 3 — amount + actions */}
       <div style={S.iAmt}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{fmtMyr(item.amount)}</span>
+        {isTngPending
+          ? <span style={{ fontSize: 11, fontWeight: 700, color: '#854d0e' }}>—</span>
+          : <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{fmtMyr(item.amount)}</span>
+        }
         {!locked && (
           <div style={{ display: 'flex', gap: 4 }}>
-            {(item.type === 'MEAL' || item.type === 'LODGING') && (
+            {canEdit && (
               <button
                 onClick={() => onEdit(item)}
-                style={{ padding: '2px 6px', backgroundColor: 'transparent', border: 'none', color: '#3b82f6', cursor: 'pointer', fontSize: 12 }}
+                style={{ padding: '2px 6px', background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', fontSize: 12 }}
               >✏</button>
             )}
             <button
               onClick={() => { if (confirm('Remove this item?')) { setDeleting(true); onDelete(item.id) } }}
               disabled={deleting}
-              style={{ padding: '2px 6px', backgroundColor: 'transparent', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13 }}
+              style={{ padding: '2px 6px', background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13 }}
             >✕</button>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ── Modal wrapper ─────────────────────────────────────────────────────────────
+
+function Modal({ title, onClose, children, footer }: {
+  title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode
+}) {
+  return (
+    <div style={S.overlay} onClick={onClose}>
+      <div style={S.modal} onClick={e => e.stopPropagation()}>
+        <div style={S.modalHeader}>
+          <span style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>{title}</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 16, color: '#94a3b8', cursor: 'pointer' }}>✕</button>
+        </div>
+        <div style={S.modalBody}>{children}</div>
+        {footer && <div style={S.modalFooter}>{footer}</div>}
       </div>
     </div>
   )
@@ -166,24 +234,22 @@ function MileageModal({ onAdd, onClose, alreadyAddedTripIds }: {
   }, [alreadyAddedTripIds])
 
   function toggle(id: string) {
-    setSelected(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
+    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
 
   async function handleAdd() {
     if (selected.size === 0) { setError('Select at least one trip.'); return }
     setSaving(true); setError(null)
-    try { await onAdd(Array.from(selected)) }
+    try { await onAdd([...selected]) }
     catch (e: unknown) { setError((e as Error).message); setSaving(false) }
   }
 
   const footer = (
-    <button onClick={handleAdd} disabled={saving || selected.size === 0}
-      style={{ ...S.btnModalAdd, opacity: saving || selected.size === 0 ? 0.5 : 1 }}>
-      {saving ? 'Adding…' : selected.size === 0 ? 'Select trips above' : `Add ${selected.size} Trip${selected.size > 1 ? 's' : ''}`}
+    <button
+      onClick={handleAdd} disabled={saving || selected.size === 0}
+      style={{ ...S.btnModalAdd, opacity: saving || selected.size === 0 ? 0.45 : 1 }}
+    >
+      {saving ? 'Adding…' : `Add ${selected.size > 0 ? selected.size + ' ' : ''}Trip${selected.size !== 1 ? 's' : ''}`}
     </button>
   )
 
@@ -192,248 +258,193 @@ function MileageModal({ onAdd, onClose, alreadyAddedTripIds }: {
       {loading
         ? <div style={S.mInfo}>Loading trips…</div>
         : trips.length === 0
-          ? <div style={S.mInfo}>{alreadyAddedTripIds.length > 0 ? 'All your FINAL trips are already in this claim.' : 'No FINAL trips found. Complete a GPS or planned trip first.'}</div>
-          : (
-            <>
-              <p style={{ fontSize: 12, color: '#94a3b8', margin: 0 }}>Tap to select one or more trips.</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          ? <div style={S.mInfo}>No eligible trips found.<br />Complete a trip first.</div>
+          : <>
+              <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>Select one or more completed trips:</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {trips.map(t => {
                   const isSel = selected.has(t.id)
-                  const label = t.origin_text && t.destination_text
-                    ? `${t.origin_text} → ${t.destination_text}`
-                    : t.calculation_mode === 'GPS_TRACKING' ? 'GPS Trip' : 'Planned Trip'
                   return (
                     <button key={t.id} onClick={() => toggle(t.id)} style={{
-                      ...S.tripOpt,
-                      borderColor:     isSel ? '#0f172a' : '#e2e8f0',
-                      backgroundColor: isSel ? '#f0f9ff' : '#fff',
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
+                      border: `1.5px solid ${isSel ? '#0f172a' : '#e2e8f0'}`,
+                      borderRadius: 10, backgroundColor: isSel ? '#f8fafc' : '#fff',
+                      cursor: 'pointer', textAlign: 'left',
                     }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', flex: 1, textAlign: 'left' }}>{label}</span>
-                        <span style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${isSel ? '#0f172a' : '#cbd5e1'}`, backgroundColor: isSel ? '#0f172a' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
-                          {isSel ? '✓' : ''}
-                        </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>
+                          {t.origin_text && t.destination_text
+                            ? `${t.origin_text} → ${t.destination_text}`
+                            : t.calculation_mode === 'GPS_TRACKING' ? 'GPS Trip' : 'Planned Trip'}
+                        </div>
+                        <span style={{ fontSize: 11, color: '#94a3b8' }}>{fmtKm(t.final_distance_m)} · {fmtDate(t.started_at)}</span>
                       </div>
-                      <span style={{ fontSize: 11, color: '#94a3b8' }}>{fmtKm(t.final_distance_m)} · {fmtDate(t.started_at)}</span>
+                      <span style={{
+                        width: 20, height: 20, borderRadius: 6,
+                        border: `2px solid ${isSel ? '#0f172a' : '#cbd5e1'}`,
+                        backgroundColor: isSel ? '#0f172a' : '#fff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0,
+                      }}>
+                        {isSel ? '✓' : ''}
+                      </span>
                     </button>
                   )
                 })}
               </div>
             </>
-          )}
+      }
       {error && <div style={S.errorBox}>{error}</div>}
     </Modal>
   )
 }
 
 // ── Expense Modal (Meal + Lodging) ────────────────────────────────────────────
-// Meal: checkboxes — Full Day OR individual sessions (mutually exclusive for Full Day).
-// Each ticked session → one claim_item row.
 
-function ExpenseModal({ type, onAdd, onClose, editMode = false, initialData, itemId }: {
+function ExpenseModal({ type, onAdd, onClose, editMode = false, initialData }: {
   type: 'MEAL' | 'LODGING'
-  onAdd: (data: {
-    mode: string; amount?: number; rate?: number; merchant?: string; notes?: string
-    receipt_path?: string
-    nights?: number; claim_date: string; meal_session?: string
-    lodging_check_in?: string; lodging_check_out?: string
-  }) => Promise<void>
+  onAdd: (data: Record<string, unknown>) => Promise<void>
   onClose: () => void
   editMode?: boolean
-  itemId?:   string
+  itemId?: string
   initialData?: Partial<ClaimItem>
 }) {
   const today = new Date().toISOString().slice(0, 10)
-
-  // Shared — seeded from initialData when editing
-  const initMode    = (initialData?.mode as 'FIXED_RATE' | 'RECEIPT') ?? 'FIXED_RATE'
-  const initDate    = initialData?.claim_date?.slice(0, 10) ?? today
-  const initMerchant = initialData?.merchant ?? ''
-  const initNotes   = initialData?.notes     ?? ''
-  const initAmount  = initialData?.amount    ? String(initialData.amount) : ''
-  const initCheckIn  = initialData?.lodging_check_in?.slice(0, 10)  ?? today
-  const initCheckOut = initialData?.lodging_check_out?.slice(0, 10) ?? today
-  const initNights   = initialData?.qty ? String(initialData.qty) : '1'
-  const initSession  = initialData?.meal_session ?? ''
-  const initFullDay  = initSession === 'FULL_DAY'
-  const initSessions = initSession && !initFullDay && initSession !== ''
-    ? new Set([initSession as 'MORNING' | 'NOON' | 'EVENING'])
+  const initMode      = (initialData?.mode as 'FIXED_RATE' | 'RECEIPT') ?? 'FIXED_RATE'
+  const initDate      = initialData?.claim_date?.slice(0, 10) ?? today
+  const initMerchant  = initialData?.merchant ?? ''
+  const initNotes     = initialData?.notes    ?? ''
+  const initAmount    = initialData?.amount   ? String(initialData.amount) : ''
+  const initCheckIn   = initialData?.lodging_check_in?.slice(0, 10)  ?? today
+  const initCheckOut  = initialData?.lodging_check_out?.slice(0, 10) ?? today
+  const initNights    = initialData?.qty ? String(initialData.qty) : '1'
+  const initSession   = initialData?.meal_session ?? ''
+  const initFullDay   = initSession === 'FULL_DAY'
+  const initSessions  = initSession && !initFullDay && initSession !== ''
+    ? new Set<'MORNING' | 'NOON' | 'EVENING'>([initSession as 'MORNING' | 'NOON' | 'EVENING'])
     : new Set<'MORNING' | 'NOON' | 'EVENING'>()
 
-  const [mode,      setMode]      = useState<'FIXED_RATE' | 'RECEIPT'>(initMode)
-  const [claimDate, setClaimDate] = useState(initDate)
-  const [merchant,  setMerchant]  = useState(initMerchant)
-  const [notes,     setNotes]     = useState(initNotes)
-  const [amount,    setAmount]    = useState(initAmount)
-  const [saving,    setSaving]    = useState(false)
-  const [error,     setError]     = useState<string | null>(null)
+  const [mode,        setMode]        = useState<'FIXED_RATE' | 'RECEIPT'>(initMode)
+  const [claimDate,   setClaimDate]   = useState(initDate)
+  const [merchant,    setMerchant]    = useState(initMerchant)
+  const [notes,       setNotes]       = useState(initNotes)
+  const [amount,      setAmount]      = useState(initAmount)
+  const [checkIn,     setCheckIn]     = useState(initCheckIn)
+  const [checkOut,    setCheckOut]    = useState(initCheckOut)
+  const [nights,      setNights]      = useState(initNights)
+  const [fullDay,     setFullDay]     = useState(initFullDay)
+  const [sessions,    setSessions]    = useState<Set<'MORNING' | 'NOON' | 'EVENING'>>(initSessions)
+  const [receiptPath, setReceiptPath] = useState<string | null>(null)
+  const [rates,       setRates]       = useState<MealRates>({ morning: 25, noon: 25, evening: 25, fullDay: 60 })
+  const [lodgingRate, setLodgingRate] = useState(120)
+  const [saving,      setSaving]      = useState(false)
+  const [error,       setError]       = useState<string | null>(null)
 
-  // MEAL
-  const [fullDay,   setFullDay]   = useState(initFullDay)
-  const [sessions,  setSessions]  = useState<Set<'MORNING' | 'NOON' | 'EVENING'>>(initSessions)
-  const [rates,     setRates]     = useState<MealRates>({ morning: 20, noon: 30, evening: 30, fullDay: 60 })
-
-  // LODGING
-  const [checkIn,      setCheckIn]      = useState(initCheckIn)
-  const [checkOut,     setCheckOut]     = useState(initCheckOut)
-  const [nights,       setNights]       = useState(initNights)
-  const [lodgingRate,  setLodgingRate]  = useState<number>(120)
-
-  // Receipt upload path — seeded from existing item when editing
-  const [receiptPath, setReceiptPath] = useState<string>(initialData?.receipt_url ?? '')
-
-  // Fetch rates once on mount
   useEffect(() => {
-    fetch('/api/settings/rates')
-      .then(r => r.json())
-      .then(j => {
+    fetch('/api/rates/current').then(r => r.json()).then(j => {
+      if (j.rates) {
         setRates({
-          morning: Number(j.rate?.meal_rate_morning   ?? 20),
-          noon:    Number(j.rate?.meal_rate_noon      ?? 30),
-          evening: Number(j.rate?.meal_rate_evening   ?? 30),
-          fullDay: Number(j.rate?.meal_rate_full_day  ?? 60),
+          morning: j.rates.meal_rate_morning ?? j.rates.meal_rate_per_session ?? 25,
+          noon:    j.rates.meal_rate_noon    ?? j.rates.meal_rate_per_session ?? 25,
+          evening: j.rates.meal_rate_evening ?? j.rates.meal_rate_per_session ?? 25,
+          fullDay: j.rates.meal_rate_full_day ?? 60,
         })
-        setLodgingRate(Number(j.rate?.lodging_rate_default ?? 120))
-      })
-      .catch(() => {})
+        setLodgingRate(j.rates.lodging_rate_default ?? 120)
+      }
+    }).catch(() => {})
   }, [])
 
-  // Auto-calc nights
-  useEffect(() => {
-    if (type === 'LODGING' && checkOut > checkIn) {
-      const d = Math.round((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86400000)
-      if (d > 0) setNights(String(d))
-    }
-  }, [checkIn, checkOut, type])
-
-  // Toggle full day — clears sessions
   function tickFullDay() {
-    const next = !fullDay
-    setFullDay(next)
-    if (next) setSessions(new Set())
+    setFullDay(prev => { if (!prev) setSessions(new Set()); return !prev })
   }
-
-  // Toggle session — clears full day
   function tickSession(key: 'MORNING' | 'NOON' | 'EVENING') {
-    setFullDay(false)
-    setSessions(prev => {
-      const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
-      return next
-    })
+    if (fullDay) return
+    setSessions(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
   }
 
   const nothingSelected = !fullDay && sessions.size === 0
-
-  // Running total for Fixed Rate meal
   const mealTotal = fullDay
     ? rates.fullDay
-    : Array.from(sessions).reduce((sum, k) => {
-        const meta = SESSION_META.find(s => s.key === k)
-        return sum + (meta ? rates[meta.rateKey] : 0)
-      }, 0)
+    : [...sessions].reduce((s, k) => s + (rates[k.toLowerCase() as keyof MealRates] ?? 0), 0)
 
   async function handleAdd() {
-    if (!claimDate) { setError('Date is required.'); return }
-
-    if (type === 'MEAL') {
-      // RECEIPT mode — no session selection needed, just amount
-      if (mode === 'RECEIPT') {
-        if (!amount || parseFloat(amount) <= 0) { setError('Enter a valid amount.'); return }
-        setSaving(true); setError(null)
-        try {
-          await onAdd({
-            mode, claim_date: claimDate,
-            amount:       parseFloat(amount),
-            receipt_path: receiptPath || undefined,
-            merchant: merchant.trim() || undefined,
-            notes:    notes.trim()    || undefined,
-          })
-        } catch (e: unknown) { setError((e as Error).message); setSaving(false) }
-        return
-      }
-      // FIXED_RATE mode — session selection required
-      if (nothingSelected) { setError('Tick at least one session.'); return }
-      setSaving(true); setError(null)
+    setError(null)
+    if (type === 'LODGING') {
+      if (!checkIn) { setError('Check-in date is required.'); return }
+      const nightCount = parseInt(nights) || 1
+      setSaving(true)
       try {
-        if (fullDay) {
-          await onAdd({
-            mode, claim_date: claimDate, meal_session: 'FULL_DAY',
-            merchant: merchant.trim() || undefined,
-            notes:    notes.trim()    || undefined,
-          })
-        } else {
-          for (const key of Array.from(sessions)) {
-            await onAdd({
-              mode, claim_date: claimDate, meal_session: key,
-              merchant: merchant.trim() || undefined,
-              notes:    notes.trim()    || undefined,
-            })
-          }
-        }
+        await onAdd({
+          mode, claim_date: checkIn, nights: nightCount,
+          lodging_check_in: checkIn, lodging_check_out: checkOut,
+          amount: mode === 'FIXED_RATE' ? lodgingRate * nightCount : parseFloat(amount),
+          rate:   mode === 'FIXED_RATE' ? lodgingRate : undefined,
+          receipt_path: mode === 'RECEIPT' && receiptPath ? receiptPath : undefined,
+          merchant: merchant.trim() || undefined, notes: notes.trim() || undefined,
+        })
       } catch (e: unknown) { setError((e as Error).message); setSaving(false) }
       return
     }
-
-    // LODGING
-    const nightCount = parseInt(nights) || 1
-    if (mode === 'RECEIPT' && (!amount || parseFloat(amount) <= 0)) {
-      setError('Enter a valid amount.'); return
+    if (!claimDate) { setError('Date is required.'); return }
+    if (mode === 'RECEIPT') {
+      if (!amount || parseFloat(amount) <= 0) { setError('Enter a valid amount.'); return }
+      setSaving(true)
+      try {
+        await onAdd({
+          mode: 'RECEIPT', claim_date: claimDate, amount: parseFloat(amount),
+          receipt_path: receiptPath ?? undefined,
+          merchant: merchant.trim() || undefined, notes: notes.trim() || undefined,
+        })
+      } catch (e: unknown) { setError((e as Error).message); setSaving(false) }
+      return
     }
-    setSaving(true); setError(null)
+    if (nothingSelected) { setError('Select at least one session.'); return }
+    setSaving(true)
     try {
-      await onAdd({
-        mode, claim_date: checkIn, // check-in IS the claim date for lodging
-        nights: nightCount,
-        lodging_check_in: checkIn, lodging_check_out: checkOut,
-        // FIXED_RATE: compute rate × nights; RECEIPT: use entered amount
-        amount:       mode === 'FIXED_RATE'
-                        ? lodgingRate * nightCount
-                        : parseFloat(amount),
-        rate:         mode === 'FIXED_RATE' ? lodgingRate : undefined,
-        receipt_path: mode === 'RECEIPT' && receiptPath ? receiptPath : undefined,
-        merchant: merchant.trim() || undefined,
-        notes:    notes.trim()    || undefined,
-      })
+      if (fullDay) {
+        await onAdd({ mode: 'FIXED_RATE', claim_date: claimDate, meal_session: 'FULL_DAY', amount: rates.fullDay, rate: rates.fullDay })
+      } else {
+        for (const s of sessions) {
+          const r = rates[s.toLowerCase() as keyof MealRates]
+          await onAdd({ mode: 'FIXED_RATE', claim_date: claimDate, meal_session: s, amount: r, rate: r })
+        }
+      }
     } catch (e: unknown) { setError((e as Error).message); setSaving(false) }
   }
 
   const nightCount = parseInt(nights) || 1
-  const lodgingTotal = lodgingRate * nightCount
-
-  const btnLabel = saving ? (editMode ? 'Saving…' : 'Adding…')
+  const btnLabel = saving
+    ? (editMode ? 'Saving…' : 'Adding…')
     : type === 'LODGING'
-      ? mode === 'FIXED_RATE'
-        ? `Add Lodging · MYR ${lodgingTotal.toFixed(2)}`
-        : 'Add Lodging'
-    : /* MEAL */
-      mode === 'RECEIPT'
-        ? amount && parseFloat(amount) > 0
-          ? `Add Meal · MYR ${parseFloat(amount).toFixed(2)}`
-          : 'Add Meal'
-        : nothingSelected
-          ? 'Add Meal'
-          : `Add Meal · MYR ${mealTotal.toFixed(2)}`
+      ? mode === 'FIXED_RATE' ? `Add Lodging · MYR ${(lodgingRate * nightCount).toFixed(2)}` : 'Add Lodging'
+      : mode === 'RECEIPT'
+        ? amount && parseFloat(amount) > 0 ? `Add Meal · MYR ${parseFloat(amount).toFixed(2)}` : 'Add Meal'
+        : nothingSelected ? 'Add Meal' : `Add Meal · MYR ${mealTotal.toFixed(2)}`
 
-  // Disable logic per mode/type
-  const mealDisabled   = type === 'MEAL'    && mode === 'FIXED_RATE' && nothingSelected
-  const mealRxDisabled = type === 'MEAL'    && mode === 'RECEIPT'    && (!amount || parseFloat(amount) <= 0)
-  const btnDisabled    = saving || mealDisabled || mealRxDisabled
-
-  const footer = (
-    <button
-      onClick={handleAdd}
-      disabled={btnDisabled}
-      style={{ ...S.btnModalAdd, opacity: btnDisabled ? 0.45 : 1 }}
-    >
-      {btnLabel}
-    </button>
-  )
+  const btnDisabled = saving
+    || (type === 'MEAL' && mode === 'FIXED_RATE' && nothingSelected)
+    || (type === 'MEAL' && mode === 'RECEIPT' && (!amount || parseFloat(amount) <= 0))
 
   return (
-    <Modal title={editMode ? (type === 'MEAL' ? 'Edit Meal' : 'Edit Lodging') : (type === 'MEAL' ? 'Add Meal' : 'Add Lodging')} onClose={onClose} footer={footer}>
+    <Modal
+      title={editMode ? (type === 'MEAL' ? 'Edit Meal' : 'Edit Lodging') : (type === 'MEAL' ? 'Add Meal' : 'Add Lodging')}
+      onClose={onClose}
+      footer={<button onClick={handleAdd} disabled={btnDisabled} style={{ ...S.btnModalAdd, opacity: btnDisabled ? 0.45 : 1 }}>{btnLabel}</button>}
+    >
+      {/* Mode toggle */}
+      <div style={{ display: 'flex', gap: 6, backgroundColor: '#f1f5f9', borderRadius: 8, padding: 4 }}>
+        {(['FIXED_RATE', 'RECEIPT'] as const).map(m => (
+          <button key={m} onClick={() => setMode(m)} style={{
+            flex: 1, padding: '7px 0', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600,
+            backgroundColor: mode === m ? '#fff' : 'transparent',
+            color:           mode === m ? '#0f172a' : '#64748b',
+            boxShadow:       mode === m ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+          }}>
+            {m === 'FIXED_RATE' ? 'Fixed Rate' : 'Receipt'}
+          </button>
+        ))}
+      </div>
 
-      {/* Date — Meal only; Lodging uses Check-in as the claim date */}
       {type === 'MEAL' && (
         <div style={S.field}>
           <label style={S.label}>Date <span style={{ color: '#dc2626' }}>*</span></label>
@@ -441,45 +452,35 @@ function ExpenseModal({ type, onAdd, onClose, editMode = false, initialData, ite
         </div>
       )}
 
-      {/* ── MEAL checkboxes — only shown in FIXED_RATE mode ─────── */}
       {type === 'MEAL' && mode === 'FIXED_RATE' && (
         <div style={S.field}>
-          <label style={S.label}>Sessions to claim <span style={{ color: '#dc2626' }}>*</span></label>
-
-          {/* Full Day */}
-          <CheckRow
-            checked={fullDay}
-            onToggle={tickFullDay}
-            icon="☀️"
-            label="Full Day"
-            sub="Breakfast + Lunch + Dinner (all sessions)"
-            amt={`MYR ${rates.fullDay.toFixed(2)}`}
-          />
-
-          {/* Divider */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, marginBottom: 4 }}>
+          <label style={S.label}>Sessions <span style={{ color: '#dc2626' }}>*</span></label>
+          <button onClick={tickFullDay} style={{ ...S.sessionBtn, borderColor: fullDay ? '#0f172a' : '#e2e8f0', backgroundColor: fullDay ? '#f8fafc' : '#fff', marginBottom: 4 }}>
+            <span style={{ fontSize: 16 }}>☀️</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>Full Day</div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>Breakfast + Lunch + Dinner</div>
+            </div>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b' }}>MYR {rates.fullDay.toFixed(2)}</span>
+          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <div style={{ flex: 1, height: 1, backgroundColor: '#e2e8f0' }} />
             <span style={{ fontSize: 11, color: '#94a3b8' }}>or by session</span>
             <div style={{ flex: 1, height: 1, backgroundColor: '#e2e8f0' }} />
           </div>
-
-          {/* Per session */}
           {SESSION_META.map(s => (
-            <CheckRow
-              key={s.key}
-              checked={sessions.has(s.key)}
-              disabled={fullDay}
-              onToggle={() => tickSession(s.key)}
-              icon={s.icon}
-              label={s.label}
-              sub={s.sub}
-              amt={`MYR ${rates[s.rateKey].toFixed(2)}`}
-            />
+            <button key={s.key} onClick={() => tickSession(s.key)} disabled={fullDay} style={{ ...S.sessionBtn, borderColor: sessions.has(s.key) && !fullDay ? '#0f172a' : '#e2e8f0', backgroundColor: sessions.has(s.key) && !fullDay ? '#f8fafc' : '#fff', opacity: fullDay ? 0.4 : 1, marginBottom: 4 }}>
+              <span style={{ fontSize: 16 }}>{s.icon}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{s.label}</div>
+                <div style={{ fontSize: 11, color: '#64748b' }}>{s.sub}</div>
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b' }}>MYR {rates[s.rateKey].toFixed(2)}</span>
+            </button>
           ))}
         </div>
       )}
 
-      {/* ── LODGING dates ─────────────────────────────────────────── */}
       {type === 'LODGING' && (
         <>
           <div style={{ display: 'flex', gap: 10 }}>
@@ -488,84 +489,35 @@ function ExpenseModal({ type, onAdd, onClose, editMode = false, initialData, ite
               <input type="date" value={checkIn} onChange={e => setCheckIn(e.target.value)} style={S.input} />
             </div>
             <div style={S.field}>
-              <label style={S.label}>Check-out <span style={{ color: '#dc2626' }}>*</span></label>
+              <label style={S.label}>Check-out</label>
               <input type="date" value={checkOut} onChange={e => setCheckOut(e.target.value)} style={S.input} />
             </div>
           </div>
-          <p style={{ fontSize: 12, color: '#64748b', margin: 0, fontWeight: 500 }}>
-            {nights} night{parseInt(nights) !== 1 ? 's' : ''}
-          </p>
+          <div style={S.field}>
+            <label style={S.label}>Nights</label>
+            <input type="number" min="1" value={nights} onChange={e => setNights(e.target.value)} style={S.input} />
+          </div>
         </>
       )}
 
-      {/* Lodging FIXED_RATE rate summary */}
-      {type === 'LODGING' && mode === 'FIXED_RATE' && (
-        <div style={{
-          backgroundColor: '#f8fafc',
-          borderWidth: 1, borderStyle: 'solid', borderColor: '#e2e8f0',
-          borderRadius: 10,
-          paddingTop: 12, paddingBottom: 12, paddingLeft: 14, paddingRight: 14,
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <span style={{ fontSize: 12, color: '#64748b' }}>Rate per night</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
-              MYR {lodgingRate.toFixed(2)}
-            </span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, color: '#64748b' }}>× {parseInt(nights) || 1} night{parseInt(nights) !== 1 ? 's' : ''}</span>
-            <span style={{ fontSize: 15, fontWeight: 800, color: '#0f172a' }}>
-              MYR {(lodgingRate * (parseInt(nights) || 1)).toFixed(2)}
-            </span>
-          </div>
-          <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 6 }}>
-            Rate from your Settings. Change it in Settings → Rates.
-          </div>
+      {mode === 'RECEIPT' && (
+        <div style={S.field}>
+          <label style={S.label}>Amount (MYR) <span style={{ color: '#dc2626' }}>*</span></label>
+          <input type="number" min="0" step="0.01" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} style={S.input} />
         </div>
       )}
 
-      {/* Mode toggle */}
-      <div style={S.modeRow}>
-        <button onClick={() => setMode('FIXED_RATE')} style={{ ...S.modeBtn, backgroundColor: mode === 'FIXED_RATE' ? '#0f172a' : '#f1f5f9', color: mode === 'FIXED_RATE' ? '#fff' : '#374151' }}>
-          ⚡ Fixed Rate
-        </button>
-        <button onClick={() => setMode('RECEIPT')} style={{ ...S.modeBtn, backgroundColor: mode === 'RECEIPT' ? '#0f172a' : '#f1f5f9', color: mode === 'RECEIPT' ? '#fff' : '#374151' }}>
-          🧾 Receipt
-        </button>
-      </div>
-
-      {mode === 'RECEIPT' && (
-        <>
-          <div style={S.field}>
-            <label style={S.label}>Amount (MYR) <span style={{ color: '#dc2626' }}>*</span></label>
-            <input
-              value={amount}
-              onChange={e => { if (e.target.value === '' || /^\d*\.?\d*$/.test(e.target.value)) setAmount(e.target.value) }}
-              placeholder="0.00" inputMode="decimal" style={S.input}
-            />
-          </div>
-          <div style={S.field}>
-            <label style={S.label}>Receipt Photo (optional)</label>
-            <ReceiptUploader
-              storagePath={receiptPath || null}
-              onUploaded={path => setReceiptPath(path)}
-              enableScan={true}
-            />
-          </div>
-        </>
-      )}
-
       <div style={S.field}>
-        <label style={S.label}>Merchant / Vendor (optional)</label>
-        <input value={merchant} onChange={e => setMerchant(e.target.value)}
-          placeholder={type === 'MEAL' ? 'e.g. Nasi Kandar Pelita' : 'e.g. Hotel Maya KL'}
-          style={S.input} />
+        <label style={S.label}>Merchant (optional)</label>
+        <input type="text" value={merchant} onChange={e => setMerchant(e.target.value)} style={S.input} />
       </div>
-
       <div style={S.field}>
         <label style={S.label}>Notes (optional)</label>
-        <input value={notes} onChange={e => setNotes(e.target.value)}
-          placeholder="e.g. Working lunch" style={S.input} />
+        <input type="text" value={notes} onChange={e => setNotes(e.target.value)} style={S.input} />
+      </div>
+      <div style={S.field}>
+        <label style={S.label}>Receipt (optional)</label>
+        <ReceiptUploader purpose="RECEIPT" onUploadComplete={url => setReceiptPath(url)} />
       </div>
 
       {error && <div style={S.errorBox}>{error}</div>}
@@ -573,67 +525,269 @@ function ExpenseModal({ type, onAdd, onClose, editMode = false, initialData, ite
   )
 }
 
-// ── CheckRow — reusable checkbox row ─────────────────────────────────────────
+// ── Toll / Parking Modal ──────────────────────────────────────────────────────
+// "Paid by TNG" toggle:
+//   ON  → no amount field; item saved mode:'TNG', amount:0.
+//         Amount will be auto-filled when user links a TNG statement entry.
+//   OFF → manual amount field (Visa / cash / other method).
 
-function CheckRow({ checked, onToggle, disabled = false, icon, label, sub, amt }: {
-  checked: boolean; onToggle: () => void; disabled?: boolean
-  icon: string; label: string; sub: string; amt: string
+function TollParkingModal({ type, onAdd, onClose }: {
+  type: 'TOLL' | 'PARKING'
+  onAdd: (data: Record<string, unknown>) => Promise<void>
+  onClose: () => void
 }) {
+  const today = new Date().toISOString().slice(0, 10)
+
+  const [tngMode,       setTngMode]       = useState(false)
+  const [claimDate,     setClaimDate]     = useState(today)
+  const [amount,        setAmount]        = useState('')
+  const [entryLocation, setEntryLocation] = useState('')
+  const [exitLocation,  setExitLocation]  = useState('')
+  const [location,      setLocation]      = useState('')
+  const [notes,         setNotes]         = useState('')
+  const [receiptPath,   setReceiptPath]   = useState<string | null>(null)
+  const [saving,        setSaving]        = useState(false)
+  const [error,         setError]         = useState<string | null>(null)
+
+  async function handleAdd() {
+    setError(null)
+    if (!claimDate) { setError('Date is required.'); return }
+    if (!tngMode && (!amount || parseFloat(amount) <= 0)) {
+      setError('Enter the amount paid.'); return
+    }
+    setSaving(true)
+    try {
+      await onAdd({
+        type,
+        mode:          tngMode ? 'TNG' : 'MANUAL',
+        amount:        tngMode ? 0 : parseFloat(amount),
+        claim_date:    claimDate,
+        entry_location: type === 'TOLL'    ? entryLocation.trim() || undefined : undefined,
+        exit_location:  type === 'TOLL'    ? exitLocation.trim()  || undefined : undefined,
+        location:       type === 'PARKING' ? location.trim()      || undefined : undefined,
+        notes:          notes.trim() || undefined,
+        receipt_url:    !tngMode && receiptPath ? receiptPath : undefined,
+      })
+    } catch (e: unknown) { setError((e as Error).message); setSaving(false) }
+  }
+
+  const amtNum     = parseFloat(amount)
+  const btnDisabled = saving || (!tngMode && (!amount || parseFloat(amount) <= 0))
+  const label      = type === 'TOLL' ? 'Toll' : 'Parking'
+  const btnLabel   = saving
+    ? 'Adding…'
+    : tngMode
+      ? `Add ${label} · TNG`
+      : `Add ${label}${!isNaN(amtNum) && amtNum > 0 ? ` · MYR ${amtNum.toFixed(2)}` : ''}`
+
   return (
-    <button
-      onClick={onToggle}
-      disabled={disabled}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-        paddingTop: 10, paddingBottom: 10, paddingLeft: 12, paddingRight: 12,
-        border: `1.5px solid ${checked ? '#0f172a' : '#e2e8f0'}`,
-        borderRadius: 10, cursor: disabled ? 'not-allowed' : 'pointer',
-        textAlign: 'left', backgroundColor: checked ? '#f0f9ff' : '#fff',
-        opacity: disabled ? 0.4 : 1, marginBottom: 6,
-        boxSizing: 'border-box',
-      }}
+    <Modal
+      title={`Add ${label}`}
+      onClose={onClose}
+      footer={
+        <button onClick={handleAdd} disabled={btnDisabled} style={{ ...S.btnModalAdd, opacity: btnDisabled ? 0.45 : 1 }}>
+          {btnLabel}
+        </button>
+      }
     >
-      {/* Checkbox */}
-      <div style={{
-        width: 20, height: 20, borderRadius: 5, flexShrink: 0,
-        border: `2px solid ${checked ? '#0f172a' : '#cbd5e1'}`,
-        backgroundColor: checked ? '#0f172a' : '#fff',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 11, fontWeight: 800, color: '#fff',
-      }}>
-        {checked ? '✓' : ''}
+      {/* Date */}
+      <div style={S.field}>
+        <label style={S.label}>Date <span style={{ color: '#dc2626' }}>*</span></label>
+        <input type="date" value={claimDate} onChange={e => setClaimDate(e.target.value)} style={S.input} />
       </div>
 
-      {/* Icon + text */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>
-          {icon} {label}
+      {/* ── TNG TOGGLE ─────────────────────────────────────────────────────── */}
+      <button
+        onClick={() => { setTngMode(p => !p); setAmount('') }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '12px 14px', border: `2px solid ${tngMode ? '#0f172a' : '#e2e8f0'}`,
+          borderRadius: 12, backgroundColor: tngMode ? '#f8fafc' : '#fff',
+          cursor: 'pointer', textAlign: 'left', width: '100%',
+        }}
+      >
+        {/* Toggle pill */}
+        <div style={{
+          width: 40, height: 22, borderRadius: 11, flexShrink: 0,
+          backgroundColor: tngMode ? '#0f172a' : '#cbd5e1',
+          position: 'relative', transition: 'background-color 0.15s',
+        }}>
+          <div style={{
+            position: 'absolute', top: 3, left: tngMode ? 20 : 3,
+            width: 16, height: 16, borderRadius: '50%', backgroundColor: '#fff',
+            transition: 'left 0.15s',
+          }} />
         </div>
-        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{sub}</div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
+            Paid by TNG (Touch 'n Go)
+          </div>
+          <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+            {tngMode
+              ? 'Amount will be auto-filled from your TNG Statement in TNG Importer'
+              : 'Toggle ON if this was charged to your TNG card'}
+          </div>
+        </div>
+      </button>
+
+      {/* ── TNG ON: info banner ─────────────────────────────────────────────── */}
+      {tngMode && (
+        <div style={{
+          display: 'flex', gap: 10, padding: '12px 14px',
+          backgroundColor: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10,
+        }}>
+          <span style={{ fontSize: 18, flexShrink: 0 }}>💳</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#854d0e' }}>
+              TNG — amount pending
+            </div>
+            <div style={{ fontSize: 12, color: '#92400e', marginTop: 2, lineHeight: 1.5 }}>
+              This item will show as <strong>TNG · Link pending</strong> in your claim.
+              Go to <strong>TNG Importer</strong> to upload your eStatement and link
+              the matching transaction to fill in the exact amount.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TNG OFF: manual amount + receipt ───────────────────────────────── */}
+      {!tngMode && (
+        <>
+          <div style={S.field}>
+            <label style={S.label}>Amount (MYR) <span style={{ color: '#dc2626' }}>*</span></label>
+            <input
+              type="number" min="0" step="0.01" placeholder="0.00"
+              value={amount} onChange={e => setAmount(e.target.value)}
+              style={S.input}
+            />
+            <span style={{ fontSize: 11, color: '#94a3b8' }}>Visa / cash / other method</span>
+          </div>
+          <div style={S.field}>
+            <label style={S.label}>Receipt (optional)</label>
+            <ReceiptUploader purpose="RECEIPT" onUploadComplete={url => setReceiptPath(url)} />
+          </div>
+        </>
+      )}
+
+      {/* Location fields */}
+      {type === 'TOLL' && (
+        <>
+          <div style={S.field}>
+            <label style={S.label}>Entry Plaza (optional)</label>
+            <input type="text" placeholder="e.g. PLUS – TAPAH" value={entryLocation} onChange={e => setEntryLocation(e.target.value)} style={S.input} />
+          </div>
+          <div style={S.field}>
+            <label style={S.label}>Exit Plaza (optional)</label>
+            <input type="text" placeholder="e.g. PLUS – SUBANG" value={exitLocation} onChange={e => setExitLocation(e.target.value)} style={S.input} />
+          </div>
+        </>
+      )}
+      {type === 'PARKING' && (
+        <div style={S.field}>
+          <label style={S.label}>Location (optional)</label>
+          <input type="text" placeholder="e.g. IOI City Mall" value={location} onChange={e => setLocation(e.target.value)} style={S.input} />
+        </div>
+      )}
+
+      <div style={S.field}>
+        <label style={S.label}>Notes (optional)</label>
+        <input type="text" value={notes} onChange={e => setNotes(e.target.value)} style={S.input} />
       </div>
 
-      {/* Amount */}
-      <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', flexShrink: 0 }}>{amt}</span>
-    </button>
+      {error && <div style={S.errorBox}>{error}</div>}
+    </Modal>
   )
 }
 
-// ── Modal wrapper ─────────────────────────────────────────────────────────────
+// ── Transport Modal (Taxi / Grab / Train / Flight) ────────────────────────────
 
-function Modal({ title, onClose, children, footer }: {
-  title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode
+function TransportModal({ onAdd, onClose }: {
+  onAdd: (data: Record<string, unknown>) => Promise<void>
+  onClose: () => void
 }) {
+  const today = new Date().toISOString().slice(0, 10)
+  const [transportType, setTransportType] = useState<TransportType>('GRAB')
+  const [claimDate,     setClaimDate]     = useState(today)
+  const [amount,        setAmount]        = useState('')
+  const [merchant,      setMerchant]      = useState('')
+  const [notes,         setNotes]         = useState('')
+  const [receiptPath,   setReceiptPath]   = useState<string | null>(null)
+  const [saving,        setSaving]        = useState(false)
+  const [error,         setError]         = useState<string | null>(null)
+
+  async function handleAdd() {
+    setError(null)
+    if (!claimDate)                         { setError('Date is required.'); return }
+    if (!amount || parseFloat(amount) <= 0) { setError('Amount is required.'); return }
+    setSaving(true)
+    try {
+      await onAdd({
+        type: transportType, amount: parseFloat(amount), claim_date: claimDate,
+        merchant: merchant.trim() || undefined, notes: notes.trim() || undefined,
+        receipt_url: receiptPath ?? undefined,
+      })
+    } catch (e: unknown) { setError((e as Error).message); setSaving(false) }
+  }
+
+  const amtNum    = parseFloat(amount)
+  const btnDisabled = saving || !amount || parseFloat(amount) <= 0
+  const btnLabel  = saving
+    ? 'Adding…'
+    : `Add ${transportType.charAt(0) + transportType.slice(1).toLowerCase()}${!isNaN(amtNum) && amtNum > 0 ? ` · MYR ${amtNum.toFixed(2)}` : ''}`
+
   return (
-    <div style={S.overlay} onClick={onClose}>
-      <div style={S.modal} onClick={e => e.stopPropagation()}>
-        <div style={S.modalHeader}>
-          <span style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>{title}</span>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 16, color: '#94a3b8', cursor: 'pointer' }}>✕</button>
+    <Modal title="Add Transport" onClose={onClose}
+      footer={<button onClick={handleAdd} disabled={btnDisabled} style={{ ...S.btnModalAdd, opacity: btnDisabled ? 0.45 : 1 }}>{btnLabel}</button>}
+    >
+      <div style={S.field}>
+        <label style={S.label}>Transport Type</label>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {TRANSPORT_META.map(t => (
+            <button key={t.type} onClick={() => setTransportType(t.type)} style={{
+              flex: 1, paddingTop: 10, paddingBottom: 10, border: 'none', borderRadius: 10, cursor: 'pointer',
+              fontSize: 11, fontWeight: 700,
+              backgroundColor: transportType === t.type ? '#0f172a' : '#f1f5f9',
+              color:           transportType === t.type ? '#fff'    : '#64748b',
+            }}>
+              <div style={{ fontSize: 18, marginBottom: 2 }}>{t.icon}</div>
+              {t.label}
+            </button>
+          ))}
         </div>
-        <div style={S.modalBody}>{children}</div>
-        {footer && <div style={S.modalFooter}>{footer}</div>}
       </div>
-    </div>
+      <div style={S.field}>
+        <label style={S.label}>Date <span style={{ color: '#dc2626' }}>*</span></label>
+        <input type="date" value={claimDate} onChange={e => setClaimDate(e.target.value)} style={S.input} />
+      </div>
+      <div style={S.field}>
+        <label style={S.label}>Amount (MYR) <span style={{ color: '#dc2626' }}>*</span></label>
+        <input type="number" min="0" step="0.01" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} style={S.input} />
+      </div>
+      <div style={S.field}>
+        <label style={S.label}>
+          {transportType === 'GRAB' || transportType === 'TAXI' ? 'Route / Description (optional)' : 'Operator / Route (optional)'}
+        </label>
+        <input
+          type="text"
+          placeholder={
+            transportType === 'GRAB'   ? 'e.g. KL Sentral → KLCC' :
+            transportType === 'TAXI'   ? 'e.g. Airport → Hotel' :
+            transportType === 'TRAIN'  ? 'e.g. ETS Ipoh → KL Sentral' :
+            'e.g. AirAsia KUL → PEN'
+          }
+          value={merchant} onChange={e => setMerchant(e.target.value)} style={S.input}
+        />
+      </div>
+      <div style={S.field}>
+        <label style={S.label}>Notes (optional)</label>
+        <input type="text" value={notes} onChange={e => setNotes(e.target.value)} style={S.input} />
+      </div>
+      <div style={S.field}>
+        <label style={S.label}>Receipt (optional)</label>
+        <ReceiptUploader purpose="RECEIPT" onUploadComplete={url => setReceiptPath(url)} />
+      </div>
+      {error && <div style={S.errorBox}>{error}</div>}
+    </Modal>
   )
 }
 
@@ -651,18 +805,16 @@ export default function ClaimDetailPage() {
   const [submitting,  setSubmitting] = useState(false)
   const [submitErr,   setSubmitErr]  = useState<string | null>(null)
   const [sortMode,    setSortMode]   = useState<'DATE_TYPE' | 'TYPE_DATE'>('DATE_TYPE')
-  const [deleting,      setDeleting]      = useState(false)
-  const [deleteErr,     setDeleteErr]     = useState<string | null>(null)
+  const [deleting,    setDeleting]   = useState(false)
+  const [deleteErr,   setDeleteErr]  = useState<string | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [editingItem,   setEditingItem]   = useState<ClaimItem | null>(null)
+  const [editingItem, setEditingItem] = useState<ClaimItem | null>(null)
 
   const load = useCallback(async () => {
     const res  = await fetch(`/api/claims/${id}`)
     const json = await res.json()
     if (!res.ok) { setError(json.error?.message ?? 'Not found.'); setLoading(false); return }
-    setClaim(json.claim)
-    setItems(json.items ?? [])
-    setLoading(false)
+    setClaim(json.claim); setItems(json.items ?? []); setLoading(false)
   }, [id])
 
   useEffect(() => { load() }, [load])
@@ -671,7 +823,7 @@ export default function ClaimDetailPage() {
     for (const trip_id of trip_ids) {
       const res  = await fetch(`/api/claims/${id}/items`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body:   JSON.stringify({ type: 'MILEAGE', trip_id }),
+        body: JSON.stringify({ type: 'MILEAGE', trip_id }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error?.message ?? 'Failed.')
@@ -680,16 +832,19 @@ export default function ClaimDetailPage() {
   }
 
   async function addExpense(type: 'MEAL' | 'LODGING', data: Record<string, unknown>) {
-    // receipt_path from ReceiptUploader → stored as receipt_url in DB
     const { receipt_path, ...rest } = data
-    const body = {
-      type,
-      ...rest,
-      ...(receipt_path ? { receipt_url: receipt_path } : {}),
-    }
+    const body = { type, ...rest, ...(receipt_path ? { receipt_url: receipt_path } : {}) }
     const res  = await fetch(`/api/claims/${id}/items`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body:   JSON.stringify(body),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    })
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error?.message ?? 'Failed.')
+    await load(); setModal(null)
+  }
+
+  async function addTransportItem(data: Record<string, unknown>) {
+    const res  = await fetch(`/api/claims/${id}/items`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
     })
     const json = await res.json()
     if (!res.ok) throw new Error(json.error?.message ?? 'Failed.')
@@ -702,15 +857,10 @@ export default function ClaimDetailPage() {
   }
 
   async function updateExpense(itemId: string, type: 'MEAL' | 'LODGING', data: Record<string, unknown>) {
-    const { receipt_path, ...rest } = data as Record<string, unknown>
-    const body = {
-      type,
-      ...rest,
-      ...(receipt_path ? { receipt_url: receipt_path } : {}),
-    }
+    const { receipt_path, ...rest } = data
+    const body = { type, ...rest, ...(receipt_path ? { receipt_url: receipt_path } : {}) }
     const res  = await fetch(`/api/claims/${id}/items/${itemId}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body:   JSON.stringify(body),
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     })
     const json = await res.json()
     if (!res.ok) throw new Error(json.error?.message ?? 'Failed to update.')
@@ -730,16 +880,24 @@ export default function ClaimDetailPage() {
       <div style={{ width: 36, height: 36, borderRadius: '50%', border: '3px solid #e2e8f0', borderTop: '3px solid #0f172a' }} />
     </div>
   )
-
-  if (error) return (
-    <div style={{ padding: 24, color: '#dc2626', fontSize: 14 }}>{error}</div>
-  )
-
+  if (error) return <div style={{ padding: 24, color: '#dc2626', fontSize: 14 }}>{error}</div>
   if (!claim) return null
 
-  const isDraft  = claim.status === 'DRAFT'
-  const locked   = !isDraft
-  const title    = claim.title || periodLabel(claim.period_start, claim.period_end)
+  const isDraft = claim.status === 'DRAFT'
+  const locked  = !isDraft
+  const title   = claim.title || periodLabel(claim.period_start, claim.period_end)
+
+  const typeOrder: Record<string, number> = {
+    MILEAGE: 0, MEAL: 1, LODGING: 2,
+    TOLL: 3, PARKING: 4,
+    TAXI: 5, GRAB: 6, TRAIN: 7, FLIGHT: 8,
+  }
+
+  // TNG items have amount=0, exclude from displayed total (shown separately)
+  const confirmedTotal = items
+    .filter(i => i.mode !== 'TNG')
+    .reduce((sum, i) => sum + (Number(i.amount) || 0), 0)
+  const tngPendingCount = items.filter(i => i.mode === 'TNG').length
 
   return (
     <div style={S.page}>
@@ -774,12 +932,28 @@ export default function ClaimDetailPage() {
         </div>
       )}
 
+      {/* TNG pending banner */}
+      {isDraft && tngPendingCount > 0 && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', backgroundColor: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10 }}>
+          <span style={{ fontSize: 18, flexShrink: 0 }}>💳</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#854d0e' }}>
+              {tngPendingCount} TNG item{tngPendingCount > 1 ? 's' : ''} pending link
+            </div>
+            <div style={{ fontSize: 12, color: '#92400e', marginTop: 2 }}>
+              Upload your TNG eStatement to fill in the amounts.
+            </div>
+          </div>
+          <Link href="/tng" style={{ fontSize: 12, fontWeight: 700, color: '#854d0e', textDecoration: 'none', padding: '4px 10px', border: '1px solid #f59e0b', borderRadius: 8, backgroundColor: '#fff', flexShrink: 0 }}>
+            Open TNG Importer →
+          </Link>
+        </div>
+      )}
+
       {/* Items */}
       <div style={S.section}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #f1f5f9' }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>
-            Items ({items.length})
-          </span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>Items ({items.length})</span>
           {items.length > 1 && (
             <div style={{ display: 'flex', gap: 4, backgroundColor: '#f8fafc', borderRadius: 8, padding: 3 }}>
               {(['DATE_TYPE', 'TYPE_DATE'] as const).map(m => (
@@ -795,14 +969,12 @@ export default function ClaimDetailPage() {
           )}
         </div>
         {items.length === 0
-          ? <div style={{ padding: '24px 16px', fontSize: 13, color: '#94a3b8', textAlign: 'center' }}>No items yet. Add mileage, meal, or lodging.</div>
+          ? <div style={{ padding: '24px 16px', fontSize: 13, color: '#94a3b8', textAlign: 'center' }}>No items yet.</div>
           : <div style={{ display: 'flex', flexDirection: 'column' }}>
               {[...items].sort((a, b) => {
                 const dateA = a.claim_date ?? a.lodging_check_in ?? ''
                 const dateB = b.claim_date ?? b.lodging_check_in ?? ''
-                const typeOrder: Record<string, number> = { MILEAGE: 0, MEAL: 1, LODGING: 2 }
-                const tA = typeOrder[a.type] ?? 9
-                const tB = typeOrder[b.type] ?? 9
+                const tA = typeOrder[a.type] ?? 9, tB = typeOrder[b.type] ?? 9
                 if (sortMode === 'DATE_TYPE') {
                   if (dateA !== dateB) return dateA < dateB ? -1 : 1
                   return tA - tB
@@ -812,87 +984,62 @@ export default function ClaimDetailPage() {
                   return 0
                 }
               }).map(item => (
-                <ItemCard key={item.id} item={item} onDelete={deleteItem} onEdit={item => { setEditingItem(item); setModal(item.type === 'MEAL' ? 'EDIT_MEAL' : 'EDIT_LODGING') }} locked={locked} />
+                <ItemCard
+                  key={item.id} item={item} locked={locked}
+                  onDelete={deleteItem}
+                  onEdit={item => { setEditingItem(item); setModal(item.type === 'MEAL' ? 'EDIT_MEAL' : 'EDIT_LODGING') }}
+                />
               ))}
             </div>
         }
       </div>
 
-      {/* Total
-           DRAFT  → live sum from items (DB total_amount may be stale / 0)
-           SUBMITTED → locked snapshot from claim.total_amount (audit-safe) */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: 12 }}>
-        <span style={{ fontSize: 14, fontWeight: 600, color: '#64748b' }}>Total</span>
-        <span style={{ fontSize: 22, fontWeight: 800, color: '#0f172a' }}>
-          {fmtMyr(isDraft
-            ? items.reduce((sum, i) => sum + (Number(i.amount) || 0), 0)
-            : claim.total_amount
-          )}
-        </span>
+      {/* Total */}
+      <div style={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px' }}>
+          <span style={{ fontSize: 14, fontWeight: 600, color: '#64748b' }}>Confirmed Total</span>
+          <span style={{ fontSize: 22, fontWeight: 800, color: '#0f172a' }}>
+            {fmtMyr(isDraft ? confirmedTotal : claim.total_amount)}
+          </span>
+        </div>
+        {isDraft && tngPendingCount > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 16px', borderTop: '1px solid #f1f5f9' }}>
+            <span style={{ fontSize: 12, color: '#854d0e', fontWeight: 600 }}>
+              💳 + {tngPendingCount} TNG item{tngPendingCount > 1 ? 's' : ''} (amount pending)
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Add buttons */}
+      {/* ── Add buttons — DRAFT only ─────────────────────────────────────── */}
       {isDraft && (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => setModal('MILEAGE')} style={S.btnAdd}>🚗 Mileage</button>
-          <button onClick={() => setModal('MEAL')}    style={S.btnAdd}>🍽 Meal</button>
-          <button onClick={() => setModal('LODGING')} style={S.btnAdd}>🏨 Lodging</button>
-        </div>
-      )}
-
-      {/* Delete Claim — DRAFT only ───────────────────────────────────────── */}
-      {isDraft && (
-        <div style={{ marginTop: 4 }}>
-          {deleteErr && <div style={{ ...S.errorBox, marginBottom: 8 }}>{deleteErr}</div>}
-          {!showDeleteConfirm ? (
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              style={S.btnDeleteClaim}
-              disabled={deleting}
-            >
-              🗑 Delete Claim
-            </button>
-          ) : (
-            <div style={S.confirmBox}>
-              <p style={S.confirmText}>
-                Delete this claim and all its items? This cannot be undone.
-              </p>
-              <div style={S.confirmRow}>
-                <button
-                  onClick={async () => {
-                    setDeleting(true); setDeleteErr(null)
-                    const res  = await fetch(`/api/claims/${claim?.id}`, { method: 'DELETE' })
-                    const json = await res.json()
-                    setDeleting(false)
-                    if (!res.ok) { setDeleteErr(json.error?.message ?? 'Failed to delete.'); setShowDeleteConfirm(false); return }
-                    router.push('/claims')
-                  }}
-                  style={{ ...S.btnConfirmDelete, opacity: deleting ? 0.65 : 1 }}
-                  disabled={deleting}
-                >
-                  {deleting ? 'Deleting…' : 'Yes, Delete Claim'}
-                </button>
-                <button
-                  onClick={() => { setShowDeleteConfirm(false); setDeleteErr(null) }}
-                  style={S.btnConfirmCancel}
-                  disabled={deleting}
-                >
-                  Keep Claim
-                </button>
-              </div>
-            </div>
-          )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => setModal('MILEAGE')} style={S.btnAdd}>🚗 Mileage</button>
+            <button onClick={() => setModal('MEAL')}    style={S.btnAdd}>🍽 Meal</button>
+            <button onClick={() => setModal('LODGING')} style={S.btnAdd}>🏨 Lodging</button>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => setModal('TOLL')}      style={S.btnAdd}>🛣️ Toll</button>
+            <button onClick={() => setModal('PARKING')}   style={S.btnAdd}>🅿️ Parking</button>
+            <button onClick={() => setModal('TRANSPORT')} style={S.btnAdd}>🚕 Transport</button>
+          </div>
         </div>
       )}
 
       {/* Submit */}
       {isDraft && (
         <div>
-          {submitErr && <div style={{ ...S.errorBox, marginBottom: 10 }}>{submitErr}</div>}
+          {submitErr && <div style={{ ...S.errorBox, marginBottom: 8 }}>{submitErr}</div>}
+          {tngPendingCount > 0 && (
+            <div style={{ padding: '10px 12px', backgroundColor: '#fef9c3', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12, color: '#92400e', marginBottom: 8 }}>
+              ⚠️ You have {tngPendingCount} TNG item{tngPendingCount > 1 ? 's' : ''} with no amount. Link them in TNG Importer before submitting.
+            </div>
+          )}
           <button
             onClick={handleSubmit}
             disabled={submitting || items.length === 0}
-            style={{ ...S.btnSubmit, opacity: submitting || items.length === 0 ? 0.5 : 1, cursor: items.length === 0 ? 'not-allowed' : 'pointer' }}
+            style={{ ...S.btnSubmit, opacity: submitting || items.length === 0 ? 0.5 : 1, cursor: submitting || items.length === 0 ? 'not-allowed' : 'pointer' }}
           >
             {submitting ? 'Submitting…' : '✓ Submit Claim'}
           </button>
@@ -904,11 +1051,43 @@ export default function ClaimDetailPage() {
         </div>
       )}
 
-      {/* Modals */}
+      {/* Delete Claim */}
+      {isDraft && (
+        <div style={{ marginTop: 4 }}>
+          {deleteErr && <div style={{ ...S.errorBox, marginBottom: 8 }}>{deleteErr}</div>}
+          {!showDeleteConfirm ? (
+            <button onClick={() => setShowDeleteConfirm(true)} style={S.btnDeleteClaim} disabled={deleting}>
+              🗑 Delete Claim
+            </button>
+          ) : (
+            <div style={S.confirmBox}>
+              <p style={S.confirmText}>Delete this claim and all its items? This cannot be undone.</p>
+              <div style={S.confirmRow}>
+                <button
+                  onClick={async () => {
+                    setDeleting(true); setDeleteErr(null)
+                    const res  = await fetch(`/api/claims/${claim?.id}`, { method: 'DELETE' })
+                    const json = await res.json()
+                    setDeleting(false)
+                    if (!res.ok) { setDeleteErr(json.error?.message ?? 'Failed to delete.'); return }
+                    router.push('/claims')
+                  }}
+                  disabled={deleting}
+                  style={{ ...S.btnConfirmDelete, opacity: deleting ? 0.5 : 1 }}
+                >
+                  {deleting ? 'Deleting…' : 'Yes, Delete'}
+                </button>
+                <button onClick={() => setShowDeleteConfirm(false)} style={S.btnCancelDelete}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Modals ─────────────────────────────────────────────────────── */}
       {modal === 'MILEAGE' && (
         <MileageModal
-          onAdd={addMileage}
-          onClose={() => setModal(null)}
+          onAdd={addMileage} onClose={() => setModal(null)}
           alreadyAddedTripIds={items.filter(i => i.trip_id).map(i => i.trip_id!)}
         />
       )}
@@ -919,20 +1098,26 @@ export default function ClaimDetailPage() {
         <ExpenseModal type="LODGING" onAdd={d => addExpense('LODGING', d)} onClose={() => setModal(null)} />
       )}
       {modal === 'EDIT_MEAL' && editingItem && (
-        <ExpenseModal
-          type="MEAL" editMode initialData={editingItem} itemId={editingItem.id}
+        <ExpenseModal type="MEAL" editMode initialData={editingItem}
           onAdd={d => updateExpense(editingItem.id, 'MEAL', d)}
           onClose={() => { setModal(null); setEditingItem(null) }}
         />
       )}
       {modal === 'EDIT_LODGING' && editingItem && (
-        <ExpenseModal
-          type="LODGING" editMode initialData={editingItem} itemId={editingItem.id}
+        <ExpenseModal type="LODGING" editMode initialData={editingItem}
           onAdd={d => updateExpense(editingItem.id, 'LODGING', d)}
           onClose={() => { setModal(null); setEditingItem(null) }}
         />
       )}
-
+      {modal === 'TOLL' && (
+        <TollParkingModal type="TOLL" onAdd={addTransportItem} onClose={() => setModal(null)} />
+      )}
+      {modal === 'PARKING' && (
+        <TollParkingModal type="PARKING" onAdd={addTransportItem} onClose={() => setModal(null)} />
+      )}
+      {modal === 'TRANSPORT' && (
+        <TransportModal onAdd={addTransportItem} onClose={() => setModal(null)} />
+      )}
     </div>
   )
 }
@@ -943,17 +1128,20 @@ const S: Record<string, React.CSSProperties> = {
   page:       { display: 'flex', flexDirection: 'column', gap: 14, paddingBottom: 60 },
   section:    { backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden' },
 
-  // Item card — 3 columns
   itemCard:   { display: 'flex', alignItems: 'flex-start', gap: 8, paddingTop: 10, paddingBottom: 10, paddingLeft: 14, paddingRight: 14, borderBottom: '1px solid #f8fafc' },
   iDate:      { width: 78, flexShrink: 0, paddingTop: 2 },
   iBody:      { flex: 1, minWidth: 0 },
   iAmt:       { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 },
 
-  // Buttons
-  btnAdd:     { flex: 1, padding: '12px 8px', backgroundColor: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' },
-  btnSubmit:  { width: '100%', padding: '14px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 16, fontWeight: 700, cursor: 'pointer' },
+  btnAdd:          { flex: 1, padding: '12px 8px', backgroundColor: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' },
+  btnSubmit:       { width: '100%', padding: '14px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 16, fontWeight: 700, cursor: 'pointer' },
+  btnDeleteClaim:  { width: '100%', padding: '12px', backgroundColor: 'transparent', border: '1.5px solid #fca5a5', borderRadius: 10, fontSize: 13, fontWeight: 600, color: '#dc2626', cursor: 'pointer' },
+  confirmBox:      { padding: '14px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10 },
+  confirmText:     { fontSize: 13, color: '#374151', margin: '0 0 12px' },
+  confirmRow:      { display: 'flex', gap: 8 },
+  btnConfirmDelete:{ flex: 1, padding: '10px', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' },
+  btnCancelDelete: { flex: 1, padding: '10px', backgroundColor: '#fff', color: '#374151', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' },
 
-  // Modal
   overlay:    { position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000, paddingBottom: 64 },
   modal:      { backgroundColor: '#fff', borderRadius: 16, width: '100%', maxWidth: 640, maxHeight: 'calc(85vh - 64px)', display: 'flex', flexDirection: 'column' },
   modalHeader:{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, paddingBottom: 16, paddingLeft: 20, paddingRight: 20, borderBottom: '1px solid #f1f5f9', flexShrink: 0 },
@@ -962,22 +1150,9 @@ const S: Record<string, React.CSSProperties> = {
   mInfo:      { color: '#64748b', fontSize: 13, textAlign: 'center', padding: '24px 0', lineHeight: 1.6 },
   btnModalAdd:{ padding: '13px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', width: '100%' },
 
-  // Form fields
   field:      { display: 'flex', flexDirection: 'column', gap: 6 },
   label:      { fontSize: 13, fontWeight: 600, color: '#374151' },
-  input:      { paddingTop: 10, paddingBottom: 10, paddingLeft: 12, paddingRight: 12, border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, outline: 'none', backgroundColor: '#fff', boxSizing: 'border-box', color: '#0f172a', WebkitTextFillColor: '#0f172a' },
-  modeRow:    { display: 'flex', gap: 8 },
-  modeBtn:    { flex: 1, padding: '10px 8px', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' },
-  errorBox:   { padding: '10px 12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' },
-
-  // Trip option
-  tripOpt:    { display: 'flex', flexDirection: 'column', gap: 4, width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 10, paddingTop: 10, paddingBottom: 10, paddingLeft: 14, paddingRight: 14, cursor: 'pointer', textAlign: 'left', boxSizing: 'border-box' },
-
-  // Delete claim
-  btnDeleteClaim:   { width: '100%', padding: '11px', backgroundColor: 'transparent', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer' },
-  confirmBox:       { padding: '14px', backgroundColor: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 12, display: 'flex', flexDirection: 'column' as const, gap: 12 },
-  confirmText:      { margin: 0, fontSize: 13, color: '#7f1d1d', lineHeight: 1.6 },
-  confirmRow:       { display: 'flex', gap: 10 },
-  btnConfirmDelete: { flex: 1, padding: '11px 0', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer' },
-  btnConfirmCancel: { flex: 1, padding: '11px 0', backgroundColor: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' },
+  input:      { paddingTop: 10, paddingBottom: 10, paddingLeft: 12, paddingRight: 12, border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 14, color: '#0f172a', backgroundColor: '#fff', outline: 'none' },
+  errorBox:   { paddingTop: 10, paddingBottom: 10, paddingLeft: 12, paddingRight: 12, backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' },
+  sessionBtn: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', border: '1.5px solid #e2e8f0', borderRadius: 10, backgroundColor: '#fff', cursor: 'pointer', textAlign: 'left', width: '100%' },
 }
