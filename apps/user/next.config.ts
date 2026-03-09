@@ -1,22 +1,12 @@
 // apps/user/next.config.ts
-//
-// CRITICAL for PDF export:
-//   pdfkit reads font .afm files from disk using __dirname-relative paths.
-//   If Next.js bundles pdfkit via webpack, __dirname resolves to the
-//   webpack bundle output — not node_modules — and the font files are not
-//   found, causing:
-//     ENOENT: no such file or directory, open '...pdfkit/js/data/Helvetica.afm'
-//
-//   serverExternalPackages tells Next.js to leave pdfkit untouched in
-//   node_modules so its internal require() calls resolve correctly.
 
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['pdfkit'],
-
-  // ── Other existing config goes below ──────────────────────────────────────
-  // (merge with your existing next.config.ts if you already have one)
+  // pdfkit reads font .afm files from disk using __dirname-relative paths.
+  // pdf-parse v2.x has no ESM default export — must stay as CJS via require().
+  // Both must be excluded from Turbopack/webpack bundling.
+  serverExternalPackages: ['pdfkit', 'pdf-parse'],
 }
 
 export default nextConfig

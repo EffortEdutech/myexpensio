@@ -1,171 +1,172 @@
 // apps/user/app/api/tng/parse/route.ts
-//
 // POST /api/tng/parse
 //
-// Accepts a TNG eWallet statement PDF (multipart/form-data, field: "file").
-// Extracts TOLL and PARKING transaction rows using pdf-parse (server-side).
-// Returns structured JSON for UI preview and checkbox selection.
+// Accepts a TNG eStatement PDF (multipart/form-data, field: "file").
+// Parses TOLL + PARKING rows only. RETAIL rows are excluded.
+// Returns a preview — does NOT write to DB.
 //
-// Does NOT save to DB — saving is done via POST /api/tng/transactions.
-// This separation lets the user preview before committing rows.
+// FIX: pdf-parse v2.x has no ESM default export.
+//      Use require() with serverExternalPackages: ['pdf-parse'] in next.config.ts.
 //
-// INSTALL (run once in apps/user):
-//   npm install pdf-parse
-//   npm install --save-dev @types/pdf-parse
-//
-// next.config.ts — add to serverExternalPackages:
-//   serverExternalPackages: ['pdfkit', 'pdf-parse']
-//
-// Tested against: TNG Customer Transactions Statement (Feb 2026 format)
-// Expected columns: Trans No | Entry Date+Time | Exit Date+Time |
-//   Posted Date | Tran Type | Entry Location | Entry SP |
-//   Exit Location | Exit SP | Reload Location | Trans Amount | Card Balance | Sector
+// Response (200):
+//   { total_extracted, toll_count, parking_count, rows, toll_rows, parking_rows }
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import pdfParse from 'pdf-parse'
+
+// ── pdf-parse: require() — NOT import default (breaks Turbopack ESM) ─────────
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pdfParse = require('pdf-parse') as (
+  buffer: Buffer,
+  options?: Record<string, unknown>,
+) => Promise<{ text: string; numpages: number }>
 
 export const runtime = 'nodejs'
 
-const MAX_BYTES = 10 * 1024 * 1024  // 10 MB
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type TngSector = 'TOLL' | 'PARKING'
+
+type TngParsedRow = {
+  trans_no:       string | null
+  entry_datetime: string | null   // ISO
+  exit_datetime:  string | null   // ISO
+  entry_location: string | null
+  exit_location:  string | null
+  amount:         number
+  currency:       string
+  sector:         TngSector
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-export type TngParsedRow = {
-  trans_no:        string | null
-  entry_datetime:  string | null   // ISO 8601 with +08:00
-  exit_datetime:   string | null
-  entry_location:  string | null
-  exit_location:   string | null
-  amount:          number           // MYR, 2 decimal places
-  sector:          'TOLL' | 'PARKING'
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 /**
- * Parse TNG date-time string: "26/02/2026 22:45:22" → "2026-02-26T22:45:22+08:00"
- * Also handles date-only: "26/02/2026" → "2026-02-26T00:00:00+08:00"
+ * Attempt to parse a Malaysian date/time string from TNG statement.
+ * Handles formats like:
+ *   "01/03/2026 08:22"   → ISO
+ *   "2026-03-01 08:22"   → ISO
+ *   "01 Mar 2026 08:22"  → ISO
  */
-function parseTngDateTime(raw: string | undefined): string | null {
-  if (!raw) return null
-  const t = raw.trim()
-  const m = t.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}:\d{2}:\d{2}))?$/)
-  if (!m) return null
-  const [, dd, mm, yyyy, time] = m
-  return `${yyyy}-${mm}-${dd}T${time ?? '00:00:00'}+08:00`
-}
+function parseMalaysianDate(raw: string): string | null {
+  if (!raw?.trim()) return null
+  raw = raw.trim()
 
-/**
- * Parse amount string like "11.64" or " 11.64 " → 11.64
- */
-function parseAmount(raw: string | undefined): number | null {
-  if (!raw) return null
-  const n = parseFloat(raw.replace(/[^0-9.]/g, ''))
-  return isNaN(n) ? null : Math.round(n * 100) / 100
-}
-
-/**
- * Strip TNG SP codes like "04_PLUS", "12_LITRAK", "03_PROJEK LEBUHRAYA USAHASAMA BERHAD (954700-A)"
- */
-function cleanLocation(loc: string): string {
-  return loc
-    .replace(/\d{2}_[A-Z0-9_]+/g, '')     // strip SP codes
-    .replace(/\(\d{6}-[A-Z]\)/g, '')       // strip company reg numbers
-    .replace(/\s{2,}/g, ' ')
-    .trim()
-}
-
-// ── Core parser ───────────────────────────────────────────────────────────────
-//
-// TNG statement text (after pdf-parse extraction) looks like:
-//
-// 62313 26/02/2026 22:45:22 27/02 /2026 Fare Usage - Toll/Bus
-//   PLUS - AYER KEROH 03_PROJEK LEBUHRAYA ... ELITE - BANDAR SERENIA 03_... 11.64 16.77 TOLL
-//
-// Strategy:
-//   1. Find lines starting with a 5-digit trans_no
-//   2. Accumulate the "block" for that transaction (up to next trans_no or 20 lines)
-//   3. Extract: sector, dates, amounts, locations from the block
-
-function parseTngText(text: string): TngParsedRow[] {
-  const rows: TngParsedRow[] = []
-
-  // Normalise whitespace but preserve newlines as separators
-  const lines = text.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean)
-
-  // Find indices of lines that start a transaction (5-digit number at start)
-  const transLineIndices: number[] = []
-  for (let i = 0; i < lines.length; i++) {
-    if (/^\d{5}\b/.test(lines[i])) {
-      transLineIndices.push(i)
-    }
+  // dd/MM/yyyy HH:mm
+  const dmy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{2}:\d{2})$/)
+  if (dmy) {
+    const [, dd, mm, yyyy, hhmm] = dmy
+    return new Date(`${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}T${hhmm}:00+08:00`).toISOString()
   }
 
-  for (let ti = 0; ti < transLineIndices.length; ti++) {
-    const startIdx = transLineIndices[ti]
-    // Collect lines until the next transaction starts (or max 20 lines)
-    const endIdx   = transLineIndices[ti + 1] ?? Math.min(startIdx + 20, lines.length)
-    const block    = lines.slice(startIdx, endIdx).join(' ')
+  // yyyy-MM-dd HH:mm
+  const iso = raw.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})$/)
+  if (iso) {
+    return new Date(`${iso[1]}T${iso[2]}:00+08:00`).toISOString()
+  }
 
-    // ── Sector ───────────────────────────────────────────────────────────────
-    const sectorMatch = block.match(/\b(TOLL|PARKING|RETAIL)\b/)
-    if (!sectorMatch) continue
-    const sector = sectorMatch[1]
-    if (sector === 'RETAIL') continue   // skip reloads
-    if (sector !== 'TOLL' && sector !== 'PARKING') continue
+  // dd MMM yyyy HH:mm
+  const textMonth = raw.match(/^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\s+(\d{2}:\d{2})$/i)
+  if (textMonth) {
+    return new Date(`${textMonth[1]} ${textMonth[2]} ${textMonth[3]} ${textMonth[4]}:00 GMT+0800`).toISOString()
+  }
 
-    // ── Trans No ─────────────────────────────────────────────────────────────
-    const transMatch = block.match(/^(\d{5})\b/)
-    const trans_no   = transMatch ? transMatch[1] : null
+  // Fallback: let JS try
+  try {
+    const d = new Date(raw)
+    if (!isNaN(d.getTime())) return d.toISOString()
+  } catch { /* ignore */ }
 
-    // ── Dates ─────────────────────────────────────────────────────────────────
-    // TNG format: "DD/MM/YYYY HH:MM:SS" or "DD/MM/YYYY"
-    // Posted date is also a date — we want the FIRST (entry) and SECOND (exit)
-    const datePattern = /(\d{2}\/\d{2}\/\d{4}(?:\s+\d{2}:\d{2}:\d{2})?)/g
-    const dateMatches = [...block.matchAll(datePattern)].map(m => m[1])
-    const entry_datetime = parseTngDateTime(dateMatches[0])
-    const exit_datetime  = parseTngDateTime(dateMatches[1])
+  return null
+}
 
-    // ── Amount ────────────────────────────────────────────────────────────────
-    // Pattern in block: "<Trans Amount> <Card Balance> TOLL|PARKING"
-    // Both are two-decimal numbers. We want the first (Trans Amount).
-    const amountPattern = /(\d+\.\d{2})\s+\d+\.\d{2}\s+(?:TOLL|PARKING|RETAIL)/
-    const amountMatch   = block.match(amountPattern)
-    const amount        = amountMatch ? parseAmount(amountMatch[1]) : null
-    if (!amount || amount <= 0) continue
+/**
+ * Parse raw text extracted from TNG eStatement PDF.
+ *
+ * TNG statement layout (typical):
+ *   Trans No   Date/Time In   Date/Time Out   Location In   Location Out   Amount   Type
+ *
+ * We look for lines containing MYR amounts and classify them by sector keyword.
+ * This is intentionally lenient — TNG PDF format can vary across app versions.
+ */
+function parseTngText(text: string): TngParsedRow[] {
+  const rows: TngParsedRow[] = []
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
 
-    // ── Locations ─────────────────────────────────────────────────────────────
-    // Known Malaysian expressway / location keywords used to identify location strings
-    const LOCATION_KEYWORDS = [
-      'PLUS', 'ELITE', 'LDP', 'MEX', 'SILK', 'GRANDSAGA', 'LINKEDUA',
-      'PANTAI DALAM', 'NPE', 'MYDIN', 'IOI', 'AEON', 'COLUMBIA',
-      'ALAMANDA', 'WW_DEFAULT', 'SEREMBAN', 'TAPAH', 'SUBANG',
-      'GOPENG', 'SENAI', 'SEDENAK', 'PUTRAJAYA', 'SERI KEMBANGAN',
-      'JALAN DUTA', 'PUCHONG', 'PETALING JAYA', 'SUNGAI BESI',
-      'SUNGAI RAMAL', 'KAJANG', 'SIMPANG', 'BANDAR', 'AYER KEROH',
-      'IPOH', 'JOHOR',
-    ]
+  // Keywords used to classify sector
+  const TOLL_KEYWORDS    = ['PLUS', 'LEKAS', 'SPRINT', 'SMART', 'LDP', 'DUKE', 'ELITE', 'KESAS', 'NPE', 'MEX', 'BESRAYA', 'TOLL', 'HIGHWAY', 'LEBUH RAYA']
+  const PARKING_KEYWORDS = ['PARKING', 'PARK', 'CAR PARK', 'PARKIR', 'DBKL', 'SSPB', 'MPPJ', 'MBPJ', 'MPAJ', 'MPS', 'MPSJ']
+  const RETAIL_KEYWORDS  = ['7-ELEVEN', 'WATSONS', 'SPEEDMART', 'RELOAD', 'TOPUP', 'TOP-UP', 'TOP UP', 'PETRONAS', 'SHELL', 'CALTEX', 'PETRON', 'BHP']
 
-    // Build a regex that matches any block starting with a keyword
-    const kwPattern = new RegExp(
-      `((?:${LOCATION_KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})[^0-9TOLL PARKING RETAIL]*?)`,
-      'gi'
-    )
+  // Pattern: a line with an MYR amount (e.g. 2.10, 14.50)
+  const AMT_RE = /(\d+\.\d{2})/
 
-    const locationMatches = [...block.matchAll(kwPattern)]
-      .map(m => cleanLocation(m[1]))
-      .filter(l => l.length > 3)
-      .slice(0, 2)   // entry = [0], exit = [1]
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const upperLine = line.toUpperCase()
 
-    const entry_location = locationMatches[0] ?? null
-    const exit_location  = sector === 'PARKING'
-      ? (locationMatches[0] ?? null)   // parking: entry = exit (same location)
-      : (locationMatches[1] ?? null)
+    // Skip retail
+    if (RETAIL_KEYWORDS.some(kw => upperLine.includes(kw))) continue
+
+    const amtMatch = line.match(AMT_RE)
+    if (!amtMatch) continue
+
+    const amount = parseFloat(amtMatch[1])
+    if (isNaN(amount) || amount <= 0 || amount > 9999) continue
+
+    // Determine sector
+    let sector: TngSector | null = null
+    if (PARKING_KEYWORDS.some(kw => upperLine.includes(kw))) sector = 'PARKING'
+    else if (TOLL_KEYWORDS.some(kw => upperLine.includes(kw))) sector = 'TOLL'
+
+    if (!sector) continue
+
+    // Try to extract transaction number (alphanumeric, 8–20 chars)
+    const transMatch = line.match(/\b([A-Z0-9]{8,20})\b/)
+    const trans_no = transMatch ? transMatch[1] : null
+
+    // Try to extract datetime (look at surrounding lines too)
+    let entry_datetime: string | null = null
+    let exit_datetime:  string | null = null
+
+    // Check current + adjacent lines for date patterns
+    const candidates = [lines[i-1], line, lines[i+1]].filter(Boolean)
+    for (const c of candidates) {
+      const dt = parseMalaysianDate(
+        c.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\s+\d{2}:\d{2}/)?.[0] ?? ''
+      )
+      if (dt && !entry_datetime) entry_datetime = dt
+      else if (dt && !exit_datetime && dt !== entry_datetime) exit_datetime = dt
+    }
+
+    // Location: strip amount and known non-location tokens from line
+    const locationRaw = line
+      .replace(AMT_RE, '')
+      .replace(/MYR/gi, '')
+      .replace(/\b[A-Z0-9]{8,20}\b/, '')
+      .replace(/\d{1,2}\/\d{1,2}\/\d{4}\s+\d{2}:\d{2}/g, '')
+      .replace(/\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    // For TOLL: try to split entry/exit by separator → or -
+    let entry_location: string | null = null
+    let exit_location:  string | null = null
+
+    if (sector === 'TOLL') {
+      const parts = locationRaw.split(/\s*(?:→|->|–|-)\s*/)
+      if (parts.length >= 2) {
+        entry_location = parts[0].trim() || null
+        exit_location  = parts[1].trim() || null
+      } else {
+        entry_location = locationRaw || null
+      }
+    } else {
+      entry_location = locationRaw || null
+    }
 
     rows.push({
       trans_no,
@@ -174,7 +175,8 @@ function parseTngText(text: string): TngParsedRow[] {
       entry_location,
       exit_location,
       amount,
-      sector: sector as 'TOLL' | 'PARKING',
+      currency: 'MYR',
+      sector,
     })
   }
 
@@ -184,12 +186,12 @@ function parseTngText(text: string): TngParsedRow[] {
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
-  // Auth check
+  // ── Auth ───────────────────────────────────────────────────────────────────
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return err('UNAUTHENTICATED', 'Login required.', 401)
 
-  // Parse multipart form data
+  // ── Parse multipart ────────────────────────────────────────────────────────
   let formData: FormData
   try {
     formData = await request.formData()
@@ -201,47 +203,33 @@ export async function POST(request: NextRequest) {
   if (!file || !(file instanceof Blob)) {
     return err('VALIDATION_ERROR', 'Field "file" (PDF) is required.', 400)
   }
-
-  // Size check
-  if (file.size > MAX_BYTES) {
-    return err('VALIDATION_ERROR', `File too large (${Math.round(file.size / 1024)} KB). Maximum is 10 MB.`, 400)
+  if (file.type && !file.type.includes('pdf')) {
+    return err('VALIDATION_ERROR', 'File must be a PDF.', 400)
   }
 
-  // Content-type check
-  const ct = (file as File).type ?? ''
-  if (ct && !ct.includes('pdf') && !ct.includes('octet-stream')) {
-    return err('VALIDATION_ERROR', 'File must be a PDF. Only TNG digital statements are supported.', 400)
+  const MAX_SIZE = 10 * 1024 * 1024 // 10 MB
+  if (file.size > MAX_SIZE) {
+    return err('VALIDATION_ERROR', 'File exceeds 10 MB limit.', 400)
   }
 
-  // Convert to Node Buffer
-  const arrayBuffer = await file.arrayBuffer()
-  const buffer      = Buffer.from(arrayBuffer)
-
-  // Parse PDF
-  let rawText: string
+  // ── Extract PDF text ───────────────────────────────────────────────────────
+  let text: string
   try {
-    const parsed = await pdfParse(buffer)
-    rawText = parsed.text
-  } catch (e) {
-    console.error('[POST /api/tng/parse] pdf-parse error:', e)
-    return err(
-      'PARSE_ERROR',
-      'Failed to read PDF. Please ensure it is a digital TNG statement (not a scanned image).',
-      422
-    )
+    const arrayBuffer = await file.arrayBuffer()
+    const buffer      = Buffer.from(arrayBuffer)
+    const result      = await pdfParse(buffer)
+    text              = result.text ?? ''
+  } catch (e: unknown) {
+    console.error('[POST /api/tng/parse] pdf-parse error:', (e as Error).message)
+    return err('PARSE_ERROR', 'Could not read the PDF. Make sure it is a valid TNG eStatement.', 422)
   }
 
-  // Guard: check it looks like a TNG statement
-  if (!rawText.includes('Touch') && !rawText.includes('TNG') && !rawText.includes('Fare Usage')) {
-    return err(
-      'PARSE_ERROR',
-      'This does not appear to be a TNG Customer Transactions Statement.',
-      422
-    )
+  if (!text.trim()) {
+    return err('PARSE_ERROR', 'PDF appears to be empty or image-only (not machine-readable).', 422)
   }
 
-  // Parse rows
-  const rows = parseTngText(rawText)
+  // ── Parse rows ─────────────────────────────────────────────────────────────
+  const rows = parseTngText(text)
 
   const toll_rows    = rows.filter(r => r.sector === 'TOLL')
   const parking_rows = rows.filter(r => r.sector === 'PARKING')
@@ -251,8 +239,7 @@ export async function POST(request: NextRequest) {
     toll_count:      toll_rows.length,
     parking_count:   parking_rows.length,
     rows,
-    // Convenience: rows split by type for UI rendering
     toll_rows,
     parking_rows,
-  }, { status: 200 })
+  })
 }
