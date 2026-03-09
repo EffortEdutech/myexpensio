@@ -18,7 +18,8 @@
 //   />
 
 import { useState, useRef, useCallback } from 'react'
-import { DocumentScanner } from '@/components/DocumentScanner'
+import { DocumentScanner }   from '@/components/DocumentScanner'
+import { ScanPreviewModal } from '@/components/ScanPreviewModal'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -87,7 +88,8 @@ export function ReceiptUploader({
   const [viewUrl,    setViewUrl]  = useState<string | null>(null)
   const [currentPath, setCurrentPath] = useState<string | null>(storagePath ?? null)
   const inputRef    = useRef<HTMLInputElement>(null)
-  const [scannerOpen, setScannerOpen] = useState(false)
+  const [scannerOpen,  setScannerOpen]  = useState(false)
+  const [previewBlob,  setPreviewBlob]  = useState<Blob | null>(null)
 
   // ── Load view URL when we have a stored path ──────────────────────────────
 
@@ -178,11 +180,25 @@ export function ReceiptUploader({
   // Converts the blob to a synthetic File and runs through the normal
   // compress → sign → upload pipeline. Existing ReceiptUploader logic
   // is 100% untouched — scanner simply hands off a Blob.
-  async function handleScanComplete(blob: Blob) {
+  // Called by DocumentScanner when photo is captured.
+  // Opens ScanPreviewModal — user reviews and confirms before upload.
+  function handleScanComplete(blob: Blob) {
     setScannerOpen(false)
-    // Always force image/jpeg type regardless of what the camera returned
+    const safeBlob = blob.type ? blob : new Blob([blob], { type: 'image/jpeg' })
+    setPreviewBlob(safeBlob)
+  }
+
+  // Called by ScanPreviewModal when user taps ✓ Use Photo.
+  // Runs the normal compress → sign → upload pipeline.
+  async function handlePreviewConfirm(blob: Blob) {
+    setPreviewBlob(null)
     const file = new File([blob], `scan_${Date.now()}.jpg`, { type: 'image/jpeg' })
     await handleFile(file)
+  }
+
+  function handlePreviewRetake() {
+    setPreviewBlob(null)
+    setScannerOpen(true)   // reopen camera
   }
 
   function handleRemove() {
@@ -240,12 +256,23 @@ export function ReceiptUploader({
         </div>
       )}
 
-      {/* ── DocumentScanner overlay — rendered as modal, isolated ────── */}
+      {/* ── DocumentScanner — camera capture ──────────────────────────── */}
       {enableScan && scannerOpen && (
         <DocumentScanner
           purpose={purpose}
           onScanComplete={handleScanComplete}
           onClose={() => setScannerOpen(false)}
+        />
+      )}
+
+      {/* ── ScanPreviewModal — review + confirm before upload ────────── */}
+      {enableScan && previewBlob && (
+        <ScanPreviewModal
+          blob={previewBlob}
+          purpose={purpose}
+          onConfirm={handlePreviewConfirm}
+          onRetake={handlePreviewRetake}
+          onClose={() => setPreviewBlob(null)}
         />
       )}
 
