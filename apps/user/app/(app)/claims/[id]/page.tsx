@@ -517,7 +517,7 @@ function ExpenseModal({ type, onAdd, onClose, editMode = false, initialData }: {
       </div>
       <div style={S.field}>
         <label style={S.label}>Receipt (optional)</label>
-        <ReceiptUploader purpose="RECEIPT" onUploadComplete={url => setReceiptPath(url)} />
+        <ReceiptUploader purpose="RECEIPT" onUploaded={(url) => setReceiptPath(url)} />
       </div>
 
       {error && <div style={S.errorBox}>{error}</div>}
@@ -664,7 +664,7 @@ function TollParkingModal({ type, onAdd, onClose }: {
           </div>
           <div style={S.field}>
             <label style={S.label}>Receipt (optional)</label>
-            <ReceiptUploader purpose="RECEIPT" onUploadComplete={url => setReceiptPath(url)} />
+            <ReceiptUploader purpose="RECEIPT" onUploaded={(url) => setReceiptPath(url)} />
           </div>
         </>
       )}
@@ -784,7 +784,7 @@ function TransportModal({ onAdd, onClose }: {
       </div>
       <div style={S.field}>
         <label style={S.label}>Receipt (optional)</label>
-        <ReceiptUploader purpose="RECEIPT" onUploadComplete={url => setReceiptPath(url)} />
+        <ReceiptUploader purpose="RECEIPT" onUploaded={(url) => setReceiptPath(url)} />
       </div>
       {error && <div style={S.errorBox}>{error}</div>}
     </Modal>
