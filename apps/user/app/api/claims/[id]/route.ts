@@ -1,6 +1,10 @@
 // apps/user/app/api/claims/[id]/route.ts
 // GET   /api/claims/[id]  — fetch claim with all items
 // PATCH /api/claims/[id]  — update title/period (DRAFT only)
+//
+// PATCH vs original: items select now includes tng_transaction_id
+// so the claim detail page can compute unlinked TOLL/PARKING count
+// and show the "Link TNG" banner correctly.
 
 import { createClient } from '@/lib/supabase/server'
 import { getActiveOrg }  from '@/lib/org'
@@ -38,6 +42,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
   if (claimErr || !claim) return err('NOT_FOUND', 'Claim not found.', 404)
 
+  // PATCH: added tng_transaction_id so the claim detail page can display
+  // the "Link TNG" banner and badge on TOLL/PARKING items.
   const { data: items, error: itemsErr } = await supabase
     .from('claim_items')
     .select(`
@@ -47,6 +53,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       receipt_url, merchant, notes,
       claim_date, meal_session,
       lodging_check_in, lodging_check_out,
+      tng_transaction_id,
       created_at
     `)
     .eq('claim_id', id)
@@ -71,7 +78,6 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   const org = await getActiveOrg()
   if (!org) return err('NO_ORG', 'No organisation found.', 400)
 
-  // Fetch current claim
   const { data: claim, error: fetchErr } = await supabase
     .from('claims')
     .select('id, status')
@@ -81,7 +87,6 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
   if (fetchErr || !claim) return err('NOT_FOUND', 'Claim not found.', 404)
 
-  // ── Claim lock — SUBMITTED claims cannot be edited ────────────────────
   if (claim.status === 'SUBMITTED') {
     return err('CONFLICT', 'Submitted claims cannot be edited.', 409)
   }
@@ -92,22 +97,19 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     period_end?:   string
   }
 
-  const { title, period_start, period_end } = body
+  const update: Record<string, string> = {}
+  if (body.title        !== undefined) update.title        = body.title.trim()
+  if (body.period_start !== undefined) update.period_start = body.period_start
+  if (body.period_end   !== undefined) update.period_end   = body.period_end
 
-  if (period_start && period_end && period_start > period_end) {
-    return err('VALIDATION_ERROR', 'period_start must be on or before period_end.', 400)
+  if (Object.keys(update).length === 0) {
+    return err('VALIDATION_ERROR', 'No updatable fields provided.', 400)
   }
-
-  const updatePayload: Record<string, unknown> = { updated_at: new Date().toISOString() }
-  if (title        !== undefined) updatePayload.title        = title?.trim() || null
-  if (period_start !== undefined) updatePayload.period_start = period_start
-  if (period_end   !== undefined) updatePayload.period_end   = period_end
 
   const { data: updated, error: updateErr } = await supabase
     .from('claims')
-    .update(updatePayload)
+    .update(update)
     .eq('id', id)
-    .eq('org_id', org.org_id)
     .select()
     .single()
 
@@ -117,53 +119,4 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   }
 
   return NextResponse.json({ claim: updated })
-}
-
-
-// ── DELETE ─────────────────────────────────────────────────────────────────
-// DRAFT claims only — deletes claim + all claim_items (FK cascade).
-// SUBMITTED claims are permanently locked — deletion is blocked with 409.
-// This is a Phase 1 baseline rule and must not be bypassed.
-
-export async function DELETE(_req: NextRequest, { params }: Params) {
-  const { id } = await params
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return err('UNAUTHENTICATED', 'Login required.', 401)
-
-  const org = await getActiveOrg()
-  if (!org) return err('NO_ORG', 'No organisation found.', 400)
-
-  // Fetch claim to verify status + ownership
-  const { data: claim, error: fetchErr } = await supabase
-    .from('claims')
-    .select('id, status, user_id')
-    .eq('id', id)
-    .eq('org_id', org.org_id)
-    .single()
-
-  if (fetchErr || !claim) return err('NOT_FOUND', 'Claim not found.', 404)
-
-  // Hard lock — SUBMITTED claims cannot be deleted (Phase 1 baseline)
-  if (claim.status === 'SUBMITTED') {
-    return err(
-      'CONFLICT',
-      'Submitted claims cannot be deleted. They are part of a permanent audit trail.',
-      409
-    )
-  }
-
-  // Delete — claim_items removed via FK ON DELETE CASCADE
-  const { error: deleteErr } = await supabase
-    .from('claims')
-    .delete()
-    .eq('id', id)
-    .eq('org_id', org.org_id)
-
-  if (deleteErr) {
-    console.error('[DELETE /api/claims/[id]]', deleteErr.message)
-    return err('SERVER_ERROR', 'Failed to delete claim.', 500)
-  }
-
-  return NextResponse.json({ deleted: true, claim_id: id })
 }

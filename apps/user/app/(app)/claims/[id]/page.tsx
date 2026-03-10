@@ -32,6 +32,7 @@ type ClaimItem = {
   receipt_url: string | null; merchant: string | null; notes: string | null
   claim_date: string | null; meal_session: string | null
   lodging_check_in: string | null; lodging_check_out: string | null
+  tng_transaction_id: string | null   // set after TNG link confirmed
 }
 
 type Trip = {
@@ -104,7 +105,8 @@ function ItemCard({ item, onDelete, onEdit, locked }: {
 }) {
   const [deleting, setDeleting] = useState(false)
 
-  const isTngPending = item.mode === 'TNG'
+  const isTngPending  = item.mode === 'TNG'
+  const isTngVerified = (item.type === 'TOLL' || item.type === 'PARKING') && !!item.tng_transaction_id
 
   function sub() {
     if (item.type === 'MILEAGE')
@@ -143,6 +145,14 @@ function ItemCard({ item, onDelete, onEdit, locked }: {
               backgroundColor: '#fef9c3', color: '#854d0e', letterSpacing: 0.3,
             }}>
               TNG · Link pending
+            </span>
+          )}
+          {isTngVerified && (
+            <span style={{
+              fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 6,
+              backgroundColor: '#f0fdf4', color: '#15803d', letterSpacing: 0.3,
+            }}>
+              💳 TNG verified
             </span>
           )}
           {item.receipt_url && (
@@ -938,8 +948,15 @@ export default function ClaimDetailPage() {
   }
 
   // TNG items have amount=0 (pending link) — show separately from confirmed total
-  const confirmedTotal  = items.filter(i => i.mode !== 'TNG').reduce((s, i) => s + (Number(i.amount) || 0), 0)
-  const tngPendingCount = items.filter(i => i.mode === 'TNG').length
+  const confirmedTotal        = items.filter(i => i.mode !== 'TNG').reduce((s, i) => s + (Number(i.amount) || 0), 0)
+  const tngPendingCount       = items.filter(i => i.mode === 'TNG').length
+  // TOLL/PARKING items with no TNG link yet (includes mode=MANUAL — warn only, not blocked)
+  const unlinkedTollParking   = items.filter(
+    i => (i.type === 'TOLL' || i.type === 'PARKING') && !i.tng_transaction_id
+  )
+  const unlinkedTollParkingCount = unlinkedTollParking.length
+  // Show TNG banner if any TOLL/PARKING items exist without a confirmed link
+  const showTngBanner = isDraft && (tngPendingCount > 0 || unlinkedTollParkingCount > 0)
 
   return (
     <div style={S.page}>
@@ -974,20 +991,29 @@ export default function ClaimDetailPage() {
         </div>
       )}
 
-      {/* TNG pending banner — DRAFT only */}
-      {isDraft && tngPendingCount > 0 && (
+      {/* TNG banner — shown when any TOLL/PARKING items need linking */}
+      {showTngBanner && (
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', backgroundColor: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10 }}>
           <span style={{ fontSize: 18, flexShrink: 0 }}>💳</span>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#854d0e' }}>
-              {tngPendingCount} TNG item{tngPendingCount > 1 ? 's' : ''} pending link
+              {tngPendingCount > 0
+                ? `${tngPendingCount} TNG item${tngPendingCount > 1 ? 's' : ''} pending — amount not yet filled`
+                : `${unlinkedTollParkingCount} toll/parking item${unlinkedTollParkingCount > 1 ? 's' : ''} not verified with TNG`
+              }
             </div>
             <div style={{ fontSize: 12, color: '#92400e', marginTop: 2 }}>
-              Upload your TNG eStatement to fill in the amounts.
+              {tngPendingCount > 0
+                ? 'Link your TNG eStatement to fill in the amounts before submitting.'
+                : 'Link your TNG eStatement to add proof of payment for finance.'
+              }
             </div>
           </div>
-          <Link href="/tng" style={{ fontSize: 12, fontWeight: 700, color: '#854d0e', textDecoration: 'none', padding: '4px 10px', border: '1px solid #f59e0b', borderRadius: 8, backgroundColor: '#fff', flexShrink: 0 }}>
-            Open TNG Importer →
+          <Link
+            href={`/tng?return=/claims/${id}/tng-link`}
+            style={{ fontSize: 12, fontWeight: 700, color: '#854d0e', textDecoration: 'none', padding: '4px 10px', border: '1px solid #f59e0b', borderRadius: 8, backgroundColor: '#fff', flexShrink: 0 }}
+          >
+            Import &amp; Link →
           </Link>
         </div>
       )}

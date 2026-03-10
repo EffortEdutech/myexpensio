@@ -122,62 +122,61 @@ export async function POST(request: NextRequest) {
   // One batch ID groups all rows from this upload
   const upload_batch_id = crypto.randomUUID()
 
-  // Build insert payload
-  const inserts = validRows.map(r => ({
-    org_id:          org.org_id,
-    user_id:         user.id,
-    trans_no:        r.trans_no    ?? null,
-    entry_datetime:  r.entry_datetime ?? null,
-    exit_datetime:   r.exit_datetime  ?? null,
-    entry_location:  r.entry_location ?? null,
-    exit_location:   r.exit_location  ?? null,
-    amount:          r.amount,
-    currency:        'MYR',
-    sector:          r.sector,
-    upload_batch_id,
-    claimed:         false,
-  }))
+  // ── Manual dedup: fetch existing trans_nos for this user ─────────────────
+  // This avoids relying on the ON CONFLICT clause which requires a DB-level
+  // unique index. If the index is missing the upsert throws a 500.
+  const incomingWithTransNo = validRows.filter(r => r.trans_no !== null)
+  const incomingTransNos    = incomingWithTransNo.map(r => r.trans_no as string)
 
-  // Use upsert with onConflict on the unique index (user_id, trans_no)
-  // Rows without trans_no are always inserted (no dedup possible)
-  const withTransNo    = inserts.filter(r => r.trans_no !== null)
-  const withoutTransNo = inserts.filter(r => r.trans_no === null)
+  let existingTransNos: Set<string> = new Set()
+
+  if (incomingTransNos.length > 0) {
+    const { data: existing } = await supabase
+      .from('tng_transactions')
+      .select('trans_no')
+      .eq('user_id', user.id)
+      .in('trans_no', incomingTransNos)
+
+    existingTransNos = new Set((existing ?? []).map((r: { trans_no: string | null }) => r.trans_no ?? ''))
+  }
+
+  // Partition into new vs duplicate
+  const newRowsWithTransNo    = incomingWithTransNo.filter(r => !existingTransNos.has(r.trans_no as string))
+  const skippedWithTransNo    = incomingWithTransNo.length - newRowsWithTransNo.length
+  const rowsWithoutTransNo    = validRows.filter(r => r.trans_no === null)
+
+  const toInsert = [...newRowsWithTransNo, ...rowsWithoutTransNo]
 
   let saved_count   = 0
-  let skipped_count = 0
+  const skipped_count = skippedWithTransNo
 
-  // ── Insert rows WITH trans_no — dedup via ignoreDuplicates ───────────────
-  if (withTransNo.length > 0) {
+  if (toInsert.length > 0) {
+    const inserts = toInsert.map(r => ({
+      org_id:          org.org_id,
+      user_id:         user.id,
+      trans_no:        r.trans_no    ?? null,
+      entry_datetime:  r.entry_datetime ?? null,
+      exit_datetime:   r.exit_datetime  ?? null,
+      entry_location:  r.entry_location ?? null,
+      exit_location:   r.exit_location  ?? null,
+      amount:          r.amount,
+      currency:        'MYR',
+      sector:          r.sector,
+      upload_batch_id,
+      claimed:         false,
+    }))
+
     const { data: saved, error: insertErr } = await supabase
       .from('tng_transactions')
-      .upsert(withTransNo, {
-        onConflict:       'user_id,trans_no',
-        ignoreDuplicates: true,
-      })
+      .insert(inserts)
       .select('id')
 
     if (insertErr) {
-      console.error('[POST /api/tng/transactions] insert withTransNo:', insertErr.message)
-      return err('SERVER_ERROR', 'Failed to save transactions.', 500)
+      console.error('[POST /api/tng/transactions] insert:', insertErr.message, insertErr.details)
+      return err('SERVER_ERROR', `Failed to save transactions: ${insertErr.message}`, 500)
     }
 
-    saved_count   += saved?.length ?? 0
-    skipped_count += withTransNo.length - (saved?.length ?? 0)
-  }
-
-  // ── Insert rows WITHOUT trans_no — always insert (no dedup possible) ────
-  if (withoutTransNo.length > 0) {
-    const { data: saved2, error: insertErr2 } = await supabase
-      .from('tng_transactions')
-      .insert(withoutTransNo)
-      .select('id')
-
-    if (insertErr2) {
-      console.error('[POST /api/tng/transactions] insert withoutTransNo:', insertErr2.message)
-      // Non-fatal — log and continue
-    } else {
-      saved_count += saved2?.length ?? 0
-    }
+    saved_count = saved?.length ?? 0
   }
 
   return NextResponse.json({

@@ -12,7 +12,8 @@
 //   POST /api/tng/parse          → { rows, toll_count, parking_count, meta }
 //   POST /api/tng/transactions   → { saved_count, skipped_count }
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, Suspense } from 'react'
+import { useSearchParams, useRouter }              from 'next/navigation'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -111,15 +112,15 @@ const S = {
   rowAmount:   { fontSize: 14, fontWeight: 700, color: '#0f172a', flexShrink: 0 } as const,
 
   footer:      {
-    position:        'fixed',
-    bottom:          0, left: 0, right: 0,
-    backgroundColor: '#ffffff',
-    borderTop:       '1px solid #e2e8f0',
-    padding:         '12px 16px',
+    backgroundColor: '#f8fafc',
+    border:          '1px solid #e2e8f0',
+    borderRadius:    12,
+    padding:         '14px 16px',
     display:         'flex',
     alignItems:      'center',
     justifyContent:  'space-between',
     gap:             10,
+    marginTop:       20,
   } as const,
   footerLeft:  { fontSize: 13, color: '#374151' } as const,
   footerAmt:   { fontWeight: 700, color: '#0f172a' } as const,
@@ -174,6 +175,18 @@ const S = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function TngPage() {
+  return (
+    <Suspense>
+      <TngImporter />
+    </Suspense>
+  )
+}
+
+function TngImporter() {
+  const searchParams = useSearchParams()
+  const router       = useRouter()
+  const returnUrl    = searchParams.get('return')   // e.g. /claims/abc/tng-link
+
   const [state,      setState]      = useState<PageState>('IDLE')
   const [rows,       setRows]       = useState<TngParsedRow[]>([])
   const [meta,       setMeta]       = useState<ParseMeta>(null)
@@ -366,12 +379,25 @@ export default function TngPage() {
           </div>
         )}
         <div style={{ fontSize: 12, color: '#166534', marginTop: 8 }}>
-          Go to a Claim → Add Item → Toll / Parking → From TNG Statement to attach them.
+          {returnUrl
+            ? 'Transactions saved. Now match them to your claim items.'
+            : 'Go to a Claim → Add Item → Toll / Parking → From TNG Statement to attach them.'
+          }
         </div>
       </div>
 
+      {/* PRIMARY: return to the claim's link page to run the matcher */}
+      {returnUrl && (
+        <button
+          style={{ ...S.btnPrimary, width: '100%', marginTop: 16, textAlign: 'center' }}
+          onClick={() => router.push(returnUrl)}
+        >
+          Continue → Match TNG to claim items
+        </button>
+      )}
+
       <button
-        style={{ ...S.btnSecondary, width: '100%', marginTop: 16, textAlign: 'center' }}
+        style={{ ...S.btnSecondary, width: '100%', marginTop: returnUrl ? 8 : 16, textAlign: 'center' }}
         onClick={() => { setState('IDLE'); setRows([]); setMeta(null); setSavedInfo(null); setSelected(new Set()) }}
       >
         Import Another Statement
