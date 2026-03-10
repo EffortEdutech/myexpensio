@@ -1,32 +1,30 @@
 // apps/user/app/api/tng/parse/route.ts
 // POST /api/tng/parse
 //
-// Accepts a TNG eWallet PDF statement, forwards it to the Python scan service
-// for table extraction, and returns structured TOLL + PARKING rows.
+// Accepts a TNG eWallet PDF statement.
+// Forwards to Python scan service (/parse-tng) for pdfplumber table extraction.
+// Returns structured TOLL + PARKING rows for UI preview (not saved to DB yet).
 //
-// WHY Python service (not pdf-parse npm)?
-//   TNG statement uses complex multi-column merged-cell tables.
-//   pdf-parse dumps raw linear text which loses column alignment.
-//   pdfplumber (Python) uses geometric table detection — reliable 95%+ accuracy.
+// WHY Python service?
+//   pdf-parse (npm) dumps raw linear text and loses TNG's multi-column table structure.
+//   pdfplumber uses geometric table detection → reliable on TNG statements.
 //
-// Request body (multipart/form-data OR JSON):
-//   Multipart: field "file" = PDF file (browser file input)
-//   JSON:      { "pdf": "<base64>" }   (for programmatic use)
-//
-// Response (success):
+// Response shape (matches original pdf-parse route for frontend compatibility):
 //   {
-//     meta: { account_name, ewallet_id, period },
-//     transactions: TngParsedRow[],
-//     toll_count: number,
-//     parking_count: number,
-//     skipped_retail: number,
+//     rows:            TngParsedRow[]   ← field the frontend page uses
+//     toll_count:      number
+//     parking_count:   number
+//     total_extracted: number
+//     meta: { account_name, ewallet_id, period }
 //   }
 //
+// Request: multipart/form-data with field "file" = PDF
+//
 // Error codes:
-//   400 VALIDATION_ERROR — not a PDF / file too large
-//   422 PARSE_ERROR      — PDF is scanned/corrupted / no transactions found
-//   502 UPSTREAM_ERROR   — Python service returned an error
-//   504 TIMEOUT          — Python service timed out
+//   400 VALIDATION_ERROR  — not a PDF / missing file
+//   422 PARSE_ERROR       — scanned/corrupt PDF / no transactions found
+//   502 UPSTREAM_ERROR    — Python service error
+//   504 TIMEOUT           — Python service timed out (cold start)
 //
 // Env vars:
 //   SCAN_API_URL    = https://myexpensio-scan.onrender.com
@@ -34,6 +32,8 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { type NextRequest, NextResponse } from 'next/server'
+
+export const runtime = 'nodejs'
 
 const MAX_PDF_BYTES = 10 * 1024 * 1024 // 10 MB
 
@@ -47,39 +47,28 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return err('UNAUTHENTICATED', 'Login required.', 401)
 
-  // ── Parse request — support both multipart and JSON ──────────────────────
-  let pdfBase64: string | null = null
-  const contentType = req.headers.get('content-type') ?? ''
-
-  if (contentType.includes('multipart/form-data')) {
-    const formData = await req.formData().catch(() => null)
-    if (!formData) return err('VALIDATION_ERROR', 'Invalid multipart body.', 400)
-
-    const file = formData.get('file') as File | null
-    if (!file) return err('VALIDATION_ERROR', 'Field "file" is required.', 400)
-
-    if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
-      return err('VALIDATION_ERROR', 'Only PDF files are accepted.', 400)
-    }
-    if (file.size > MAX_PDF_BYTES) {
-      return err('VALIDATION_ERROR', `File too large. Maximum size is ${MAX_PDF_BYTES / 1024 / 1024} MB.`, 400)
-    }
-
-    const arrayBuffer = await file.arrayBuffer()
-    pdfBase64 = Buffer.from(arrayBuffer).toString('base64')
-
-  } else if (contentType.includes('application/json')) {
-    const body = await req.json().catch(() => ({})) as { pdf?: string }
-    if (!body.pdf) return err('VALIDATION_ERROR', '"pdf" (base64) is required in JSON body.', 400)
-    pdfBase64 = body.pdf
-
-  } else {
-    return err('VALIDATION_ERROR', 'Content-Type must be multipart/form-data or application/json.', 400)
+  // ── Parse multipart form ─────────────────────────────────────────────────
+  let formData: FormData
+  try {
+    formData = await req.formData()
+  } catch {
+    return err('VALIDATION_ERROR', 'Request must be multipart/form-data.', 400)
   }
 
-  if (!pdfBase64) {
-    return err('VALIDATION_ERROR', 'No PDF data received.', 400)
+  const file = formData.get('file')
+  if (!file || !(file instanceof Blob)) {
+    return err('VALIDATION_ERROR', 'Field "file" (PDF) is required.', 400)
   }
+  if (file.size > MAX_PDF_BYTES) {
+    return err('VALIDATION_ERROR', 'File too large. Maximum 10 MB.', 400)
+  }
+  if (file.type && !file.type.includes('pdf')) {
+    return err('VALIDATION_ERROR', 'Only PDF files are accepted.', 400)
+  }
+
+  // ── Encode PDF as base64 ──────────────────────────────────────────────────
+  const arrayBuffer = await file.arrayBuffer()
+  const pdfBase64 = Buffer.from(arrayBuffer).toString('base64')
 
   // ── Forward to Python scan service ────────────────────────────────────────
   const SCAN_API_URL    = process.env.SCAN_API_URL    ?? ''
@@ -90,31 +79,36 @@ export async function POST(req: NextRequest) {
     return err('SERVER_ERROR', 'PDF parsing service not configured.', 500)
   }
 
+  let pythonJson: {
+    transactions?: unknown[]
+    meta?:         { account_name?: string; ewallet_id?: string; period?: string }
+    toll_count?:   number
+    parking_count?: number
+    skipped_retail?: number
+    detail?:       string
+  }
+
   try {
     const upstream = await fetch(`${SCAN_API_URL}/parse-tng`, {
-      method: 'POST',
+      method:  'POST',
       headers: {
         'Content-Type':  'application/json',
         'X-Scan-Secret': SCAN_API_SECRET,
       },
-      body: JSON.stringify({ pdf: pdfBase64 }),
-      signal: AbortSignal.timeout(60_000), // 60s — allow for cold start on Render free tier
+      body:   JSON.stringify({ pdf: pdfBase64 }),
+      signal: AbortSignal.timeout(60_000), // 60s — allows for Render free-tier cold start
     })
 
-    const json = await upstream.json()
+    pythonJson = await upstream.json()
 
     if (!upstream.ok) {
-      const detail: string = json?.detail ?? 'PDF parsing failed.'
+      const detail: string = pythonJson?.detail ?? 'PDF parsing failed.'
       console.error('[POST /api/tng/parse] upstream error:', upstream.status, detail)
-
       if (detail.startsWith('PARSE_ERROR')) {
         return err('PARSE_ERROR', detail.replace('PARSE_ERROR: ', ''), 422)
       }
       return err('UPSTREAM_ERROR', detail, 502)
     }
-
-    // Success — return parsed rows directly to client
-    return NextResponse.json(json)
 
   } catch (e: unknown) {
     const msg = (e as Error).message ?? ''
@@ -122,10 +116,25 @@ export async function POST(req: NextRequest) {
     if (msg.includes('timed out') || msg.includes('abort')) {
       return err(
         'TIMEOUT',
-        'PDF parser timed out. The service may be waking up — please try again in 30 seconds.',
+        'PDF parser is waking up — please try again in 30 seconds.',
         504,
       )
     }
     return err('SERVER_ERROR', 'Could not reach PDF parsing service.', 502)
   }
+
+  // ── Normalise response → use "rows" for frontend compatibility ────────────
+  // Python service returns "transactions" — frontend page expects "rows"
+  const rows           = Array.isArray(pythonJson.transactions) ? pythonJson.transactions : []
+  const toll_count     = pythonJson.toll_count     ?? 0
+  const parking_count  = pythonJson.parking_count  ?? 0
+  const total_extracted = toll_count + parking_count
+
+  return NextResponse.json({
+    rows,                          // ← field the frontend page uses
+    toll_count,
+    parking_count,
+    total_extracted,
+    meta: pythonJson.meta ?? null,
+  }, { status: 200 })
 }
