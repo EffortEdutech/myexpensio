@@ -696,11 +696,10 @@ function TollParkingModal({ type, onAdd, onClose }: {
           </div>
           <div style={S.field}>
             <label style={S.label}>Receipt (optional)</label>
-            {/* PATCH: ae99090 ReceiptUploader API */}
             <ReceiptUploader
               storagePath={receiptPath || null}
               onUploaded={path => setReceiptPath(path)}
-              enableScan={false}
+              enableScan={true}
             />
           </div>
         </>
@@ -827,7 +826,7 @@ function TransportModal({ onAdd, onClose }: {
         <ReceiptUploader
           storagePath={null}
           onUploaded={path => setReceiptPath(path)}
-          enableScan={false}
+          enableScan={true}
         />
       </div>
       {error && <div style={S.errorBox}>{error}</div>}
