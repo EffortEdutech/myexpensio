@@ -219,10 +219,12 @@ export async function POST(request: NextRequest, { params }: Params) {
       tng_transaction_id: txn.id,
     }
 
-    // If item was TNG-pending (amount=0), fill in the real amount from the TNG row
-    if (item.mode === 'TNG' && item.amount === 0) {
+    // If item was TNG-pending (amount=0), fill in the real amount from the TNG row.
+    // NOTE: Supabase returns numeric columns as strings — use Number() coercion,
+    // NOT strict === 0, otherwise "0" !== 0 and the amount never gets written.
+    if (item.mode === 'TNG' && Number(item.amount) === 0) {
       itemUpdate.amount = Number(txn.amount)
-      amountDelta += Number(txn.amount)   // will need recalc
+      amountDelta += Number(txn.amount)
     }
 
     const { error: itemUpdateErr } = await supabase

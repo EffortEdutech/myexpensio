@@ -509,26 +509,25 @@ export default function TngLinkPage() {
         <div style={{ padding: '24px 20px', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12 }}>
           <div style={{ fontSize: 32, marginBottom: 10, textAlign: 'center' }}>📄</div>
           <div style={{ fontSize: 15, fontWeight: 800, color: '#92400e', marginBottom: 6, textAlign: 'center' }}>
-            No TNG statement imported yet
+            No TNG transactions in library yet
           </div>
           <div style={{ fontSize: 13, color: '#92400e', lineHeight: 1.6, marginBottom: 16, textAlign: 'center' }}>
-            You have {unmatched_claim_items.length} toll/parking item{unmatched_claim_items.length > 1 ? 's' : ''} waiting to be verified.
+            You have {unmatched_claim_items.length} toll/parking item{unmatched_claim_items.length > 1 ? 's' : ''} to verify.
             <br />
-            Upload your TNG eStatement first so we can match and fill in the amounts.
+            Import your TNG statement first — rows stay in your library and are reusable across claims.
           </div>
           <Link
             href={`/tng?return=/claims/${claim_id}/tng-link`}
             style={{
-              display: 'block', textAlign: 'center', width: '100%',
+              display: 'block', textAlign: 'center',
               padding: '13px 20px', backgroundColor: '#0f172a', color: '#fff',
               borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none',
-              boxSizing: 'border-box',
             }}
           >
-            📄 Import TNG Statement →
+            📄 Go to TNG Statements →
           </Link>
           <div style={{ fontSize: 11, color: '#a16207', marginTop: 10, textAlign: 'center' }}>
-            After importing, you&apos;ll be brought straight back here to confirm the matches.
+            After importing, tap &ldquo;Continue → Match&rdquo; to come straight back here.
           </div>
         </div>
       )}
@@ -661,6 +660,18 @@ export default function TngLinkPage() {
         >
           {confirmBtnLabel}
         </button>
+      )}
+
+      {/* Secondary: import another statement (adds more rows to library) */}
+      {!noTngDataYet && savedTotal === null && (
+        <div style={{ textAlign: 'center', paddingBottom: 8 }}>
+          <Link
+            href={`/tng?return=/claims/${claim_id}/tng-link`}
+            style={{ fontSize: 12, color: '#64748b', textDecoration: 'none', fontWeight: 600 }}
+          >
+            📄 Import another TNG statement
+          </Link>
+        </div>
       )}
 
     </div>

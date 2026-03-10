@@ -105,8 +105,10 @@ function ItemCard({ item, onDelete, onEdit, locked }: {
 }) {
   const [deleting, setDeleting] = useState(false)
 
-  const isTngPending  = item.mode === 'TNG'
-  const isTngVerified = (item.type === 'TOLL' || item.type === 'PARKING') && !!item.tng_transaction_id
+  // isTngPending: mode=TNG but amount still 0 (link not yet confirmed)
+  // isTngVerified: mode=TNG AND tng_transaction_id set AND amount > 0 (link confirmed)
+  const isTngPending  = item.mode === 'TNG' && Number(item.amount) === 0
+  const isTngVerified = (item.type === 'TOLL' || item.type === 'PARKING') && !!item.tng_transaction_id && Number(item.amount) > 0
 
   function sub() {
     if (item.type === 'MILEAGE')
@@ -947,9 +949,12 @@ export default function ClaimDetailPage() {
     TAXI: 5, GRAB: 6, TRAIN: 7, FLIGHT: 8,
   }
 
-  // TNG items have amount=0 (pending link) — show separately from confirmed total
+  // TNG items: mode='TNG' means created from TNG statement.
+  // "Pending" = still has amount 0 (link not yet confirmed or amount not yet written).
+  // Once the link route runs correctly, amount is filled and they drop out of this count.
+  // NOTE: amount may arrive as string from API — use Number() coercion throughout.
   const confirmedTotal        = items.filter(i => i.mode !== 'TNG').reduce((s, i) => s + (Number(i.amount) || 0), 0)
-  const tngPendingCount       = items.filter(i => i.mode === 'TNG').length
+  const tngPendingCount       = items.filter(i => i.mode === 'TNG' && Number(i.amount) === 0).length
   // TOLL/PARKING items with no TNG link yet (includes mode=MANUAL — warn only, not blocked)
   const unlinkedTollParking   = items.filter(
     i => (i.type === 'TOLL' || i.type === 'PARKING') && !i.tng_transaction_id
@@ -1010,10 +1015,10 @@ export default function ClaimDetailPage() {
             </div>
           </div>
           <Link
-            href={`/tng?return=/claims/${id}/tng-link`}
+            href={`/claims/${id}/tng-link`}
             style={{ fontSize: 12, fontWeight: 700, color: '#854d0e', textDecoration: 'none', padding: '4px 10px', border: '1px solid #f59e0b', borderRadius: 8, backgroundColor: '#fff', flexShrink: 0 }}
           >
-            Import &amp; Link →
+            Link TNG →
           </Link>
         </div>
       )}
@@ -1105,7 +1110,7 @@ export default function ClaimDetailPage() {
           {submitErr && <div style={{ ...S.errorBox, marginBottom: 8 }}>{submitErr}</div>}
           {tngPendingCount > 0 && (
             <div style={{ padding: '10px 12px', backgroundColor: '#fef9c3', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12, color: '#92400e', marginBottom: 8 }}>
-              ⚠️ You have {tngPendingCount} TNG item{tngPendingCount > 1 ? 's' : ''} with no amount. Link them in TNG Importer before submitting.
+              ⚠️ You have {tngPendingCount} TNG item{tngPendingCount > 1 ? 's' : ''} with amount not yet filled. Link them before submitting.
             </div>
           )}
           <button

@@ -2,20 +2,52 @@
 // apps/user/app/(app)/tng/page.tsx
 // Route: /tng
 //
-// TNG eWallet Statement Importer
+// TNG Statement Manager
 //
-// State machine:
-//   IDLE → (file selected) → PARSING → PREVIEW → SAVING → SAVED
-//                                               ↘ (re-upload) → IDLE
+// PURPOSE:
+//   tng_transactions is a persistent library — rows stay in DB and are reused
+//   across claims. This page is the hub to manage that library:
+//     - See all imported statements (grouped by upload_batch_id)
+//     - Import a new statement (collapsible inline importer)
+//     - Remove a batch (only when 0 rows are claimed)
+//
+//   A ?return=<path> query param causes a "Continue" button to appear that
+//   redirects back after import. Used by /claims/[id]/tng-link.
 //
 // API calls:
-//   POST /api/tng/parse          → { rows, toll_count, parking_count, meta }
-//   POST /api/tng/transactions   → { saved_count, skipped_count }
+//   GET    /api/tng/transactions            → all rows for this user
+//   POST   /api/tng/parse                   → parse PDF (preview, not saved)
+//   POST   /api/tng/transactions            → save parsed rows
+//   DELETE /api/tng/statements/[batch_id]  → remove a batch (unclaimed only)
 
-import { useState, useRef, useCallback, Suspense } from 'react'
-import { useSearchParams, useRouter }              from 'next/navigation'
+import { useState, useRef, useCallback, useEffect, Suspense } from 'react'
+import { useSearchParams, useRouter }                          from 'next/navigation'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+type TngRow = {
+  id:              string
+  trans_no:        string | null
+  entry_datetime:  string | null
+  exit_datetime:   string | null
+  entry_location:  string | null
+  exit_location:   string | null
+  amount:          number
+  sector:          'TOLL' | 'PARKING' | 'RETAIL'
+  upload_batch_id: string | null
+  claimed:         boolean
+  created_at:      string
+}
+
+type StatementBatch = {
+  batch_id:      string
+  imported_at:   string
+  toll_count:    number
+  parking_count: number
+  total_amount:  number
+  claimed_count: number
+  rows:          TngRow[]
+}
 
 type TngParsedRow = {
   trans_no:       string | null
@@ -27,13 +59,8 @@ type TngParsedRow = {
   sector:         'TOLL' | 'PARKING'
 }
 
-type ParseMeta = {
-  account_name: string | null
-  ewallet_id:   string | null
-  period:       string | null
-} | null
-
-type PageState = 'IDLE' | 'PARSING' | 'PREVIEW' | 'SAVING' | 'SAVED' | 'ERROR'
+type ParseMeta = { account_name: string | null; period: string | null } | null
+type ImportState = 'IDLE' | 'PARSING' | 'PREVIEW' | 'SAVING' | 'SAVED' | 'ERROR'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -47,516 +74,462 @@ function fmtDate(iso: string | null | undefined): string {
   } catch { return iso }
 }
 
-function fmtMyr(amount: number): string {
-  return `RM ${Number(amount).toFixed(2)}`
+function fmtMyr(n: number): string {
+  return `RM ${Number(n).toFixed(2)}`
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
-
-const S = {
-  page:        { maxWidth: 480, margin: '0 auto', padding: '20px 16px 80px', fontFamily: 'system-ui, sans-serif' } as const,
-  title:       { fontSize: 22, fontWeight: 800, color: '#0f172a', margin: '0 0 4px' } as const,
-  subtitle:    { fontSize: 13, color: '#64748b', margin: '0 0 24px' } as const,
-
-  dropzone:    {
-    border:        '2px dashed #cbd5e1',
-    borderRadius:  16,
-    padding:       '36px 24px',
-    textAlign:     'center',
-    backgroundColor: '#f8fafc',
-    cursor:        'pointer',
-    transition:    'border-color 0.2s, background 0.2s',
-  } as const,
-  dropzoneDrag: {
-    border:          '2px dashed #3b82f6',
-    backgroundColor: '#eff6ff',
-  } as const,
-  dropIcon:    { fontSize: 40, marginBottom: 12 } as const,
-  dropLabel:   { fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 4 } as const,
-  dropSub:     { fontSize: 12, color: '#94a3b8' } as const,
-  fileInput:   { display: 'none' } as const,
-
-  metaCard:    {
-    backgroundColor: '#f0fdf4',
-    border:          '1px solid #bbf7d0',
-    borderRadius:    10,
-    padding:         '10px 14px',
-    marginBottom:    16,
-  } as const,
-  metaRow:     { fontSize: 12, color: '#15803d', marginBottom: 2 } as const,
-  metaLabel:   { fontWeight: 700 } as const,
-
-  sectionHead: {
-    display:        'flex',
-    alignItems:     'center',
-    justifyContent: 'space-between',
-    margin:         '20px 0 8px',
-  } as const,
-  sectionTitle: { fontSize: 14, fontWeight: 700, color: '#0f172a' } as const,
-  selectAll:    {
-    fontSize:   12, fontWeight: 600, color: '#3b82f6',
-    background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-  } as const,
-
-  row:         {
-    display:        'flex',
-    alignItems:     'center',
-    gap:            10,
-    padding:        '10px 0',
-    borderBottom:   '1px solid #f1f5f9',
-  } as const,
-  rowCheck:    { width: 18, height: 18, cursor: 'pointer', accentColor: '#0f172a', flexShrink: 0 } as const,
-  rowBody:     { flex: 1, minWidth: 0 } as const,
-  rowTitle:    { fontSize: 13, fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const,
-  rowSub:      { fontSize: 11, color: '#94a3b8', marginTop: 1 } as const,
-  rowAmount:   { fontSize: 14, fontWeight: 700, color: '#0f172a', flexShrink: 0 } as const,
-
-  footer:      {
-    backgroundColor: '#f8fafc',
-    border:          '1px solid #e2e8f0',
-    borderRadius:    12,
-    padding:         '14px 16px',
-    display:         'flex',
-    alignItems:      'center',
-    justifyContent:  'space-between',
-    gap:             10,
-    marginTop:       20,
-  } as const,
-  footerLeft:  { fontSize: 13, color: '#374151' } as const,
-  footerAmt:   { fontWeight: 700, color: '#0f172a' } as const,
-
-  btnPrimary:  {
-    backgroundColor: '#0f172a', color: '#fff',
-    border:          'none', borderRadius: 10,
-    padding:         '11px 20px',
-    fontSize:        14, fontWeight: 700,
-    cursor:          'pointer', flexShrink: 0,
-  } as const,
-  btnSecondary: {
-    backgroundColor: 'transparent', color: '#64748b',
-    border:          '1px solid #e2e8f0', borderRadius: 10,
-    padding:         '11px 16px',
-    fontSize:        13, fontWeight: 600,
-    cursor:          'pointer',
-  } as const,
-  btnDisabled: { opacity: 0.45, pointerEvents: 'none' } as const,
-
-  pill:        (bg: string, color: string) => ({
-    fontSize: 10, fontWeight: 700,
-    padding: '2px 7px', borderRadius: 6,
-    backgroundColor: bg, color,
-    flexShrink: 0,
-  } as const),
-
-  spinner:     {
-    width: 28, height: 28,
-    border: '3px solid #e2e8f0',
-    borderTop: '3px solid #0f172a',
-    borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite',
-    margin: '32px auto 12px',
-  } as const,
-  center:      { textAlign: 'center', padding: '32px 0', color: '#64748b', fontSize: 14 } as const,
-
-  error:       {
-    backgroundColor: '#fef2f2', border: '1px solid #fecaca',
-    borderRadius: 10, padding: '14px 16px',
-    fontSize: 13, color: '#dc2626', marginBottom: 16,
-  } as const,
-  success:     {
-    backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0',
-    borderRadius: 10, padding: '16px',
-    textAlign: 'center', fontSize: 14, color: '#15803d',
-  } as const,
-
-  empty:       { textAlign: 'center', padding: '24px 0', color: '#94a3b8', fontSize: 13 } as const,
+function groupIntoBatches(rows: TngRow[]): StatementBatch[] {
+  const map = new Map<string, TngRow[]>()
+  for (const r of rows) {
+    const key = r.upload_batch_id ?? 'no-batch'
+    if (!map.has(key)) map.set(key, [])
+    map.get(key)!.push(r)
+  }
+  const batches: StatementBatch[] = []
+  for (const [batch_id, bRows] of map.entries()) {
+    batches.push({
+      batch_id,
+      imported_at:   bRows.reduce((a, b) => a < b.created_at ? a : b.created_at, bRows[0].created_at),
+      toll_count:    bRows.filter(r => r.sector === 'TOLL').length,
+      parking_count: bRows.filter(r => r.sector === 'PARKING').length,
+      total_amount:  bRows.reduce((s, r) => s + Number(r.amount), 0),
+      claimed_count: bRows.filter(r => r.claimed).length,
+      rows:          bRows,
+    })
+  }
+  return batches.sort((a, b) => b.imported_at.localeCompare(a.imported_at))
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// ── Pill badge ────────────────────────────────────────────────────────────────
 
-export default function TngPage() {
+function Pill({ bg, color, children }: { bg: string; color: string; children: React.ReactNode }) {
   return (
-    <Suspense>
-      <TngImporter />
-    </Suspense>
+    <span style={{
+      fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+      backgroundColor: bg, color, display: 'inline-block',
+    }}>
+      {children}
+    </span>
   )
 }
 
-function TngImporter() {
-  const searchParams = useSearchParams()
-  const router       = useRouter()
-  const returnUrl    = searchParams.get('return')   // e.g. /claims/abc/tng-link
+// ── Statement card ────────────────────────────────────────────────────────────
 
-  const [state,      setState]      = useState<PageState>('IDLE')
-  const [rows,       setRows]       = useState<TngParsedRow[]>([])
-  const [meta,       setMeta]       = useState<ParseMeta>(null)
-  const [selected,   setSelected]   = useState<Set<number>>(new Set())
-  const [errorMsg,   setErrorMsg]   = useState<string | null>(null)
-  const [savedInfo,  setSavedInfo]  = useState<{ saved: number; skipped: number } | null>(null)
-  const [isDragging, setIsDragging] = useState(false)
+function StatementCard({ batch, onRemove, expanded, onToggleExpand }: {
+  batch:          StatementBatch
+  onRemove:       (id: string) => void
+  expanded:       boolean
+  onToggleExpand: (id: string) => void
+}) {
+  const [removing, setRemoving] = useState(false)
+  const canRemove  = batch.claimed_count === 0
+  const visibleRows = batch.rows.filter(r => r.sector !== 'RETAIL')
 
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  async function handleRemove() {
+    if (!confirm(
+      `Remove this statement?\n\nThis will delete ${visibleRows.length} transaction${visibleRows.length !== 1 ? 's' : ''} from your library.`
+    )) return
+    setRemoving(true)
+    try {
+      const res  = await fetch(`/api/tng/statements/${batch.batch_id}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok) { alert(json.error?.message ?? 'Failed to remove.'); setRemoving(false); return }
+      onRemove(batch.batch_id)
+    } catch {
+      alert('Network error. Please try again.')
+      setRemoving(false)
+    }
+  }
 
-  // ── Parse ──────────────────────────────────────────────────────────────────
+  return (
+    <div style={S.card}>
+      {/* Header */}
+      <div style={{ padding: '14px 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          <span style={{ fontSize: 22, flexShrink: 0, marginTop: 1 }}>📄</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 6 }}>
+              Imported {fmtDate(batch.imported_at)}
+            </div>
+
+            {/* Stat pills */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+              {batch.toll_count > 0 && <Pill bg="#dbeafe" color="#1d4ed8">🛣️ {batch.toll_count} toll</Pill>}
+              {batch.parking_count > 0 && <Pill bg="#fef3c7" color="#92400e">🅿️ {batch.parking_count} parking</Pill>}
+              <Pill bg="#f1f5f9" color="#475569">{fmtMyr(batch.total_amount)}</Pill>
+              {batch.claimed_count > 0 && <Pill bg="#f0fdf4" color="#15803d">✓ {batch.claimed_count} claimed</Pill>}
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => onToggleExpand(batch.batch_id)}
+                style={S.btnGhost}
+              >
+                {expanded ? '▲ Hide' : `▼ Show ${visibleRows.length} rows`}
+              </button>
+              {canRemove
+                ? <button onClick={handleRemove} disabled={removing} style={{ ...S.btnGhost, color: '#dc2626' }}>
+                    {removing ? 'Removing…' : '🗑 Remove'}
+                  </button>
+                : <span style={{ fontSize: 11, color: '#94a3b8' }}>
+                    {batch.claimed_count} row{batch.claimed_count !== 1 ? 's' : ''} claimed — cannot remove
+                  </span>
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Rows list */}
+      {expanded && (
+        <div style={{ borderTop: '1px solid #f1f5f9' }}>
+          {visibleRows.length === 0
+            ? <div style={{ padding: '16px', fontSize: 13, color: '#94a3b8', textAlign: 'center' }}>No TOLL/PARKING rows.</div>
+            : visibleRows.map((row, i) => {
+                const loc  = row.sector === 'TOLL'
+                  ? [row.entry_location, row.exit_location].filter(Boolean).join(' → ')
+                  : (row.entry_location ?? '—')
+                const date = fmtDate(row.exit_datetime ?? row.entry_datetime)
+                return (
+                  <div key={row.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '9px 16px',
+                    borderBottom: i < visibleRows.length - 1 ? '1px solid #f8fafc' : 'none',
+                    backgroundColor: row.claimed ? '#f0fdf4' : '#fff',
+                  }}>
+                    <span style={{ fontSize: 13 }}>{row.sector === 'TOLL' ? '🛣️' : '🅿️'}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {loc}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                        {date}{row.trans_no ? ` · #${row.trans_no}` : ''}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{fmtMyr(row.amount)}</div>
+                      {row.claimed && <div style={{ fontSize: 10, color: '#15803d', fontWeight: 700 }}>✓ claimed</div>}
+                    </div>
+                  </div>
+                )
+              })
+          }
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Inline importer ───────────────────────────────────────────────────────────
+
+function InlineImporter({ onSaved }: { onSaved: (count: number) => void }) {
+  const [importState, setImportState] = useState<ImportState>('IDLE')
+  const [rows,        setRows]        = useState<TngParsedRow[]>([])
+  const [meta,        setMeta]        = useState<ParseMeta>(null)
+  const [selected,    setSelected]    = useState<Set<number>>(new Set())
+  const [errorMsg,    setErrorMsg]    = useState<string | null>(null)
+  const [savedCount,  setSavedCount]  = useState(0)
+  const [isDragging,  setIsDragging]  = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   const handleFile = useCallback(async (file: File) => {
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setErrorMsg('Please upload a PDF file. Only TNG Customer Transactions Statement PDFs are supported.')
-      return
-    }
-
-    setState('PARSING')
-    setErrorMsg(null)
-    setRows([])
-    setMeta(null)
-    setSelected(new Set())
-
-    const formData = new FormData()
-    formData.append('file', file)
-
+    if (!file.name.toLowerCase().endsWith('.pdf')) { setErrorMsg('Please upload a PDF file.'); return }
+    setImportState('PARSING'); setErrorMsg(null); setRows([]); setMeta(null); setSelected(new Set())
+    const fd = new FormData(); fd.append('file', file)
     try {
-      const res  = await fetch('/api/tng/parse', { method: 'POST', body: formData })
+      const res  = await fetch('/api/tng/parse', { method: 'POST', body: fd })
       const json = await res.json()
-
-      if (!res.ok) {
-        const msg = json?.error?.message ?? `Parse failed (${res.status}).`
-        setErrorMsg(msg)
-        setState('ERROR')
-        return
+      if (!res.ok) { setErrorMsg(json?.error?.message ?? 'Parse failed.'); setImportState('ERROR'); return }
+      const parsed: TngParsedRow[] = Array.isArray(json.rows) ? json.rows : []
+      if (parsed.length === 0) {
+        setErrorMsg('No TOLL or PARKING transactions found. Please check this is a TNG Customer Transactions Statement PDF.')
+        setImportState('ERROR'); return
       }
-
-      // Safely read rows — guard against any undefined/null
-      const parsedRows: TngParsedRow[] = Array.isArray(json.rows) ? json.rows : []
-
-      if (parsedRows.length === 0) {
-        setErrorMsg('No TOLL or PARKING transactions found. Make sure this is a TNG Customer Transactions Statement PDF.')
-        setState('ERROR')
-        return
-      }
-
-      setRows(parsedRows)
-      setMeta(json.meta ?? null)
-      // Pre-select all by default
-      setSelected(new Set(parsedRows.map((_, i) => i)))
-      setState('PREVIEW')
-
-    } catch (e) {
-      console.error('[TNG parse]', e)
-      setErrorMsg('Network error. Please check your connection and try again.')
-      setState('ERROR')
+      setRows(parsed); setMeta(json.meta ?? null)
+      setSelected(new Set(parsed.map((_, i) => i)))
+      setImportState('PREVIEW')
+    } catch {
+      setErrorMsg('Network error. Please try again.')
+      setImportState('ERROR')
     }
   }, [])
-
-  // ── Drag & drop ────────────────────────────────────────────────────────────
-
-  const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-    const file = e.dataTransfer.files?.[0]
-    if (file) handleFile(file)
-  }, [handleFile])
-
-  // ── Save ───────────────────────────────────────────────────────────────────
 
   const handleSave = useCallback(async () => {
     const toSave = rows.filter((_, i) => selected.has(i))
     if (toSave.length === 0) return
-
-    setState('SAVING')
-    setErrorMsg(null)
-
+    setImportState('SAVING'); setErrorMsg(null)
     try {
       const res  = await fetch('/api/tng/transactions', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ rows: toSave }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: toSave }),
       })
       const json = await res.json()
-
-      if (!res.ok) {
-        setErrorMsg(json?.error?.message ?? 'Failed to save transactions.')
-        setState('PREVIEW')
-        return
-      }
-
-      setSavedInfo({ saved: json.saved_count ?? 0, skipped: json.skipped_count ?? 0 })
-      setState('SAVED')
-
-    } catch (e) {
-      console.error('[TNG save]', e)
-      setErrorMsg('Network error while saving. Please try again.')
-      setState('PREVIEW')
+      if (!res.ok) { setErrorMsg(json?.error?.message ?? 'Failed to save.'); setImportState('PREVIEW'); return }
+      setSavedCount(json.saved_count ?? 0)
+      setImportState('SAVED')
+      onSaved(json.saved_count ?? 0)
+    } catch {
+      setErrorMsg('Network error while saving.')
+      setImportState('PREVIEW')
     }
-  }, [rows, selected])
+  }, [rows, selected, onSaved])
 
-  // ── Selection helpers ──────────────────────────────────────────────────────
+  function toggleRow(i: number) {
+    setSelected(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n })
+  }
+  function reset() {
+    setImportState('IDLE'); setRows([]); setMeta(null); setSelected(new Set()); setErrorMsg(null); setSavedCount(0)
+  }
 
-  const toggleRow = (i: number) =>
-    setSelected(prev => {
-      const next = new Set(prev)
-      next.has(i) ? next.delete(i) : next.add(i)
-      return next
-    })
+  const selectedTotal = rows.filter((_, i) => selected.has(i)).reduce((s, r) => s + r.amount, 0)
+  const tollRows      = rows.filter(r => r.sector === 'TOLL')
+  const parkingRows   = rows.filter(r => r.sector === 'PARKING')
 
-  const tollRows    = rows.filter(r => r.sector === 'TOLL')
-  const parkingRows = rows.filter(r => r.sector === 'PARKING')
-
-  const selectedTotal = rows
-    .filter((_, i) => selected.has(i))
-    .reduce((s, r) => s + r.amount, 0)
-
-  // ── Render: IDLE / ERROR ───────────────────────────────────────────────────
-
-  const renderDropzone = () => (
-    <>
-      {errorMsg && <div style={S.error}>{errorMsg}</div>}
-
-      <div
-        style={{ ...S.dropzone, ...(isDragging ? S.dropzoneDrag : {}) }}
-        onClick={() => fileInputRef.current?.click()}
-        onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
-        onDragLeave={() => setIsDragging(false)}
-        onDrop={onDrop}
-      >
-        <div style={S.dropIcon}>📄</div>
-        <div style={S.dropLabel}>Drop your TNG statement here</div>
-        <div style={S.dropSub}>or tap to browse · PDF only · max 10 MB</div>
+  if (importState === 'SAVED') return (
+    <div style={{ textAlign: 'center', padding: '8px 0' }}>
+      <div style={{ fontSize: 28, marginBottom: 6 }}>✅</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: '#15803d', marginBottom: 4 }}>
+        {savedCount} transaction{savedCount !== 1 ? 's' : ''} saved to library
       </div>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".pdf,application/pdf"
-        style={S.fileInput}
-        onChange={e => {
-          const file = e.target.files?.[0]
-          if (file) handleFile(file)
-          e.target.value = ''
-        }}
-      />
-
-      <div style={{ marginTop: 20, fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>
-        <strong style={{ color: '#64748b' }}>Supported format:</strong><br />
-        TNG eWallet &ldquo;Customer Transactions Statement&rdquo; PDF.<br />
-        Download from Touch &apos;n Go app → History → Export Statement.
-      </div>
-    </>
+      <button onClick={reset} style={{ ...S.btnGhost, marginTop: 8 }}>Import another statement</button>
+    </div>
   )
 
-  // ── Render: PARSING ────────────────────────────────────────────────────────
-
-  const renderParsing = () => (
-    <div style={S.center}>
+  if (importState === 'PARSING' || importState === 'SAVING') return (
+    <div style={{ textAlign: 'center', padding: '16px 0' }}>
       <div style={S.spinner} />
-      <div>Reading statement…</div>
-      <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 6 }}>
-        This may take up to 30 seconds on first use.
+      <div style={{ fontSize: 13, color: '#64748b' }}>
+        {importState === 'PARSING' ? 'Reading statement…' : `Saving ${selected.size} transactions…`}
       </div>
     </div>
   )
 
-  // ── Render: SAVING ─────────────────────────────────────────────────────────
-
-  const renderSaving = () => (
-    <div style={S.center}>
-      <div style={S.spinner} />
-      <div>Saving {selected.size} transaction{selected.size !== 1 ? 's' : ''}…</div>
-    </div>
-  )
-
-  // ── Render: SAVED ──────────────────────────────────────────────────────────
-
-  const renderSaved = () => (
-    <div>
-      <div style={S.success}>
-        <div style={{ fontSize: 32, marginBottom: 8 }}>✅</div>
-        <div style={{ fontWeight: 700, marginBottom: 4 }}>
-          {savedInfo?.saved ?? 0} transaction{(savedInfo?.saved ?? 0) !== 1 ? 's' : ''} saved
-        </div>
-        {(savedInfo?.skipped ?? 0) > 0 && (
-          <div style={{ fontSize: 12, color: '#166534', marginTop: 4 }}>
-            {savedInfo!.skipped} duplicate{savedInfo!.skipped !== 1 ? 's' : ''} skipped
+  if (importState === 'PREVIEW') {
+    const renderSection = (label: string, sRows: TngParsedRow[], bg: string, col: string) => {
+      if (sRows.length === 0) return null
+      const gi     = sRows.map(r => rows.indexOf(r))
+      const allSel = gi.every(i => selected.has(i))
+      return (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>
+              {label} <Pill bg={bg} color={col}>{sRows.length}</Pill>
+            </span>
+            <button style={{ fontSize: 11, color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600 }}
+              onClick={() => setSelected(prev => { const n = new Set(prev); allSel ? gi.forEach(i => n.delete(i)) : gi.forEach(i => n.add(i)); return n })}>
+              {allSel ? 'Deselect all' : 'Select all'}
+            </button>
           </div>
-        )}
-        <div style={{ fontSize: 12, color: '#166534', marginTop: 8 }}>
-          {returnUrl
-            ? 'Transactions saved. Now match them to your claim items.'
-            : 'Go to a Claim → Add Item → Toll / Parking → From TNG Statement to attach them.'
-          }
+          {sRows.map((row, j) => {
+            const idx   = rows.indexOf(row)
+            const isSel = selected.has(idx)
+            const desc  = label === 'TOLL'
+              ? [row.entry_location, row.exit_location].filter(Boolean).join(' → ')
+              : (row.entry_location ?? '—')
+            return (
+              <div key={j} onClick={() => toggleRow(idx)} style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0',
+                borderBottom: '1px solid #f1f5f9', cursor: 'pointer', opacity: isSel ? 1 : 0.45,
+              }}>
+                <input type="checkbox" checked={isSel} onChange={() => toggleRow(idx)}
+                  onClick={e => e.stopPropagation()}
+                  style={{ width: 16, height: 16, accentColor: '#0f172a', flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{desc}</div>
+                  <div style={{ fontSize: 11, color: '#94a3b8' }}>{fmtDate(row.exit_datetime ?? row.entry_datetime)}{row.trans_no ? ` · #${row.trans_no}` : ''}</div>
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', flexShrink: 0 }}>{fmtMyr(row.amount)}</span>
+              </div>
+            )
+          })}
         </div>
-      </div>
-
-      {/* PRIMARY: return to the claim's link page to run the matcher */}
-      {returnUrl && (
-        <button
-          style={{ ...S.btnPrimary, width: '100%', marginTop: 16, textAlign: 'center' }}
-          onClick={() => router.push(returnUrl)}
-        >
-          Continue → Match TNG to claim items
-        </button>
-      )}
-
-      <button
-        style={{ ...S.btnSecondary, width: '100%', marginTop: returnUrl ? 8 : 16, textAlign: 'center' }}
-        onClick={() => { setState('IDLE'); setRows([]); setMeta(null); setSavedInfo(null); setSelected(new Set()) }}
-      >
-        Import Another Statement
-      </button>
-    </div>
-  )
-
-  // ── Render: PREVIEW ────────────────────────────────────────────────────────
-
-  const renderSection = (
-    label: string,
-    sectionRows: TngParsedRow[],
-    pillBg: string,
-    pillColor: string,
-  ) => {
-    if (sectionRows.length === 0) return null
-
-    // Map section rows back to global indices
-    const globalIndices = sectionRows.map(r => rows.indexOf(r))
-    const allSelected   = globalIndices.every(i => selected.has(i))
+      )
+    }
 
     return (
       <div>
-        <div style={S.sectionHead}>
-          <span style={S.sectionTitle}>
-            {label}
-            <span style={{ ...S.pill(pillBg, pillColor), marginLeft: 8 }}>
-              {sectionRows.length}
-            </span>
-          </span>
-          <button
-            style={S.selectAll}
-            onClick={() => {
-              setSelected(prev => {
-                const next = new Set(prev)
-                if (allSelected) {
-                  globalIndices.forEach(i => next.delete(i))
-                } else {
-                  globalIndices.forEach(i => next.add(i))
-                }
-                return next
-              })
-            }}
-          >
-            {allSelected ? 'Deselect all' : 'Select all'}
-          </button>
+        {meta?.account_name && (
+          <div style={{ padding: '7px 10px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, marginBottom: 12, fontSize: 12, color: '#15803d' }}>
+            <strong>Account:</strong> {meta.account_name}{meta.period && <> · <strong>Period:</strong> {meta.period}</>}
+          </div>
+        )}
+        {errorMsg && <div style={{ ...S.errorBox, marginBottom: 12 }}>{errorMsg}</div>}
+        {renderSection('TOLL',    tollRows,    '#dbeafe', '#1d4ed8')}
+        {renderSection('PARKING', parkingRows, '#fef3c7', '#92400e')}
+
+        {/* Inline save bar */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '11px 14px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, marginTop: 4 }}>
+          <div style={{ fontSize: 13, color: '#374151' }}>
+            <strong>{selected.size}</strong> selected
+            {selectedTotal > 0 && <> · <strong style={{ color: '#0f172a' }}>{fmtMyr(selectedTotal)}</strong></>}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={reset} style={{ ...S.btnGhost, border: '1px solid #e2e8f0' }}>Cancel</button>
+            <button onClick={handleSave} disabled={selected.size === 0}
+              style={{ fontSize: 12, fontWeight: 700, padding: '7px 16px', border: 'none', borderRadius: 8, cursor: 'pointer', backgroundColor: '#0f172a', color: '#fff', opacity: selected.size === 0 ? 0.45 : 1 }}>
+              Save ({selected.size})
+            </button>
+          </div>
         </div>
-
-        {sectionRows.map((row, j) => {
-          const gi     = rows.indexOf(row)
-          const isChecked = selected.has(gi)
-          const from   = row.entry_location ?? '—'
-          const to     = row.exit_location  ?? '—'
-          const dt     = fmtDate(row.exit_datetime ?? row.entry_datetime)
-          const desc   = label === 'TOLL'
-            ? `${from} → ${to}`
-            : from
-
-          return (
-            <div
-              key={j}
-              style={{ ...S.row, opacity: isChecked ? 1 : 0.45, cursor: 'pointer' }}
-              onClick={() => toggleRow(gi)}
-            >
-              <input
-                type="checkbox"
-                style={S.rowCheck}
-                checked={isChecked}
-                onChange={() => toggleRow(gi)}
-                onClick={e => e.stopPropagation()}
-              />
-              <div style={S.rowBody}>
-                <div style={S.rowTitle} title={desc}>{desc}</div>
-                <div style={S.rowSub}>
-                  {dt}
-                  {row.trans_no ? ` · #${row.trans_no}` : ''}
-                </div>
-              </div>
-              <div style={S.rowAmount}>{fmtMyr(row.amount)}</div>
-            </div>
-          )
-        })}
       </div>
     )
   }
 
-  const renderPreview = () => (
-    <>
-      {errorMsg && <div style={S.error}>{errorMsg}</div>}
-
-      {/* Meta card */}
-      {meta?.account_name && (
-        <div style={S.metaCard}>
-          {meta.account_name && (
-            <div style={S.metaRow}>
-              <span style={S.metaLabel}>Account: </span>{meta.account_name}
-            </div>
-          )}
-          {meta.period && (
-            <div style={S.metaRow}>
-              <span style={S.metaLabel}>Period: </span>{meta.period}
-            </div>
-          )}
-        </div>
-      )}
-
-      {renderSection('TOLL',    tollRows,    '#dbeafe', '#1d4ed8')}
-      {renderSection('PARKING', parkingRows, '#fef3c7', '#92400e')}
-
-      {rows.length === 0 && (
-        <div style={S.empty}>No transactions to display.</div>
-      )}
-
-      {/* Re-upload link */}
-      <div style={{ textAlign: 'center', marginTop: 16 }}>
-        <button
-          style={{ ...S.btnSecondary, fontSize: 12 }}
-          onClick={() => { setState('IDLE'); setRows([]); setMeta(null); setSelected(new Set()) }}
-        >
-          Upload a different file
-        </button>
+  // IDLE / ERROR
+  return (
+    <div>
+      {errorMsg && <div style={{ ...S.errorBox, marginBottom: 12 }}>{errorMsg}</div>}
+      <div
+        style={{ border: `2px dashed ${isDragging ? '#3b82f6' : '#cbd5e1'}`, borderRadius: 12, padding: '28px 20px', textAlign: 'center', backgroundColor: isDragging ? '#eff6ff' : '#f8fafc', cursor: 'pointer' }}
+        onClick={() => fileRef.current?.click()}
+        onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={e => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files?.[0]; if (f) handleFile(f) }}
+      >
+        <div style={{ fontSize: 32, marginBottom: 8 }}>📄</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 4 }}>Drop TNG statement here or tap to browse</div>
+        <div style={{ fontSize: 11, color: '#94a3b8' }}>PDF only · max 10 MB</div>
       </div>
-
-      {/* Fixed footer */}
-      <div style={S.footer}>
-        <div style={S.footerLeft}>
-          {selected.size} selected
-          {selectedTotal > 0 && (
-            <> · <span style={S.footerAmt}>{fmtMyr(selectedTotal)}</span></>
-          )}
-        </div>
-        <button
-          style={{ ...S.btnPrimary, ...(selected.size === 0 ? S.btnDisabled : {}) }}
-          disabled={selected.size === 0}
-          onClick={handleSave}
-        >
-          Save {selected.size > 0 ? `(${selected.size})` : ''}
-        </button>
+      <input ref={fileRef} type="file" accept=".pdf,application/pdf" style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }} />
+      <div style={{ marginTop: 10, fontSize: 11, color: '#94a3b8', lineHeight: 1.6 }}>
+        TNG app → History → Export Statement → Customer Transactions Statement PDF
       </div>
-    </>
+    </div>
   )
+}
 
-  // ── Main render ────────────────────────────────────────────────────────────
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+export default function TngPage() {
+  return <Suspense><TngStatementManager /></Suspense>
+}
+
+function TngStatementManager() {
+  const searchParams  = useSearchParams()
+  const router        = useRouter()
+  const returnUrl     = searchParams.get('return')
+
+  const [batches,       setBatches]      = useState<StatementBatch[]>([])
+  const [loadingLib,    setLoadingLib]   = useState(true)
+  const [loadErr,       setLoadErr]      = useState<string | null>(null)
+  const [expandedBatch, setExpandedBatch] = useState<string | null>(null)
+  const [showImporter,  setShowImporter] = useState(false)
+
+  const loadLibrary = useCallback(async () => {
+    setLoadingLib(true); setLoadErr(null)
+    try {
+      const res  = await fetch('/api/tng/transactions')
+      const json = await res.json()
+      if (!res.ok) { setLoadErr(json.error?.message ?? 'Failed to load.'); return }
+      setBatches(groupIntoBatches(json.items ?? []))
+    } catch { setLoadErr('Network error.') }
+    finally   { setLoadingLib(false) }
+  }, [])
+
+  useEffect(() => { loadLibrary() }, [loadLibrary])
+
+  function handleSaved(count: number) {
+    if (count > 0) { loadLibrary(); setShowImporter(false) }
+  }
+
+  const hasStatements = batches.length > 0
+  const totalTxns     = batches.reduce((s, b) => s + b.toll_count + b.parking_count, 0)
 
   return (
     <div style={S.page}>
-      {/* Spinner keyframe */}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
-      <h1 style={S.title}>Import TNG Statement</h1>
-      <p style={S.subtitle}>
-        Upload your Touch &apos;n Go Customer Transactions Statement to import toll &amp; parking charges.
-      </p>
+      {/* ── Header ──────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+        <div>
+          <h1 style={{ fontSize: 20, fontWeight: 800, color: '#0f172a', margin: 0 }}>💳 TNG Statements</h1>
+          <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0' }}>
+            {loadingLib ? 'Loading…'
+              : hasStatements
+                ? `${batches.length} statement${batches.length !== 1 ? 's' : ''} · ${totalTxns} transactions`
+                : 'No statements imported yet'}
+          </p>
+        </div>
+        <button
+          onClick={() => setShowImporter(v => !v)}
+          style={{ fontSize: 12, fontWeight: 700, padding: '8px 14px', border: 'none', borderRadius: 8, cursor: 'pointer', flexShrink: 0, backgroundColor: showImporter ? '#f1f5f9' : '#0f172a', color: showImporter ? '#64748b' : '#fff' }}
+        >
+          {showImporter ? '✕ Cancel' : '+ Import Statement'}
+        </button>
+      </div>
 
-      {(state === 'IDLE' || state === 'ERROR') && renderDropzone()}
-      {state === 'PARSING'                     && renderParsing()}
-      {state === 'SAVING'                      && renderSaving()}
-      {state === 'SAVED'                       && renderSaved()}
-      {state === 'PREVIEW'                     && renderPreview()}
+      {/* ── Return context banner ───────────────────────────────────── */}
+      {returnUrl && (
+        <div style={{ padding: '10px 14px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, fontSize: 12, color: '#1d4ed8', lineHeight: 1.5 }}>
+          💡 Import a statement below, then tap <strong>Continue to match</strong> to link it to your claim.
+          {hasStatements && <> Or tap <strong>Continue</strong> now to match existing transactions.</>}
+        </div>
+      )}
+
+      {/* ── Inline importer ─────────────────────────────────────────── */}
+      {showImporter && (
+        <div style={S.card}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
+            Import New Statement
+          </div>
+          <div style={{ padding: '14px 16px' }}>
+            <InlineImporter onSaved={handleSaved} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Errors ──────────────────────────────────────────────────── */}
+      {loadErr && <div style={S.errorBox}>{loadErr}</div>}
+
+      {/* ── Library ─────────────────────────────────────────────────── */}
+      {loadingLib
+        ? <div style={{ textAlign: 'center', padding: '40px 0' }}><div style={S.spinner} /></div>
+        : hasStatements
+          ? batches.map(b => (
+              <StatementCard
+                key={b.batch_id}
+                batch={b}
+                onRemove={id => setBatches(prev => prev.filter(x => x.batch_id !== id))}
+                expanded={expandedBatch === b.batch_id}
+                onToggleExpand={id => setExpandedBatch(prev => prev === id ? null : id)}
+              />
+            ))
+          : !showImporter && (
+              <div style={{ textAlign: 'center', padding: '40px 20px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12 }}>
+                <div style={{ fontSize: 40, marginBottom: 10 }}>📄</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>No statements yet</div>
+                <div style={{ fontSize: 13, color: '#64748b', marginBottom: 16, lineHeight: 1.6 }}>
+                  Import your TNG Customer Transactions Statement PDF.<br />
+                  Rows stay in your library and can be matched to any claim.
+                </div>
+                <button onClick={() => setShowImporter(true)} style={{ fontSize: 13, fontWeight: 700, padding: '10px 20px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 10, cursor: 'pointer' }}>
+                  + Import First Statement
+                </button>
+              </div>
+            )
+      }
+
+      {/* ── Continue button (claim return flow) ─────────────────────── */}
+      {returnUrl && hasStatements && !loadingLib && (
+        <button
+          onClick={() => router.push(returnUrl)}
+          style={{ width: '100%', padding: '14px 20px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', letterSpacing: 0.2 }}
+        >
+          Continue → Match TNG to claim items
+        </button>
+      )}
     </div>
   )
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const S: Record<string, React.CSSProperties> = {
+  page:    { maxWidth: 520, margin: '0 auto', padding: '20px 16px 60px', fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', gap: 16 },
+  card:    { backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden' },
+  btnGhost: { fontSize: 11, fontWeight: 700, padding: '6px 12px', border: 'none', borderRadius: 8, cursor: 'pointer', backgroundColor: '#f1f5f9', color: '#374151' },
+  spinner: { width: 26, height: 26, border: '3px solid #e2e8f0', borderTop: '3px solid #0f172a', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 10px' },
+  errorBox: { backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#dc2626' },
 }
