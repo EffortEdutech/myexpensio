@@ -15,10 +15,10 @@
 //   redirects back after import. Used by /claims/[id]/tng-link.
 //
 // API calls:
-//   GET    /api/tng/transactions            → all rows for this user
-//   POST   /api/tng/parse                   → parse PDF (preview, not saved)
-//   POST   /api/tng/transactions            → save parsed rows
-//   DELETE /api/tng/statements/[batch_id]  → remove a batch (unclaimed only)
+//   GET    /api/tng/transactions           → all rows for this user
+//   POST   /api/tng/parse                  → parse PDF + save to Storage, returns source_file_path
+//   POST   /api/tng/transactions           → save parsed rows (with source_file_path forwarded)
+//   DELETE /api/tng/statements/[batch_id] → remove a batch (unclaimed only)
 
 import { useState, useRef, useCallback, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter }                          from 'next/navigation'
@@ -154,7 +154,7 @@ function StatementCard({ batch, onRemove, expanded, onToggleExpand }: {
 
             {/* Stat pills */}
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-              {batch.toll_count > 0 && <Pill bg="#dbeafe" color="#1d4ed8">🛣️ {batch.toll_count} toll</Pill>}
+              {batch.toll_count > 0    && <Pill bg="#dbeafe" color="#1d4ed8">🛣️ {batch.toll_count} toll</Pill>}
               {batch.parking_count > 0 && <Pill bg="#fef3c7" color="#92400e">🅿️ {batch.parking_count} parking</Pill>}
               <Pill bg="#f1f5f9" color="#475569">{fmtMyr(batch.total_amount)}</Pill>
               {batch.claimed_count > 0 && <Pill bg="#f0fdf4" color="#15803d">✓ {batch.claimed_count} claimed</Pill>}
@@ -224,31 +224,52 @@ function StatementCard({ batch, onRemove, expanded, onToggleExpand }: {
 // ── Inline importer ───────────────────────────────────────────────────────────
 
 function InlineImporter({ onSaved }: { onSaved: (count: number) => void }) {
-  const [importState, setImportState] = useState<ImportState>('IDLE')
-  const [rows,        setRows]        = useState<TngParsedRow[]>([])
-  const [meta,        setMeta]        = useState<ParseMeta>(null)
-  const [selected,    setSelected]    = useState<Set<number>>(new Set())
-  const [errorMsg,    setErrorMsg]    = useState<string | null>(null)
-  const [savedCount,  setSavedCount]  = useState(0)
-  const [isDragging,  setIsDragging]  = useState(false)
+  const [importState,     setImportState]     = useState<ImportState>('IDLE')
+  const [rows,            setRows]            = useState<TngParsedRow[]>([])
+  const [meta,            setMeta]            = useState<ParseMeta>(null)
+  const [selected,        setSelected]        = useState<Set<number>>(new Set())
+  const [errorMsg,        setErrorMsg]        = useState<string | null>(null)
+  const [savedCount,      setSavedCount]      = useState(0)
+  const [isDragging,      setIsDragging]      = useState(false)
+  // ── NEW: capture the storage path returned by /api/tng/parse ─────────────
+  const [sourceFilePath,  setSourceFilePath]  = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const handleFile = useCallback(async (file: File) => {
     if (!file.name.toLowerCase().endsWith('.pdf')) { setErrorMsg('Please upload a PDF file.'); return }
-    setImportState('PARSING'); setErrorMsg(null); setRows([]); setMeta(null); setSelected(new Set())
-    const fd = new FormData(); fd.append('file', file)
+    setImportState('PARSING')
+    setErrorMsg(null)
+    setRows([])
+    setMeta(null)
+    setSelected(new Set())
+    setSourceFilePath(null)   // ← reset
+
+    const fd = new FormData()
+    fd.append('file', file)
+
     try {
       const res  = await fetch('/api/tng/parse', { method: 'POST', body: fd })
       const json = await res.json()
-      if (!res.ok) { setErrorMsg(json?.error?.message ?? 'Parse failed.'); setImportState('ERROR'); return }
+
+      if (!res.ok) {
+        setErrorMsg(json?.error?.message ?? 'Parse failed.')
+        setImportState('ERROR')
+        return
+      }
+
       const parsed: TngParsedRow[] = Array.isArray(json.rows) ? json.rows : []
       if (parsed.length === 0) {
         setErrorMsg('No TOLL or PARKING transactions found. Please check this is a TNG Customer Transactions Statement PDF.')
-        setImportState('ERROR'); return
+        setImportState('ERROR')
+        return
       }
-      setRows(parsed); setMeta(json.meta ?? null)
+
+      setRows(parsed)
+      setMeta(json.meta ?? null)
       setSelected(new Set(parsed.map((_, i) => i)))
+      setSourceFilePath(json.source_file_path ?? null)   // ← capture path
       setImportState('PREVIEW')
+
     } catch {
       setErrorMsg('Network error. Please try again.')
       setImportState('ERROR')
@@ -258,33 +279,55 @@ function InlineImporter({ onSaved }: { onSaved: (count: number) => void }) {
   const handleSave = useCallback(async () => {
     const toSave = rows.filter((_, i) => selected.has(i))
     if (toSave.length === 0) return
-    setImportState('SAVING'); setErrorMsg(null)
+    setImportState('SAVING')
+    setErrorMsg(null)
+
     try {
       const res  = await fetch('/api/tng/transactions', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: toSave }),
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          rows:             toSave,
+          source_file_path: sourceFilePath,   // ← forward storage path to transactions route
+        }),
       })
       const json = await res.json()
-      if (!res.ok) { setErrorMsg(json?.error?.message ?? 'Failed to save.'); setImportState('PREVIEW'); return }
+
+      if (!res.ok) {
+        setErrorMsg(json?.error?.message ?? 'Failed to save.')
+        setImportState('PREVIEW')
+        return
+      }
+
       setSavedCount(json.saved_count ?? 0)
       setImportState('SAVED')
       onSaved(json.saved_count ?? 0)
+
     } catch {
       setErrorMsg('Network error while saving.')
       setImportState('PREVIEW')
     }
-  }, [rows, selected, onSaved])
+  }, [rows, selected, sourceFilePath, onSaved])
 
   function toggleRow(i: number) {
     setSelected(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n })
   }
+
   function reset() {
-    setImportState('IDLE'); setRows([]); setMeta(null); setSelected(new Set()); setErrorMsg(null); setSavedCount(0)
+    setImportState('IDLE')
+    setRows([])
+    setMeta(null)
+    setSelected(new Set())
+    setErrorMsg(null)
+    setSavedCount(0)
+    setSourceFilePath(null)
   }
 
   const selectedTotal = rows.filter((_, i) => selected.has(i)).reduce((s, r) => s + r.amount, 0)
   const tollRows      = rows.filter(r => r.sector === 'TOLL')
   const parkingRows   = rows.filter(r => r.sector === 'PARKING')
+
+  // ── SAVED ──────────────────────────────────────────────────────────────────
 
   if (importState === 'SAVED') return (
     <div style={{ textAlign: 'center', padding: '8px 0' }}>
@@ -292,9 +335,16 @@ function InlineImporter({ onSaved }: { onSaved: (count: number) => void }) {
       <div style={{ fontSize: 14, fontWeight: 700, color: '#15803d', marginBottom: 4 }}>
         {savedCount} transaction{savedCount !== 1 ? 's' : ''} saved to library
       </div>
+      {!sourceFilePath && (
+        <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 8 }}>
+          Note: original PDF could not be saved — transactions are still available for matching.
+        </div>
+      )}
       <button onClick={reset} style={{ ...S.btnGhost, marginTop: 8 }}>Import another statement</button>
     </div>
   )
+
+  // ── PARSING / SAVING ───────────────────────────────────────────────────────
 
   if (importState === 'PARSING' || importState === 'SAVING') return (
     <div style={{ textAlign: 'center', padding: '16px 0' }}>
@@ -304,6 +354,8 @@ function InlineImporter({ onSaved }: { onSaved: (count: number) => void }) {
       </div>
     </div>
   )
+
+  // ── PREVIEW ────────────────────────────────────────────────────────────────
 
   if (importState === 'PREVIEW') {
     const renderSection = (label: string, sRows: TngParsedRow[], bg: string, col: string) => {
@@ -316,8 +368,13 @@ function InlineImporter({ onSaved }: { onSaved: (count: number) => void }) {
             <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>
               {label} <Pill bg={bg} color={col}>{sRows.length}</Pill>
             </span>
-            <button style={{ fontSize: 11, color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600 }}
-              onClick={() => setSelected(prev => { const n = new Set(prev); allSel ? gi.forEach(i => n.delete(i)) : gi.forEach(i => n.add(i)); return n })}>
+            <button
+              style={{ fontSize: 11, color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600 }}
+              onClick={() => setSelected(prev => {
+                const n = new Set(prev)
+                allSel ? gi.forEach(i => n.delete(i)) : gi.forEach(i => n.add(i))
+                return n
+              })}>
               {allSel ? 'Deselect all' : 'Select all'}
             </button>
           </div>
@@ -337,7 +394,9 @@ function InlineImporter({ onSaved }: { onSaved: (count: number) => void }) {
                   style={{ width: 16, height: 16, accentColor: '#0f172a', flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{desc}</div>
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>{fmtDate(row.exit_datetime ?? row.entry_datetime)}{row.trans_no ? ` · #${row.trans_no}` : ''}</div>
+                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                    {fmtDate(row.exit_datetime ?? row.entry_datetime)}{row.trans_no ? ` · #${row.trans_no}` : ''}
+                  </div>
                 </div>
                 <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', flexShrink: 0 }}>{fmtMyr(row.amount)}</span>
               </div>
@@ -351,14 +410,20 @@ function InlineImporter({ onSaved }: { onSaved: (count: number) => void }) {
       <div>
         {meta?.account_name && (
           <div style={{ padding: '7px 10px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, marginBottom: 12, fontSize: 12, color: '#15803d' }}>
-            <strong>Account:</strong> {meta.account_name}{meta.period && <> · <strong>Period:</strong> {meta.period}</>}
+            <strong>Account:</strong> {meta.account_name}
+            {meta.period && <> · <strong>Period:</strong> {meta.period}</>}
+          </div>
+        )}
+        {sourceFilePath && (
+          <div style={{ padding: '6px 10px', backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, marginBottom: 12, fontSize: 11, color: '#0369a1' }}>
+            ✓ Original PDF saved — will be embedded in expense claim PDF exports
           </div>
         )}
         {errorMsg && <div style={{ ...S.errorBox, marginBottom: 12 }}>{errorMsg}</div>}
         {renderSection('TOLL',    tollRows,    '#dbeafe', '#1d4ed8')}
         {renderSection('PARKING', parkingRows, '#fef3c7', '#92400e')}
 
-        {/* Inline save bar */}
+        {/* Save bar */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '11px 14px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, marginTop: 4 }}>
           <div style={{ fontSize: 13, color: '#374151' }}>
             <strong>{selected.size}</strong> selected
@@ -376,7 +441,8 @@ function InlineImporter({ onSaved }: { onSaved: (count: number) => void }) {
     )
   }
 
-  // IDLE / ERROR
+  // ── IDLE / ERROR ───────────────────────────────────────────────────────────
+
   return (
     <div>
       {errorMsg && <div style={{ ...S.errorBox, marginBottom: 12 }}>{errorMsg}</div>}
@@ -411,11 +477,11 @@ function TngStatementManager() {
   const router        = useRouter()
   const returnUrl     = searchParams.get('return')
 
-  const [batches,       setBatches]      = useState<StatementBatch[]>([])
-  const [loadingLib,    setLoadingLib]   = useState(true)
-  const [loadErr,       setLoadErr]      = useState<string | null>(null)
+  const [batches,       setBatches]       = useState<StatementBatch[]>([])
+  const [loadingLib,    setLoadingLib]    = useState(true)
+  const [loadErr,       setLoadErr]       = useState<string | null>(null)
   const [expandedBatch, setExpandedBatch] = useState<string | null>(null)
-  const [showImporter,  setShowImporter] = useState(false)
+  const [showImporter,  setShowImporter]  = useState(false)
 
   const loadLibrary = useCallback(async () => {
     setLoadingLib(true); setLoadErr(null)
@@ -441,7 +507,7 @@ function TngStatementManager() {
     <div style={S.page}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
-      {/* ── Header ──────────────────────────────────────────────────── */}
+      {/* ── Header ────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 800, color: '#0f172a', margin: 0 }}>💳 TNG Statements</h1>
@@ -460,7 +526,7 @@ function TngStatementManager() {
         </button>
       </div>
 
-      {/* ── Return context banner ───────────────────────────────────── */}
+      {/* ── Return context banner ──────────────────────────────────────── */}
       {returnUrl && (
         <div style={{ padding: '10px 14px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, fontSize: 12, color: '#1d4ed8', lineHeight: 1.5 }}>
           💡 Import a statement below, then tap <strong>Continue to match</strong> to link it to your claim.
@@ -468,7 +534,7 @@ function TngStatementManager() {
         </div>
       )}
 
-      {/* ── Inline importer ─────────────────────────────────────────── */}
+      {/* ── Inline importer ───────────────────────────────────────────── */}
       {showImporter && (
         <div style={S.card}>
           <div style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
@@ -480,10 +546,10 @@ function TngStatementManager() {
         </div>
       )}
 
-      {/* ── Errors ──────────────────────────────────────────────────── */}
+      {/* ── Errors ────────────────────────────────────────────────────── */}
       {loadErr && <div style={S.errorBox}>{loadErr}</div>}
 
-      {/* ── Library ─────────────────────────────────────────────────── */}
+      {/* ── Library ───────────────────────────────────────────────────── */}
       {loadingLib
         ? <div style={{ textAlign: 'center', padding: '40px 0' }}><div style={S.spinner} /></div>
         : hasStatements
@@ -511,7 +577,7 @@ function TngStatementManager() {
             )
       }
 
-      {/* ── Continue button (claim return flow) ─────────────────────── */}
+      {/* ── Continue button (claim return flow) ───────────────────────── */}
       {returnUrl && hasStatements && !loadingLib && (
         <button
           onClick={() => router.push(returnUrl)}
@@ -527,9 +593,9 @@ function TngStatementManager() {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const S: Record<string, React.CSSProperties> = {
-  page:    { maxWidth: 520, margin: '0 auto', padding: '20px 16px 60px', fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', gap: 16 },
-  card:    { backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden' },
+  page:     { maxWidth: 520, margin: '0 auto', padding: '20px 16px 60px', fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', gap: 16 },
+  card:     { backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden' },
   btnGhost: { fontSize: 11, fontWeight: 700, padding: '6px 12px', border: 'none', borderRadius: 8, cursor: 'pointer', backgroundColor: '#f1f5f9', color: '#374151' },
-  spinner: { width: 26, height: 26, border: '3px solid #e2e8f0', borderTop: '3px solid #0f172a', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 10px' },
+  spinner:  { width: 26, height: 26, border: '3px solid #e2e8f0', borderTop: '3px solid #0f172a', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 10px' },
   errorBox: { backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#dc2626' },
 }

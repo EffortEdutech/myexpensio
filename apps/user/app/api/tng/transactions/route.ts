@@ -10,12 +10,16 @@
 //   ?to=YYYY-MM-DD             filter by exit_datetime <= to
 //
 // POST request body:
-//   { rows: TngParsedRow[] }   — array from /api/tng/parse response
+//   {
+//     rows:             TngParsedRow[]   — array from /api/tng/parse response
+//     source_file_path: string | null   — storage path returned by /api/tng/parse
+//                                         (persisted as source_file_url on each row)
+//   }
 //
 // POST response:
 //   { upload_batch_id, saved_count, skipped_count, message }
 //
-// Dedup: same trans_no per user is skipped on re-upload (unique index in DB).
+// Dedup: same trans_no per user is skipped on re-upload.
 // RLS:   user can only read/write their own org's rows.
 
 import { createClient } from '@/lib/supabase/server'
@@ -49,10 +53,10 @@ export async function GET(request: NextRequest) {
   if (!org) return err('NO_ORG', 'No organisation found.', 400)
 
   const { searchParams } = new URL(request.url)
-  const sector  = searchParams.get('sector')   // TOLL | PARKING
-  const claimed = searchParams.get('claimed')  // 'false' → only unclaimed
-  const from    = searchParams.get('from')     // YYYY-MM-DD
-  const to      = searchParams.get('to')       // YYYY-MM-DD
+  const sector  = searchParams.get('sector')
+  const claimed = searchParams.get('claimed')
+  const from    = searchParams.get('from')
+  const to      = searchParams.get('to')
 
   let query = supabase
     .from('tng_transactions')
@@ -62,7 +66,8 @@ export async function GET(request: NextRequest) {
       entry_location, exit_location,
       amount, currency, sector,
       claimed, claim_item_id,
-      upload_batch_id, created_at
+      upload_batch_id, source_file_url,
+      created_at
     `)
     .eq('org_id', org.org_id)
     .eq('user_id', user.id)
@@ -101,13 +106,16 @@ export async function POST(request: NextRequest) {
   const org = await getActiveOrg()
   if (!org) return err('NO_ORG', 'No organisation found.', 400)
 
-  const body = await request.json().catch(() => ({})) as { rows?: TngParsedRow[] }
+  const body = await request.json().catch(() => ({})) as {
+    rows?:             TngParsedRow[]
+    source_file_path?: string | null   // ← Storage path from /api/tng/parse
+  }
 
   if (!body.rows || !Array.isArray(body.rows) || body.rows.length === 0) {
     return err('VALIDATION_ERROR', '"rows" array is required and must not be empty.', 400)
   }
 
-  // Basic validation — drop malformed rows silently
+  // Validate rows — drop malformed silently
   const validRows = body.rows.filter(r =>
     r &&
     typeof r.amount === 'number' &&
@@ -119,15 +127,17 @@ export async function POST(request: NextRequest) {
     return err('VALIDATION_ERROR', 'No valid TOLL or PARKING rows in request.', 400)
   }
 
+  // source_file_url: the storage path returned by /api/tng/parse
+  // Written to every row in this batch so we can later retrieve the original PDF
+  // for the TNG Statement Appendix in PDF exports.
+  const source_file_url = body.source_file_path ?? null
+
   // One batch ID groups all rows from this upload
   const upload_batch_id = crypto.randomUUID()
 
-  // ── Manual dedup: fetch existing trans_nos for this user ─────────────────
-  // This avoids relying on the ON CONFLICT clause which requires a DB-level
-  // unique index. If the index is missing the upsert throws a 500.
+  // ── Manual dedup: avoid re-inserting rows with the same trans_no ──────────
   const incomingWithTransNo = validRows.filter(r => r.trans_no !== null)
   const incomingTransNos    = incomingWithTransNo.map(r => r.trans_no as string)
-
   let existingTransNos: Set<string> = new Set()
 
   if (incomingTransNos.length > 0) {
@@ -137,32 +147,36 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .in('trans_no', incomingTransNos)
 
-    existingTransNos = new Set((existing ?? []).map((r: { trans_no: string | null }) => r.trans_no ?? ''))
+    existingTransNos = new Set(
+      (existing ?? []).map((r: { trans_no: string | null }) => r.trans_no ?? '')
+    )
   }
 
-  // Partition into new vs duplicate
-  const newRowsWithTransNo    = incomingWithTransNo.filter(r => !existingTransNos.has(r.trans_no as string))
-  const skippedWithTransNo    = incomingWithTransNo.length - newRowsWithTransNo.length
-  const rowsWithoutTransNo    = validRows.filter(r => r.trans_no === null)
+  const newRowsWithTransNo = incomingWithTransNo.filter(
+    r => !existingTransNos.has(r.trans_no as string)
+  )
+  const skippedWithTransNo = incomingWithTransNo.length - newRowsWithTransNo.length
+  const rowsWithoutTransNo = validRows.filter(r => r.trans_no === null)
 
   const toInsert = [...newRowsWithTransNo, ...rowsWithoutTransNo]
 
-  let saved_count   = 0
+  let saved_count    = 0
   const skipped_count = skippedWithTransNo
 
   if (toInsert.length > 0) {
     const inserts = toInsert.map(r => ({
       org_id:          org.org_id,
       user_id:         user.id,
-      trans_no:        r.trans_no    ?? null,
-      entry_datetime:  r.entry_datetime ?? null,
-      exit_datetime:   r.exit_datetime  ?? null,
-      entry_location:  r.entry_location ?? null,
-      exit_location:   r.exit_location  ?? null,
+      trans_no:        r.trans_no        ?? null,
+      entry_datetime:  r.entry_datetime  ?? null,
+      exit_datetime:   r.exit_datetime   ?? null,
+      entry_location:  r.entry_location  ?? null,
+      exit_location:   r.exit_location   ?? null,
       amount:          r.amount,
       currency:        'MYR',
       sector:          r.sector,
       upload_batch_id,
+      source_file_url,    // ← persisted for PDF export appendix
       claimed:         false,
     }))
 
