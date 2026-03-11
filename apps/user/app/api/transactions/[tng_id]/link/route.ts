@@ -32,15 +32,75 @@
 //   409 CONFLICT — already claimed by a different item / claim is SUBMITTED
 
 import { createClient } from '@/lib/supabase/server'
-import { getActiveOrg }  from '@/lib/org'
+import { getActiveOrg } from '@/lib/org'
 import { type NextRequest, NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
 
 type Params = { params: Promise<{ tng_id: string }> }
 
+type ClaimRef = {
+  id: string
+  org_id: string
+  status: string
+}
+
+type ClaimTotalRef = {
+  id: string
+  total_amount: number | string | null
+}
+
 function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function getSingleRelationRow(value: unknown): Record<string, unknown> | null {
+  const row = Array.isArray(value) ? value[0] : value
+  return isRecord(row) ? row : null
+}
+
+function toClaimRef(value: unknown): ClaimRef | null {
+  const row = getSingleRelationRow(value)
+  if (!row) return null
+
+  const { id, org_id, status } = row
+
+  if (
+    typeof id !== 'string' ||
+    typeof org_id !== 'string' ||
+    typeof status !== 'string'
+  ) {
+    return null
+  }
+
+  return { id, org_id, status }
+}
+
+function toClaimTotalRef(value: unknown): ClaimTotalRef | null {
+  const row = getSingleRelationRow(value)
+  if (!row) return null
+
+  const { id, total_amount } = row
+
+  if (typeof id !== 'string') return null
+
+  if (
+    typeof total_amount !== 'number' &&
+    typeof total_amount !== 'string' &&
+    total_amount !== null &&
+    typeof total_amount !== 'undefined'
+  ) {
+    return null
+  }
+
+  return {
+    id,
+    total_amount: (total_amount ?? null) as number | string | null,
+  }
 }
 
 async function recalcTotal(
@@ -49,19 +109,25 @@ async function recalcTotal(
   fallback: number,
 ): Promise<number> {
   const { data, error } = await supabase.rpc('recalc_claim_total', { p_claim_id: claim_id })
+
   if (error) {
     console.error('[link] recalc RPC error, using SUM fallback:', error.message)
+
     const { data: items } = await supabase
       .from('claim_items')
       .select('amount')
       .eq('claim_id', claim_id)
-    const total = (items ?? []).reduce((s, i) => s + (Number(i.amount) || 0), 0)
+
+    const total = (items ?? []).reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
+
     await supabase
       .from('claims')
       .update({ total_amount: total, updated_at: new Date().toISOString() })
       .eq('id', claim_id)
+
     return total
   }
+
   return Number(data ?? fallback)
 }
 
@@ -69,13 +135,23 @@ export async function POST(request: NextRequest, { params }: Params) {
   const { tng_id } = await params
 
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return err('UNAUTHENTICATED', 'Login required.', 401)
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return err('UNAUTHENTICATED', 'Login required.', 401)
+  }
 
   const org = await getActiveOrg()
-  if (!org) return err('NO_ORG', 'No organisation found.', 400)
+  if (!org) {
+    return err('NO_ORG', 'No organisation found.', 400)
+  }
 
-  const body = await request.json().catch(() => ({})) as { claim_item_id?: string }
+  const body = (await request.json().catch(() => ({}))) as {
+    claim_item_id?: string
+  }
 
   if (!body.claim_item_id) {
     return err('VALIDATION_ERROR', 'claim_item_id is required.', 400)
@@ -90,34 +166,48 @@ export async function POST(request: NextRequest, { params }: Params) {
     .eq('user_id', user.id)
     .single()
 
-  if (tngErr || !tng) return err('NOT_FOUND', 'TNG transaction not found.', 404)
+  if (tngErr || !tng) {
+    return err('NOT_FOUND', 'TNG transaction not found.', 404)
+  }
 
   // Idempotent: if already linked to this exact item, return success
   if (tng.claimed && tng.claim_item_id === body.claim_item_id) {
-    // Re-fetch item and return success — no double write
     const { data: existingItem } = await supabase
       .from('claim_items')
       .select('*, claims!inner(id, total_amount)')
       .eq('id', body.claim_item_id)
       .single()
 
+    const existingClaim = toClaimTotalRef(existingItem?.claims)
+
     return NextResponse.json({
-      ok:              true,
-      already_linked:  true,
-      claim_item:      existingItem,
-      claim_total:     { currency: 'MYR', amount: Number(existingItem?.claims?.total_amount ?? 0) },
+      ok: true,
+      already_linked: true,
+      claim_item: existingItem,
+      claim_total: {
+        currency: 'MYR',
+        amount: Number(existingClaim?.total_amount ?? 0),
+      },
       tng_transaction: tng,
     })
   }
 
   // Already claimed by a different item
   if (tng.claimed && tng.claim_item_id && tng.claim_item_id !== body.claim_item_id) {
-    return err('CONFLICT', 'This TNG transaction is already linked to a different claim item.', 409)
+    return err(
+      'CONFLICT',
+      'This TNG transaction is already linked to a different claim item.',
+      409,
+    )
   }
 
   // Only TOLL and PARKING can be linked to TNG statements
   if (!['TOLL', 'PARKING'].includes(tng.sector)) {
-    return err('VALIDATION_ERROR', 'Only TOLL or PARKING TNG transactions can be linked to claim items.', 400)
+    return err(
+      'VALIDATION_ERROR',
+      'Only TOLL or PARKING TNG transactions can be linked to claim items.',
+      400,
+    )
   }
 
   // ── Fetch claim item + its parent claim ───────────────────────────────────
@@ -131,9 +221,15 @@ export async function POST(request: NextRequest, { params }: Params) {
     .eq('org_id', org.org_id)
     .single()
 
-  if (ciErr || !claimItem) return err('NOT_FOUND', 'Claim item not found.', 404)
+  if (ciErr || !claimItem) {
+    return err('NOT_FOUND', 'Claim item not found.', 404)
+  }
 
-  const claim = claimItem.claims as { id: string; org_id: string; status: string }
+  const claim = toClaimRef(claimItem.claims)
+
+  if (!claim) {
+    return err('NOT_FOUND', 'Parent claim not found.', 404)
+  }
 
   // Claim lock check — absolute
   if (claim.status === 'SUBMITTED') {
@@ -142,12 +238,20 @@ export async function POST(request: NextRequest, { params }: Params) {
 
   // Only TOLL / PARKING claim items can receive a TNG link
   if (!['TOLL', 'PARKING'].includes(claimItem.type)) {
-    return err('VALIDATION_ERROR', 'Only TOLL or PARKING claim items can be linked to a TNG transaction.', 400)
+    return err(
+      'VALIDATION_ERROR',
+      'Only TOLL or PARKING claim items can be linked to a TNG transaction.',
+      400,
+    )
   }
 
   // Already linked to a different TNG transaction
   if (claimItem.tng_transaction_id && claimItem.tng_transaction_id !== tng_id) {
-    return err('CONFLICT', 'This claim item is already linked to a different TNG transaction. Unlink it first.', 409)
+    return err(
+      'CONFLICT',
+      'This claim item is already linked to a different TNG transaction. Unlink it first.',
+      409,
+    )
   }
 
   // ── Update tng_transaction ─────────────────────────────────────────────────
@@ -156,7 +260,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   const { error: tngUpdateErr } = await supabase
     .from('tng_transactions')
     .update({
-      claimed:       true,
+      claimed: true,
       claim_item_id: body.claim_item_id,
     })
     .eq('id', tng_id)
@@ -171,12 +275,14 @@ export async function POST(request: NextRequest, { params }: Params) {
   // Update amount if:
   //   - mode is TNG (amount was placeholder 0), OR
   //   - amount is 0 (safety: overwrite placeholder amounts only)
-  const shouldUpdateAmount = claimItem.mode === 'TNG' || Number(claimItem.amount) === 0
+  const shouldUpdateAmount =
+    claimItem.mode === 'TNG' || Number(claimItem.amount) === 0
 
   const itemUpdate: Record<string, unknown> = {
     tng_transaction_id: tng_id,
-    mode:               'TNG',
+    mode: 'TNG',
   }
+
   if (shouldUpdateAmount && tngAmount > 0) {
     itemUpdate.amount = tngAmount
   }
@@ -190,11 +296,12 @@ export async function POST(request: NextRequest, { params }: Params) {
 
   if (ciUpdateErr) {
     console.error('[POST link] claim_item update:', ciUpdateErr.message)
-    // Attempt to roll back TNG update
+
     await supabase
       .from('tng_transactions')
       .update({ claimed: false, claim_item_id: null })
       .eq('id', tng_id)
+
     return err('SERVER_ERROR', 'Failed to update claim item.', 500)
   }
 
@@ -202,9 +309,13 @@ export async function POST(request: NextRequest, { params }: Params) {
   const claim_total = await recalcTotal(supabase, claim.id, tngAmount)
 
   return NextResponse.json({
-    ok:              true,
-    claim_item:      updatedItem,
-    claim_total:     { currency: 'MYR', amount: claim_total },
-    tng_transaction: { ...tng, claimed: true, claim_item_id: body.claim_item_id },
+    ok: true,
+    claim_item: updatedItem,
+    claim_total: { currency: 'MYR', amount: claim_total },
+    tng_transaction: {
+      ...tng,
+      claimed: true,
+      claim_item_id: body.claim_item_id,
+    },
   })
 }

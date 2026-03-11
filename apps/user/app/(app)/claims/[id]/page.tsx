@@ -48,7 +48,7 @@ type ModalType =
   | 'TOLL' | 'PARKING' | 'TRANSPORT'
   | null
 
-type TransportType = 'TAXI' | 'GRAB' | 'TRAIN' | 'FLIGHT'
+type TransportType = 'TAXI' | 'GRAB' | 'TRAIN' | 'FLIGHT' | 'BUS'
 
 type MealRates = { morning: number; noon: number; evening: number; fullDay: number }
 
@@ -75,7 +75,7 @@ function periodLabel(start: string | null, end: string | null) {
 const TYPE_ICON: Record<string, string> = {
   MILEAGE: '🚗', MEAL: '🍽', LODGING: '🏨',
   TOLL: '🛣️', PARKING: '🅿️',
-  TAXI: '🚕', GRAB: '🟢', TRAIN: '🚆', FLIGHT: '✈️',
+  TAXI: '🚕', GRAB: '🟢', TRAIN: '🚆', FLIGHT: '✈️', BUS: '🚌',
 }
 
 const SESSION_LABEL: Record<string, string> = {
@@ -91,7 +91,8 @@ const SESSION_META = [
 const TRANSPORT_META: { type: TransportType; icon: string; label: string }[] = [
   { type: 'GRAB',   icon: '🟢', label: 'Grab'   },
   { type: 'TAXI',   icon: '🚕', label: 'Taxi'   },
-  { type: 'TRAIN',  icon: '🚆', label: 'Train'  },
+  { type: 'TRAIN',  icon: '🚂', label: 'Train'  },
+  { type: 'BUS',    icon: '🚌', label: 'Bus'    },
   { type: 'FLIGHT', icon: '✈️', label: 'Flight' },
 ]
 
@@ -115,7 +116,7 @@ function ItemCard({ item, onDelete, onEdit, locked }: {
       return `${fmtKm(item.qty ? item.qty * 1000 : null)} × MYR ${item.rate?.toFixed(2)}/km`
     if (item.type === 'TOLL' || item.type === 'PARKING')
       return item.merchant || (item.type === 'TOLL' ? 'Toll' : 'Parking')
-    if (['TAXI', 'GRAB', 'TRAIN', 'FLIGHT'].includes(item.type))
+    if (['TAXI', 'GRAB', 'TRAIN', 'FLIGHT', 'BUS'].includes(item.type))
       return item.merchant || item.type.charAt(0) + item.type.slice(1).toLowerCase()
     const parts: string[] = []
     if (item.meal_session) parts.push(SESSION_LABEL[item.meal_session] ?? item.meal_session)
@@ -750,6 +751,9 @@ function TollParkingModal({ type, onAdd, onClose }: {
 // ── Transport Modal (Taxi / Grab / Train / Flight) ────────────────────────────
 // PATCH: ReceiptUploader uses storagePath + enableScan (ae99090 camera API).
 
+// Types that can be paid via TNG wallet (FLIGHT cannot)
+const TNG_PAYABLE: TransportType[] = ['GRAB', 'TAXI', 'TRAIN', 'BUS']
+
 function TransportModal({ onAdd, onClose }: {
   onAdd: (data: Record<string, unknown>) => Promise<void>
   onClose: () => void
@@ -760,10 +764,17 @@ function TransportModal({ onAdd, onClose }: {
   const [amount,        setAmount]        = useState('')
   const [merchant,      setMerchant]      = useState('')
   const [notes,         setNotes]         = useState('')
+  const [paidViaTng,    setPaidViaTng]    = useState(false)   // ← new
   // PATCH: ae99090 ReceiptUploader pattern
   const [receiptPath,   setReceiptPath]   = useState<string>('')
   const [saving,        setSaving]        = useState(false)
   const [error,         setError]         = useState<string | null>(null)
+
+  // When switching to FLIGHT, clear the TNG flag (FLIGHT can't be paid via TNG)
+  function handleTypeChange(t: TransportType) {
+    setTransportType(t)
+    if (!TNG_PAYABLE.includes(t)) setPaidViaTng(false)
+  }
 
   async function handleAdd() {
     setError(null)
@@ -772,28 +783,50 @@ function TransportModal({ onAdd, onClose }: {
     setSaving(true)
     try {
       await onAdd({
-        type: transportType, amount: parseFloat(amount), claim_date: claimDate,
-        merchant: merchant.trim() || undefined, notes: notes.trim() || undefined,
-        receipt_url: receiptPath || undefined,
+        type:         transportType,
+        amount:       parseFloat(amount),
+        claim_date:   claimDate,
+        merchant:     merchant.trim() || undefined,
+        notes:        notes.trim() || undefined,
+        receipt_url:  receiptPath || undefined,
+        paid_via_tng: TNG_PAYABLE.includes(transportType) ? paidViaTng : false,
       })
     } catch (e: unknown) { setError((e as Error).message); setSaving(false) }
   }
 
-  const amtNum    = parseFloat(amount)
+  const amtNum      = parseFloat(amount)
   const btnDisabled = saving || !amount || parseFloat(amount) <= 0
-  const btnLabel  = saving
+  const typeLabel   = transportType.charAt(0) + transportType.slice(1).toLowerCase()
+  const btnLabel    = saving
     ? 'Adding…'
-    : `Add ${transportType.charAt(0) + transportType.slice(1).toLowerCase()}${!isNaN(amtNum) && amtNum > 0 ? ` · MYR ${amtNum.toFixed(2)}` : ''}`
+    : `Add ${typeLabel}${!isNaN(amtNum) && amtNum > 0 ? ` · MYR ${amtNum.toFixed(2)}` : ''}`
+
+  const canPayTng   = TNG_PAYABLE.includes(transportType)
+
+  // Dynamic placeholder for merchant field
+  const merchantPlaceholder =
+    transportType === 'GRAB'   ? 'e.g. KL Sentral → KLCC' :
+    transportType === 'TAXI'   ? 'e.g. Airport → Hotel' :
+    transportType === 'TRAIN'  ? 'e.g. ETS Ipoh → KL Sentral' :
+    transportType === 'BUS'    ? 'e.g. Transnasional KL → Ipoh' :
+    'e.g. AirAsia KUL → PEN'
+
+  const merchantLabel =
+    transportType === 'GRAB' || transportType === 'TAXI'
+      ? 'Route / Description (optional)'
+      : 'Operator / Route (optional)'
 
   return (
     <Modal title="Add Transport" onClose={onClose}
       footer={<button onClick={handleAdd} disabled={btnDisabled} style={{ ...S.btnModalAdd, opacity: btnDisabled ? 0.45 : 1 }}>{btnLabel}</button>}
     >
+      {/* ── Type selector ─────────────────────────────────────────── */}
       <div style={S.field}>
         <label style={S.label}>Transport Type</label>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {TRANSPORT_META.map(t => (
-            <button key={t.type} onClick={() => setTransportType(t.type)} style={{
+        {/* Row 1: Grab · Taxi · Train · Bus */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+          {TRANSPORT_META.filter(t => t.type !== 'FLIGHT').map(t => (
+            <button key={t.type} onClick={() => handleTypeChange(t.type)} style={{
               flex: 1, paddingTop: 10, paddingBottom: 10, border: 'none', borderRadius: 10, cursor: 'pointer',
               fontSize: 11, fontWeight: 700,
               backgroundColor: transportType === t.type ? '#0f172a' : '#f1f5f9',
@@ -804,34 +837,85 @@ function TransportModal({ onAdd, onClose }: {
             </button>
           ))}
         </div>
+        {/* Row 2: Flight (full width) */}
+        <button onClick={() => handleTypeChange('FLIGHT')} style={{
+          width: '100%', paddingTop: 10, paddingBottom: 10, border: 'none', borderRadius: 10, cursor: 'pointer',
+          fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          backgroundColor: transportType === 'FLIGHT' ? '#0f172a' : '#f1f5f9',
+          color:           transportType === 'FLIGHT' ? '#fff'    : '#64748b',
+        }}>
+          <span style={{ fontSize: 18 }}>✈️</span> Flight
+        </button>
       </div>
+
+      {/* ── Paid via TNG toggle ───────────────────────────────────── */}
+      {canPayTng && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '12px 14px',
+          backgroundColor: paidViaTng ? '#f0f9ff' : '#f8fafc',
+          border: `1px solid ${paidViaTng ? '#bae6fd' : '#e2e8f0'}`,
+          borderRadius: 10,
+          cursor: 'pointer',
+          transition: 'background-color 0.15s, border-color 0.15s',
+        }}
+          onClick={() => setPaidViaTng(v => !v)}
+        >
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
+              💳 Paid via TNG (Touch 'n Go)
+            </div>
+            <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+              Toggle ON if this was charged to your TNG card
+            </div>
+          </div>
+          {/* Toggle pill */}
+          <div style={{
+            width: 44, height: 24, borderRadius: 12, flexShrink: 0,
+            backgroundColor: paidViaTng ? '#0369a1' : '#cbd5e1',
+            position: 'relative', transition: 'background-color 0.2s',
+          }}>
+            <div style={{
+              position: 'absolute', top: 3,
+              left: paidViaTng ? 22 : 2,
+              width: 18, height: 18, borderRadius: '50%',
+              backgroundColor: '#fff',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+              transition: 'left 0.2s',
+            }} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Date ──────────────────────────────────────────────────── */}
       <div style={S.field}>
         <label style={S.label}>Date <span style={{ color: '#dc2626' }}>*</span></label>
         <input type="date" value={claimDate} onChange={e => setClaimDate(e.target.value)} style={S.input} />
       </div>
+
+      {/* ── Amount ────────────────────────────────────────────────── */}
       <div style={S.field}>
         <label style={S.label}>Amount (MYR) <span style={{ color: '#dc2626' }}>*</span></label>
         <input type="number" min="0" step="0.01" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} style={S.input} />
       </div>
+
+      {/* ── Merchant / Route ──────────────────────────────────────── */}
       <div style={S.field}>
-        <label style={S.label}>
-          {transportType === 'GRAB' || transportType === 'TAXI' ? 'Route / Description (optional)' : 'Operator / Route (optional)'}
-        </label>
+        <label style={S.label}>{merchantLabel}</label>
         <input
           type="text"
-          placeholder={
-            transportType === 'GRAB'   ? 'e.g. KL Sentral → KLCC' :
-            transportType === 'TAXI'   ? 'e.g. Airport → Hotel' :
-            transportType === 'TRAIN'  ? 'e.g. ETS Ipoh → KL Sentral' :
-            'e.g. AirAsia KUL → PEN'
-          }
+          placeholder={merchantPlaceholder}
           value={merchant} onChange={e => setMerchant(e.target.value)} style={S.input}
         />
       </div>
+
+      {/* ── Notes ─────────────────────────────────────────────────── */}
       <div style={S.field}>
         <label style={S.label}>Notes (optional)</label>
         <input type="text" value={notes} onChange={e => setNotes(e.target.value)} style={S.input} />
       </div>
+
+      {/* ── Receipt ───────────────────────────────────────────────── */}
       <div style={S.field}>
         <label style={S.label}>Receipt (optional)</label>
         {/* PATCH: ae99090 ReceiptUploader API */}
@@ -841,6 +925,7 @@ function TransportModal({ onAdd, onClose }: {
           enableScan={true}
         />
       </div>
+
       {error && <div style={S.errorBox}>{error}</div>}
     </Modal>
   )
@@ -946,7 +1031,7 @@ export default function ClaimDetailPage() {
   const typeOrder: Record<string, number> = {
     MILEAGE: 0, MEAL: 1, LODGING: 2,
     TOLL: 3, PARKING: 4,
-    TAXI: 5, GRAB: 6, TRAIN: 7, FLIGHT: 8,
+    TAXI: 5, GRAB: 6, TRAIN: 7, BUS: 8, FLIGHT: 9,
   }
 
   // TNG items: mode='TNG' means created from TNG statement.
