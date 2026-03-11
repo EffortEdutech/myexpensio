@@ -1,8 +1,8 @@
+'use client'
 // apps/user/components/Nav.tsx
 // Bottom tab navigation bar — shared across all (app) pages.
-// Client Component: needs usePathname to highlight active tab.
-
-'use client'
+// 6 tabs: Home · Trips · Claims · Transactions · Exports · Settings
+// Slightly smaller icons + labels to fit 6 tabs on narrow screens.
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -10,16 +10,17 @@ import { usePathname } from 'next/navigation'
 type Tab = {
   href:       string
   label:      string
-  icon:       string   // inactive emoji
-  iconActive: string   // active emoji (brighter variant)
+  icon:       string
+  iconActive: string
 }
 
 const TABS: Tab[] = [
-  { href: '/home',     label: 'Home',     icon: '🏠',  iconActive: '🏠'  },
-  { href: '/trips',    label: 'Trips',    icon: '🗺️',  iconActive: '🗺️'  },
-  { href: '/claims',   label: 'Claims',   icon: '📋',  iconActive: '📋'  },
-  { href: '/exports',  label: 'Export',   icon: '📤',  iconActive: '📤'  },
-  { href: '/settings', label: 'Settings', icon: '⚙️',  iconActive: '⚙️'  },
+  { href: '/home',         label: 'Home',         icon: '🏠',  iconActive: '🏠'  },
+  { href: '/trips',        label: 'Trips',        icon: '🗺️',  iconActive: '🗺️'  },
+  { href: '/claims',       label: 'Claims',       icon: '📋',  iconActive: '📋'  },
+  { href: '/transactions', label: 'Transactions', icon: '💳',  iconActive: '💳'  },
+  { href: '/exports',      label: 'Export',       icon: '📤',  iconActive: '📤'  },
+  { href: '/settings',     label: 'Settings',     icon: '⚙️',  iconActive: '⚙️'  },
 ]
 
 export function Nav() {
@@ -32,8 +33,8 @@ export function Nav() {
         return (
           <Link key={tab.href} href={tab.href} style={S.tab}>
             <span style={{
-              fontSize: 24,
-              filter: active ? 'none' : 'grayscale(100%) opacity(45%)',
+              fontSize: 20,
+              filter: active ? 'none' : 'grayscale(100%) opacity(40%)',
               transition: 'filter 0.15s',
             }}>
               {active ? tab.iconActive : tab.icon}
@@ -59,7 +60,7 @@ const S: Record<string, React.CSSProperties> = {
     bottom:           0,
     left:             0,
     right:            0,
-    height:           64,
+    height:           60,
     backgroundColor:  '#ffffff',
     borderTop:        '1px solid #e2e8f0',
     display:          'flex',
@@ -73,17 +74,25 @@ const S: Record<string, React.CSSProperties> = {
     flexDirection:  'column',
     alignItems:     'center',
     justifyContent: 'center',
-    gap:            2,
+    gap:            1,
     textDecoration: 'none',
     position:       'relative',
     paddingTop:     4,
+    minWidth:       0,          // allow tabs to shrink below content width
   },
   label: {
-    fontSize: 10,
+    fontSize:     9,
+    lineHeight:   1,
+    whiteSpace:   'nowrap',
+    overflow:     'hidden',
+    textOverflow: 'ellipsis',
+    maxWidth:     '100%',
+    paddingLeft:  2,
+    paddingRight: 2,
   },
   dot: {
     position:         'absolute',
-    top:              4,
+    top:              3,
     width:            4,
     height:           4,
     borderRadius:     '50%',

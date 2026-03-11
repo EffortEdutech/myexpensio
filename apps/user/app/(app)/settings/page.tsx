@@ -1,6 +1,10 @@
 'use client'
 // apps/user/app/(app)/settings/page.tsx
-// Rates configuration — mileage, meal (per session + full day), lodging.
+// Rates configuration — mileage, meal (per session + full day), lodging, per diem.
+//
+// Per diem rate (new): one org-wide daily allowance rate.
+// Admin sets it here → auto-fills when user adds a PER_DIEM claim item.
+// User can always override the rate in the claim item form.
 
 import { useState, useEffect } from 'react'
 
@@ -17,6 +21,7 @@ export default function SettingsPage() {
   const [evening,  setEvening]  = useState('30.00')
   const [fullDay,  setFullDay]  = useState('60.00')
   const [lodging,  setLodging]  = useState('120.00')
+  const [perdiem,  setPerdiem]  = useState('0.00')    // ← new
 
   useEffect(() => {
     fetch('/api/settings/rates')
@@ -29,6 +34,7 @@ export default function SettingsPage() {
         setEvening(f2(r.meal_rate_evening))
         setFullDay(f2(r.meal_rate_full_day))
         setLodging(f2(r.lodging_rate_default))
+        setPerdiem(f2(r.perdiem_rate_myr))
         setEffFrom(r.effective_from ?? null)
         setLoading(false)
       })
@@ -53,6 +59,7 @@ export default function SettingsPage() {
         meal_rate_evening:    parseFloat(evening)   || 30.00,
         meal_rate_full_day:   parseFloat(fullDay)   || 60.00,
         lodging_rate_default: parseFloat(lodging)   || 120.00,
+        perdiem_rate_myr:     parseFloat(perdiem)   || 0,
       }),
     })
     const json = await res.json()
@@ -96,7 +103,6 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Per session */}
           <div style={S.groupLabel}>Meal Rate — Per Session</div>
           <RateRow label="🌅 Morning  (Breakfast)" suffix="/session" value={morning} onChange={v => num(v, setMorning)} />
           <div style={S.rowDiv} />
@@ -106,7 +112,6 @@ export default function SettingsPage() {
 
           <div style={S.sep} />
 
-          {/* Full day */}
           <div style={S.groupLabel}>Meal Rate — Full Day</div>
           <RateRow label="☀️ Full Day  (all sessions)" suffix="/day" value={fullDay} onChange={v => num(v, setFullDay)} />
         </div>
@@ -121,6 +126,21 @@ export default function SettingsPage() {
             </div>
           </div>
           <RateRow label="Rate per night" suffix="/night" value={lodging} onChange={v => num(v, setLodging)} />
+        </div>
+
+        {/* ── PER DIEM ─────────────────────────────────────────────── */}
+        <div style={S.card}>
+          <div style={S.cardHead}>
+            <span style={S.cardIcon}>📅</span>
+            <div>
+              <div style={S.cardTitle}>Per Diem Allowance</div>
+              <div style={S.cardSub}>Daily travel allowance — auto-fills in claim</div>
+            </div>
+          </div>
+          <RateRow label="Daily allowance rate" suffix="/day" value={perdiem} onChange={v => num(v, setPerdiem)} />
+          <div style={{ marginTop: 10, padding: '8px 10px', backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, fontSize: 11, color: '#0369a1', lineHeight: 1.6 }}>
+            💡 Set your org's standard daily rate here. This pre-fills when adding a Per Diem item to a claim. The user can still change it per-claim if needed. Set to 0 if not applicable.
+          </div>
         </div>
 
         {error && <div style={S.errorBox}>{error}</div>}
@@ -166,7 +186,7 @@ const S: Record<string, React.CSSProperties> = {
   cardIcon:   { fontSize: 22 },
   cardTitle:  { fontSize: 14, fontWeight: 700, color: '#0f172a' },
   cardSub:    { fontSize: 11, color: '#94a3b8', marginTop: 2 },
-  groupLabel: { fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, marginTop: 4 },
+  groupLabel: { fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' as const, letterSpacing: '0.06em', marginBottom: 10, marginTop: 4 },
   rateRow:    { display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 5, paddingBottom: 5 },
   rateLabel:  { fontSize: 13, color: '#374151' },
   rateRight:  { display: 'flex', alignItems: 'center', gap: 6 },

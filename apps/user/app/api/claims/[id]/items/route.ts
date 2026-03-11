@@ -2,16 +2,18 @@
 // POST /api/claims/[id]/items   — add item to DRAFT claim
 // DELETE (handled in /api/claims/[id]/items/[item_id]/route.ts)
 //
-// Supported types (all 9):
-//   MILEAGE  — trip_id required
-//   MEAL     — mode: FIXED_RATE | RECEIPT
-//   LODGING  — mode: FIXED_RATE | RECEIPT
-//   TOLL     — mode: TNG (amount=0, linked later) | MANUAL (amount required)
-//   PARKING  — mode: TNG (amount=0, linked later) | MANUAL (amount required)
-//   TAXI     — amount required
-//   GRAB     — amount required
-//   TRAIN    — amount required
-//   FLIGHT   — amount required
+// Supported types (all 11):
+//   MILEAGE   — trip_id required
+//   MEAL      — mode: FIXED_RATE | RECEIPT
+//   LODGING   — mode: FIXED_RATE | RECEIPT
+//   TOLL      — mode: TNG (amount=0, linked later) | MANUAL (amount required)
+//   PARKING   — mode: TNG (amount=0, linked later) | MANUAL (amount required)
+//   TAXI      — amount required; paid_via_tng optional
+//   GRAB      — amount required; paid_via_tng optional
+//   TRAIN     — amount required; paid_via_tng optional
+//   FLIGHT    — amount required
+//   BUS       — amount required; paid_via_tng optional
+//   PER_DIEM  — perdiem_days required; rate auto-fetched from Settings or user-supplied
 //
 // Claim lock: SUBMITTED → 409 CONFLICT (absolute, no bypass)
 
@@ -22,7 +24,16 @@ import { type NextRequest, NextResponse } from 'next/server'
 type Params = { params: Promise<{ id: string }> }
 
 // ── All valid types ────────────────────────────────────────────────────────────
-const ALL_TYPES = ['MILEAGE', 'MEAL', 'LODGING', 'TOLL', 'PARKING', 'TAXI', 'GRAB', 'TRAIN', 'FLIGHT'] as const
+const ALL_TYPES = [
+  'MILEAGE', 'MEAL', 'LODGING',
+  'TOLL', 'PARKING',
+  'TAXI', 'GRAB', 'TRAIN', 'FLIGHT', 'BUS',
+  'PER_DIEM',
+] as const
+
+// Types that support the paid_via_tng flag
+const TNG_PAYABLE_TYPES = ['TAXI', 'GRAB', 'TRAIN', 'BUS']
+
 type ClaimItemType = typeof ALL_TYPES[number]
 
 function err(code: string, message: string, status: number) {
@@ -87,27 +98,32 @@ export async function POST(request: NextRequest, { params }: Params) {
 
   // ── Parse body ────────────────────────────────────────────────────────────
   const body = await request.json().catch(() => ({})) as {
-    type?:              string
-    mode?:              string       // RECEIPT | FIXED_RATE | TNG | MANUAL
-    trip_id?:           string       // MILEAGE only
-    amount?:            number       // manual amount
-    receipt_url?:       string
-    merchant?:          string       // also used for route/operator on transport
-    notes?:             string
+    type?:                string
+    mode?:                string         // RECEIPT | FIXED_RATE | TNG | MANUAL
+    trip_id?:             string         // MILEAGE only
+    amount?:              number
+    receipt_url?:         string
+    merchant?:            string
+    notes?:               string
+    paid_via_tng?:        boolean        // TAXI / GRAB / TRAIN / BUS
     // MEAL
-    claim_date?:        string       // YYYY-MM-DD
-    meal_session?:      string       // FULL_DAY | MORNING | NOON | EVENING
+    claim_date?:          string         // YYYY-MM-DD
+    meal_session?:        string
     // LODGING
-    nights?:            number
-    lodging_check_in?:  string
-    lodging_check_out?: string
+    nights?:              number
+    lodging_check_in?:    string
+    lodging_check_out?:   string
     // TOLL
-    entry_location?:    string
-    exit_location?:     string
+    entry_location?:      string
+    exit_location?:       string
     // PARKING
-    location?:          string
+    location?:            string
     // TOLL / PARKING TNG link
-    tng_transaction_id?: string
+    tng_transaction_id?:  string
+    // PER_DIEM
+    perdiem_days?:        number         // required for PER_DIEM
+    perdiem_rate_myr?:    number         // optional — if not provided, fetched from Settings
+    perdiem_destination?: string
   }
 
   const { type } = body
@@ -142,7 +158,6 @@ export async function POST(request: NextRequest, { params }: Params) {
       return err('CONFLICT', 'Trip must be FINAL with a computed distance before adding to a claim.', 409)
     }
 
-    // Fetch mileage rate
     let mileage_rate: number | null = null
     if (claim.rate_version_id) {
       const { data: rv } = await supabase
@@ -215,7 +230,6 @@ export async function POST(request: NextRequest, { params }: Params) {
       }
     }
 
-    // Fetch rates
     const { data: rateRow } = await supabase
       .from('rate_versions')
       .select('meal_rate_per_session, meal_rate_full_day, meal_rate_default, lodging_rate_default')
@@ -278,7 +292,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   // ══════════════════════════════════════════════════════════════════════════
   // TOLL / PARKING
   // mode: 'TNG'    → amount = 0, linked to TNG statement later
-  // mode: 'MANUAL' → amount required (Visa / cash / other)
+  // mode: 'MANUAL' → amount required
   // ══════════════════════════════════════════════════════════════════════════
   if (itemType === 'TOLL' || itemType === 'PARKING') {
     const { mode, amount, claim_date, entry_location, exit_location, location,
@@ -293,7 +307,6 @@ export async function POST(request: NextRequest, { params }: Params) {
       return err('VALIDATION_ERROR', 'claim_date is required.', 400)
     }
 
-    // MANUAL requires an amount; TNG amount is 0 (filled later via importer)
     let item_amount: number
     if (item_mode === 'TNG') {
       item_amount = 0
@@ -304,9 +317,6 @@ export async function POST(request: NextRequest, { params }: Params) {
       item_amount = Number(Number(amount).toFixed(2))
     }
 
-    // Build merchant string from location fields
-    // TOLL  → "Entry Plaza → Exit Plaza"  (or just entry if no exit)
-    // PARKING → location
     let merchant_val: string | null = null
     if (itemType === 'TOLL') {
       const parts = [entry_location?.trim(), exit_location?.trim()].filter(Boolean)
@@ -315,7 +325,6 @@ export async function POST(request: NextRequest, { params }: Params) {
       merchant_val = location?.trim() ?? null
     }
 
-    // If TNG mode and a tng_transaction_id was supplied, mark it claimed
     if (item_mode === 'TNG' && tng_transaction_id) {
       const { error: tngErr } = await supabase
         .from('tng_transactions')
@@ -326,7 +335,6 @@ export async function POST(request: NextRequest, { params }: Params) {
 
       if (tngErr) {
         console.warn('[POST items] Could not mark tng_transaction claimed:', tngErr.message)
-        // Non-fatal — don't block the insert
       }
     }
 
@@ -352,16 +360,17 @@ export async function POST(request: NextRequest, { params }: Params) {
       return err('SERVER_ERROR', `DB error: ${insertErr.message}`, 500)
     }
 
-    // TNG items are amount=0, so recalc total normally — they don't inflate the total
     const claim_total = await recalcTotal(supabase, claim_id, item_amount)
     return NextResponse.json({ item, claim_total: { currency: 'MYR', amount: claim_total } }, { status: 201 })
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // TAXI / GRAB / TRAIN / FLIGHT
+  // TAXI / GRAB / TRAIN / FLIGHT / BUS
+  // FLIGHT: no paid_via_tng (flight can't be paid via TNG wallet)
+  // TAXI/GRAB/TRAIN/BUS: paid_via_tng optional flag
   // ══════════════════════════════════════════════════════════════════════════
-  if (['TAXI', 'GRAB', 'TRAIN', 'FLIGHT'].includes(itemType)) {
-    const { amount, claim_date, merchant, notes, receipt_url } = body
+  if (['TAXI', 'GRAB', 'TRAIN', 'FLIGHT', 'BUS'].includes(itemType)) {
+    const { amount, claim_date, merchant, notes, receipt_url, paid_via_tng } = body
 
     if (!claim_date) {
       return err('VALIDATION_ERROR', 'claim_date is required.', 400)
@@ -372,24 +381,101 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     const item_amount = Number(Number(amount).toFixed(2))
 
+    // paid_via_tng only applies to TNG-payable types (not FLIGHT)
+    const can_pay_tng = TNG_PAYABLE_TYPES.includes(itemType)
+    const tng_flag    = can_pay_tng ? (paid_via_tng === true) : false
+
     const { data: item, error: insertErr } = await supabase
       .from('claim_items')
       .insert({
-        org_id:      org.org_id,
+        org_id:       org.org_id,
         claim_id,
-        type:        itemType,
-        amount:      item_amount,
-        currency:    'MYR',
-        claim_date:  claim_date,
-        merchant:    merchant?.trim() ?? null,
-        notes:       notes?.trim() ?? null,
-        receipt_url: receipt_url ?? null,
+        type:         itemType,
+        amount:       item_amount,
+        currency:     'MYR',
+        claim_date:   claim_date,
+        merchant:     merchant?.trim() ?? null,
+        notes:        notes?.trim() ?? null,
+        receipt_url:  receipt_url ?? null,
+        paid_via_tng: tng_flag,
       })
       .select()
       .single()
 
     if (insertErr) {
       console.error(`[POST items] ${itemType} insert:`, insertErr.message, insertErr.details)
+      return err('SERVER_ERROR', `Failed to add ${itemType} item.`, 500)
+    }
+
+    const claim_total = await recalcTotal(supabase, claim_id, item_amount)
+    return NextResponse.json({ item, claim_total: { currency: 'MYR', amount: claim_total } }, { status: 201 })
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PER DIEM
+  // amount = perdiem_days × rate
+  // rate: from body (user override) OR from latest rate_versions.perdiem_rate_myr
+  // ══════════════════════════════════════════════════════════════════════════
+  if (itemType === 'PER_DIEM') {
+    const { perdiem_days, perdiem_rate_myr, perdiem_destination, claim_date, notes } = body
+
+    if (!claim_date) {
+      return err('VALIDATION_ERROR', 'claim_date (start date of per diem period) is required.', 400)
+    }
+    if (!perdiem_days || perdiem_days <= 0) {
+      return err('VALIDATION_ERROR', 'perdiem_days is required and must be > 0.', 400)
+    }
+
+    // Determine rate: user-supplied takes precedence; fallback to org setting
+    let rate = perdiem_rate_myr ? Number(perdiem_rate_myr) : 0
+
+    if (rate <= 0) {
+      // Fetch org-configured per diem rate from latest rate_versions
+      const { data: rateRow } = await supabase
+        .from('rate_versions')
+        .select('perdiem_rate_myr')
+        .eq('org_id', org.org_id)
+        .order('effective_from', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      rate = Number(rateRow?.perdiem_rate_myr ?? 0)
+    }
+
+    if (rate <= 0) {
+      return err(
+        'VALIDATION_ERROR',
+        'Per diem rate is required. Set it in Settings → Per Diem or provide perdiem_rate_myr in the request.',
+        400,
+      )
+    }
+
+    const days       = Number(perdiem_days)
+    const item_amount = Number((rate * days).toFixed(2))
+
+    const { data: item, error: insertErr } = await supabase
+      .from('claim_items')
+      .insert({
+        org_id:               org.org_id,
+        claim_id,
+        type:                 'PER_DIEM',
+        mode:                 'FIXED_RATE',
+        amount:               item_amount,
+        currency:             'MYR',
+        qty:                  days,
+        rate:                 rate,
+        claim_date:           claim_date,
+        perdiem_rate_myr:     rate,
+        perdiem_days:         days,
+        perdiem_destination:  perdiem_destination?.trim() ?? null,
+        notes:                notes?.trim() ?? null,
+        // No receipt — per diem is an entitlement, not an expense
+      })
+      .select()
+      .single()
+
+    if (insertErr) {
+      console.error('[POST items] PER_DIEM insert:', insertErr.message, insertErr.details)
       return err('SERVER_ERROR', `DB error: ${insertErr.message}`, 500)
     }
 
@@ -397,6 +483,6 @@ export async function POST(request: NextRequest, { params }: Params) {
     return NextResponse.json({ item, claim_total: { currency: 'MYR', amount: claim_total } }, { status: 201 })
   }
 
-  // Should never reach here — ALL_TYPES guard above catches unknown types
+  // Guard — should never reach here
   return err('VALIDATION_ERROR', 'Unsupported item type.', 400)
 }
