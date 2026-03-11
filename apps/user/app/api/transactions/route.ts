@@ -172,7 +172,7 @@ export async function GET(request: NextRequest) {
     }
 
     for (const row of ciRows ?? []) {
-      const claim = row.claims as { id: string; title: string | null; period_start: string; period_end: string; status: string } | null
+      const claim = (Array.isArray(row.claims) ? row.claims[0] : row.claims) as { id: string; title: string | null; period_start: string; period_end: string; status: string } | null ?? null
 
       // Skip TOLL/PARKING items that came from TNG — they already appear in Source 1
       // (TNG-linked items have tng_transaction_id set)
