@@ -715,6 +715,10 @@ function TransactionsView() {
                 txn={txn}
                 onLinkTap={handleLinkTap}
                 onUnlinkTap={handleUnlinkTap}
+                onOpenClaimLink={(txn) => {
+                  // Add your logic here (e.g., window.open(txn.claimUrl) or a router push)
+                  console.log("Open claim link for:", txn);
+                }}
                 busy={actionBusyId === txn.tng_id}
               />
             ))}
