@@ -1,9 +1,9 @@
 # scan_service/main.py
-# Version: 5.0.0
+# Version: 5.1.0
 #
 # Endpoints:
 #   POST /process        — Receipt/Odometer image enhancement (OpenCV)
-#   POST /parse-tng      — TNG eWallet PDF statement parser (pdfplumber)
+#   POST /parse-tng      — TNG eWallet PDF statement parser (pdfplumber; TOLL/PARKING/RETAIL)
 #   GET  /health         — Warmup ping (Vercel cron)
 #
 # RECEIPT pipeline:
@@ -15,7 +15,7 @@
 #
 # TNG PARSE pipeline:
 #   Accept base64-encoded PDF bytes → pdfplumber table extraction
-#   → return structured TOLL + PARKING rows (RETAIL skipped)
+#   → return structured TOLL + PARKING + RETAIL rows
 #   → returns account metadata (name, period) for UI display
 
 import os
@@ -49,7 +49,7 @@ MYT = timezone(timedelta(hours=8))  # Malaysia Time (UTC+8)
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="myexpensio-scan", version="5.0.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="myexpensio-scan", version="5.1.0", docs_url=None, redoc_url=None)
 
 app.add_middleware(
     CORSMiddleware,
@@ -70,7 +70,7 @@ def verify_secret(x_scan_secret: str = Header(default="")) -> None:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "myexpensio-scan", "version": "5.0.0"}
+    return {"status": "ok", "service": "myexpensio-scan", "version": "5.1.0"}
 
 # ═════════════════════════════════════════════════════════════════════════════
 # IMAGE PROCESSING (existing — unchanged from v4)
@@ -192,7 +192,9 @@ class TngParsedRow(BaseModel):
     entry_location: str | None
     exit_location:  str | None
     amount:         float        # MYR, 2 decimal precision
-    sector:         str          # "TOLL" | "PARKING"
+    sector:         str          # "TOLL" | "PARKING" | "RETAIL"
+    tran_type:      str | None = None
+    retail_label:   str | None = None
 
 class TngStatementMeta(BaseModel):
     account_name: str | None
@@ -202,9 +204,10 @@ class TngStatementMeta(BaseModel):
 class TngParseResponse(BaseModel):
     meta:         TngStatementMeta
     transactions: list[TngParsedRow]
-    toll_count:   int
+    toll_count:    int
     parking_count: int
-    skipped_retail: int
+    retail_count:  int
+    skipped_retail: int  # retained for backward compatibility; 0 in v5.1+
 
 def _clean(s: str | None) -> str | None:
     """Normalise multi-line cell text to single-line, collapse whitespace."""
@@ -245,6 +248,16 @@ def _parse_tng_datetime(date_raw: str | None, time_raw: str | None = None) -> st
         log.warning(f"[parse-tng] Could not parse date: date_raw={date_raw!r} time_raw={time_raw!r}")
         return None
 
+
+
+def _pick_retail_label(tran_type: str | None, entry_loc: str | None, exit_loc: str | None, reload_loc: str | None) -> str | None:
+    """Best-effort human label for RETAIL transport rows."""
+    for value in (entry_loc, exit_loc, reload_loc, tran_type):
+        cleaned = _clean(value)
+        if cleaned:
+            return cleaned
+    return None
+
 def _extract_tng_meta(full_text: str) -> TngStatementMeta:
     """Extract header fields from raw PDF text."""
     account_name = ewallet_id = period = None
@@ -266,7 +279,7 @@ def _parse_tng_table(table: list[list]) -> list[TngParsedRow]:
     Parse a single pdfplumber table that contains TNG transaction rows.
     Columns (0-indexed):
       0  Trans No.
-      1  Entry Date and Time      (blank for toll — only exit is recorded)
+      1  Entry Date and Time
       2  Exit Date & Time
       3  Posted Date
       4  Tran Type
@@ -284,33 +297,29 @@ def _parse_tng_table(table: list[list]) -> list[TngParsedRow]:
     if not table or len(table) < 2:
         return rows
 
-    # Validate header row
     header_0 = _clean(table[0][0]) or ""
     if "Trans No" not in header_0:
-        return rows  # not the transactions table
-
-    retail_count = [0]
+        return rows
 
     for raw_row in table[1:]:
         if len(raw_row) < 13:
             continue
 
-        trans_no    = _clean(raw_row[0])
-        entry_raw   = _clean(raw_row[1])    # blank for toll
-        exit_raw    = raw_row[2]            # keep raw for combined datetime parse
-        tran_type   = _clean(raw_row[4])
-        entry_loc   = _clean(raw_row[5])
-        exit_loc    = _clean(raw_row[7])
-        amount_raw  = _clean(raw_row[10])
-        sector_raw  = _clean(raw_row[12])
+        trans_no     = _clean(raw_row[0])
+        entry_raw    = raw_row[1]
+        exit_raw     = raw_row[2]
+        posted_raw   = raw_row[3]
+        tran_type    = _clean(raw_row[4])
+        entry_loc    = _clean(raw_row[5])
+        exit_loc     = _clean(raw_row[7])
+        reload_loc   = _clean(raw_row[9])
+        amount_raw   = _clean(raw_row[10])
+        sector_raw   = _clean(raw_row[12])
 
-        # ── Sector ──
         sector = (sector_raw or "").upper()
-        if sector not in ("TOLL", "PARKING"):
-            retail_count[0] += 1
-            continue  # skip RETAIL (top-ups) and anything unknown
+        if sector not in ("TOLL", "PARKING", "RETAIL"):
+            continue
 
-        # ── Amount ──
         try:
             amount = round(float((amount_raw or "0").replace(',', '')), 2)
         except ValueError:
@@ -319,31 +328,47 @@ def _parse_tng_table(table: list[list]) -> list[TngParsedRow]:
         if amount <= 0:
             continue
 
-        # ── Datetimes ──
-        # Exit cell may be "DD/MM/YYYY\nHH:MM:SS" — pdfplumber keeps \n
-        exit_parts = (exit_raw or "").split('\n')
+        exit_parts = str(exit_raw or "").split('\n')
         if len(exit_parts) == 2:
             exit_datetime = _parse_tng_datetime(exit_parts[0], exit_parts[1])
         else:
             exit_datetime = _parse_tng_datetime(_clean(exit_raw))
 
-        # Entry is only present for Parking (has entry + exit)
-        entry_parts = (entry_raw or "").split(' ')
-        if entry_raw and len(entry_parts) >= 2 and ':' in entry_parts[-1]:
+        entry_clean = _clean(entry_raw)
+        entry_parts = (entry_clean or "").split(' ')
+        if entry_clean and len(entry_parts) >= 2 and ':' in entry_parts[-1]:
             entry_datetime = _parse_tng_datetime(entry_parts[0], entry_parts[-1])
-        elif entry_raw:
-            entry_datetime = _parse_tng_datetime(entry_raw)
+        elif entry_clean:
+            entry_datetime = _parse_tng_datetime(entry_clean)
         else:
             entry_datetime = None
+
+        posted_datetime = _parse_tng_datetime(_clean(posted_raw))
+
+        retail_label = _pick_retail_label(tran_type, entry_loc, exit_loc, reload_loc)
+        effective_entry_loc = entry_loc
+        effective_exit_loc = exit_loc
+
+        if sector == "RETAIL":
+            if not effective_entry_loc:
+                effective_entry_loc = retail_label
+            if not effective_exit_loc and reload_loc and reload_loc != effective_entry_loc:
+                effective_exit_loc = reload_loc
+            if not exit_datetime and posted_datetime:
+                exit_datetime = posted_datetime
+            if not entry_datetime and posted_datetime:
+                entry_datetime = posted_datetime
 
         rows.append(TngParsedRow(
             trans_no=trans_no,
             entry_datetime=entry_datetime,
-            exit_datetime=exit_datetime,
-            entry_location=entry_loc,
-            exit_location=exit_loc,
+            exit_datetime=exit_datetime or posted_datetime,
+            entry_location=effective_entry_loc,
+            exit_location=effective_exit_loc,
             amount=amount,
             sector=sector,
+            tran_type=tran_type,
+            retail_label=retail_label,
         ))
 
     return rows
@@ -360,8 +385,7 @@ def parse_tng(req: TngParseRequest, x_scan_secret: str = Header(default="")):
       - Raw base64
       - Data URI: "data:application/pdf;base64,<data>"
 
-    Returns structured TOLL + PARKING transactions.
-    RETAIL rows (top-ups, reloads) are skipped.
+    Returns structured TOLL + PARKING + RETAIL transactions.
     """
     verify_secret(x_scan_secret)
 
@@ -397,15 +421,6 @@ def parse_tng(req: TngParseRequest, x_scan_secret: str = Header(default="")):
                 for table in tables:
                     parsed = _parse_tng_table(table)
                     all_transactions.extend(parsed)
-                    # Count skipped retail for debug info
-                    if table and len(table) > 1:
-                        header_0 = _clean(table[0][0]) or ""
-                        if "Trans No" in header_0:
-                            for raw_row in table[1:]:
-                                if len(raw_row) >= 13:
-                                    sector_raw = (_clean(raw_row[12]) or "").upper()
-                                    if sector_raw not in ("TOLL", "PARKING"):
-                                        skipped_retail += 1
 
     except HTTPException:
         raise
@@ -419,7 +434,7 @@ def parse_tng(req: TngParseRequest, x_scan_secret: str = Header(default="")):
     if not all_transactions:
         raise HTTPException(
             status_code=422,
-            detail="PARSE_ERROR: No TOLL or PARKING transactions found. "
+            detail="PARSE_ERROR: No TOLL, PARKING, or RETAIL transactions found. "
                    "Please upload a TNG eWallet Customer Transactions Statement PDF."
         )
 
@@ -427,10 +442,11 @@ def parse_tng(req: TngParseRequest, x_scan_secret: str = Header(default="")):
 
     toll_count    = sum(1 for t in all_transactions if t.sector == "TOLL")
     parking_count = sum(1 for t in all_transactions if t.sector == "PARKING")
+    retail_count  = sum(1 for t in all_transactions if t.sector == "RETAIL")
 
     log.info(
         f"[parse-tng] Parsed {len(all_transactions)} transactions "
-        f"(TOLL={toll_count}, PARKING={parking_count}, RETAIL_skipped={skipped_retail}) "
+        f"(TOLL={toll_count}, PARKING={parking_count}, RETAIL={retail_count}) "
         f"for account={meta.account_name!r}"
     )
 
@@ -439,5 +455,6 @@ def parse_tng(req: TngParseRequest, x_scan_secret: str = Header(default="")):
         transactions=all_transactions,
         toll_count=toll_count,
         parking_count=parking_count,
-        skipped_retail=skipped_retail,
+        retail_count=retail_count,
+        skipped_retail=0,
     )
