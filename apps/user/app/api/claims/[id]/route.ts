@@ -5,6 +5,8 @@
 // PATCH vs original: items select now includes tng_transaction_id
 // so the claim detail page can compute unlinked TOLL/PARKING count
 // and show the "Link TNG" banner correctly.
+// Also includes paid_via_tng so transport items can display the
+// "via TNG" badge without being treated as statement-linked items.
 
 import { createClient } from '@/lib/supabase/server'
 import { getActiveOrg }  from '@/lib/org'
@@ -53,7 +55,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       receipt_url, merchant, notes,
       claim_date, meal_session,
       lodging_check_in, lodging_check_out,
-      tng_transaction_id,
+      tng_transaction_id, paid_via_tng,
       created_at
     `)
     .eq('claim_id', id)

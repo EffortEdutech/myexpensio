@@ -98,10 +98,12 @@ const TRANSPORT_META: { type: TransportType; icon: string; label: string }[] = [
 
 // ── Item Card ─────────────────────────────────────────────────────────────────
 
-function ItemCard({ item, onDelete, onEdit, locked }: {
+function ItemCard({ item, onDelete, onEdit, onUnlinkTng, unlinkingTngId, locked }: {
   item: ClaimItem
   onDelete: (id: string) => void
   onEdit: (item: ClaimItem) => void
+  onUnlinkTng: (item: ClaimItem) => void
+  unlinkingTngId: string | null
   locked: boolean
 }) {
   const [deleting, setDeleting] = useState(false)
@@ -127,6 +129,8 @@ function ItemCard({ item, onDelete, onEdit, locked }: {
   }
 
   const canEdit = item.type === 'MEAL' || item.type === 'LODGING'
+  const canUnlinkTng = !locked && (item.type === 'TOLL' || item.type === 'PARKING') && !!item.tng_transaction_id
+  const unlinkBusy = !!item.tng_transaction_id && unlinkingTngId === item.tng_transaction_id
 
   return (
     <div style={S.itemCard}>
@@ -180,7 +184,16 @@ function ItemCard({ item, onDelete, onEdit, locked }: {
           : <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{fmtMyr(item.amount)}</span>
         }
         {!locked && (
-          <div style={{ display: 'flex', gap: 4 }}>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {canUnlinkTng && (
+              <button
+                onClick={() => onUnlinkTng(item)}
+                disabled={unlinkBusy}
+                style={{ padding: '3px 7px', backgroundColor: '#fff', border: '1px solid #fecaca', borderRadius: 999, color: '#dc2626', cursor: unlinkBusy ? 'not-allowed' : 'pointer', fontSize: 10, fontWeight: 700, opacity: unlinkBusy ? 0.65 : 1 }}
+              >
+                {unlinkBusy ? 'Unlinking…' : 'Unlink TNG'}
+              </button>
+            )}
             {canEdit && (
               <button
                 onClick={() => onEdit(item)}
@@ -778,30 +791,40 @@ function TransportModal({ onAdd, onClose }: {
 
   async function handleAdd() {
     setError(null)
-    if (!claimDate)                         { setError('Date is required.'); return }
-    if (!amount || parseFloat(amount) <= 0) { setError('Amount is required.'); return }
+    if (!claimDate) { setError('Date is required.'); return }
+
+    const canPayTng = TNG_PAYABLE.includes(transportType)
+    const isTngPending = canPayTng && paidViaTng
+
+    if (!isTngPending && (!amount || parseFloat(amount) <= 0)) {
+      setError('Amount is required.')
+      return
+    }
+
     setSaving(true)
     try {
       await onAdd({
         type:         transportType,
-        amount:       parseFloat(amount),
+        amount:       isTngPending ? 0 : parseFloat(amount),
         claim_date:   claimDate,
         merchant:     merchant.trim() || undefined,
         notes:        notes.trim() || undefined,
-        receipt_url:  receiptPath || undefined,
-        paid_via_tng: TNG_PAYABLE.includes(transportType) ? paidViaTng : false,
+        receipt_url:  isTngPending ? undefined : (receiptPath || undefined),
+        paid_via_tng: isTngPending,
       })
     } catch (e: unknown) { setError((e as Error).message); setSaving(false) }
   }
 
-  const amtNum      = parseFloat(amount)
-  const btnDisabled = saving || !amount || parseFloat(amount) <= 0
-  const typeLabel   = transportType.charAt(0) + transportType.slice(1).toLowerCase()
-  const btnLabel    = saving
+  const amtNum        = parseFloat(amount)
+  const canPayTng     = TNG_PAYABLE.includes(transportType)
+  const isTngPending  = canPayTng && paidViaTng
+  const btnDisabled   = saving || (!isTngPending && (!amount || parseFloat(amount) <= 0))
+  const typeLabel     = transportType.charAt(0) + transportType.slice(1).toLowerCase()
+  const btnLabel      = saving
     ? 'Adding…'
-    : `Add ${typeLabel}${!isNaN(amtNum) && amtNum > 0 ? ` · MYR ${amtNum.toFixed(2)}` : ''}`
-
-  const canPayTng   = TNG_PAYABLE.includes(transportType)
+    : isTngPending
+      ? `Add ${typeLabel} · TNG`
+      : `Add ${typeLabel}${!isNaN(amtNum) && amtNum > 0 ? ` · MYR ${amtNum.toFixed(2)}` : ''}`
 
   // Dynamic placeholder for merchant field
   const merchantPlaceholder =
@@ -893,11 +916,32 @@ function TransportModal({ onAdd, onClose }: {
         <input type="date" value={claimDate} onChange={e => setClaimDate(e.target.value)} style={S.input} />
       </div>
 
+      {/* ── TNG ON: info banner ─────────────────────────────────── */}
+      {isTngPending && (
+        <div style={{
+          display: 'flex', gap: 10, padding: '12px 14px',
+          backgroundColor: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10,
+        }}>
+          <span style={{ fontSize: 18, flexShrink: 0 }}>💳</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#854d0e' }}>
+              TNG — amount pending
+            </div>
+            <div style={{ fontSize: 12, color: '#92400e', marginTop: 2, lineHeight: 1.5 }}>
+              You can add this transport item without entering an amount.
+              Link the matching TNG statement later to fill in the exact amount.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Amount ────────────────────────────────────────────────── */}
-      <div style={S.field}>
-        <label style={S.label}>Amount (MYR) <span style={{ color: '#dc2626' }}>*</span></label>
-        <input type="number" min="0" step="0.01" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} style={S.input} />
-      </div>
+      {!isTngPending && (
+        <div style={S.field}>
+          <label style={S.label}>Amount (MYR) <span style={{ color: '#dc2626' }}>*</span></label>
+          <input type="number" min="0" step="0.01" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} style={S.input} />
+        </div>
+      )}
 
       {/* ── Merchant / Route ──────────────────────────────────────── */}
       <div style={S.field}>
@@ -916,15 +960,17 @@ function TransportModal({ onAdd, onClose }: {
       </div>
 
       {/* ── Receipt ───────────────────────────────────────────────── */}
-      <div style={S.field}>
-        <label style={S.label}>Receipt (optional)</label>
-        {/* PATCH: ae99090 ReceiptUploader API */}
-        <ReceiptUploader
-          storagePath={null}
-          onUploaded={path => setReceiptPath(path)}
-          enableScan={true}
-        />
-      </div>
+      {!isTngPending && (
+        <div style={S.field}>
+          <label style={S.label}>Receipt (optional)</label>
+          {/* PATCH: ae99090 ReceiptUploader API */}
+          <ReceiptUploader
+            storagePath={receiptPath || null}
+            onUploaded={path => setReceiptPath(path)}
+            enableScan={true}
+          />
+        </div>
+      )}
 
       {error && <div style={S.errorBox}>{error}</div>}
     </Modal>
@@ -949,6 +995,8 @@ export default function ClaimDetailPage() {
   const [deleteErr,   setDeleteErr]  = useState<string | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [editingItem, setEditingItem] = useState<ClaimItem | null>(null)
+  const [unlinkingTngId, setUnlinkingTngId] = useState<string | null>(null)
+  const [tngActionErr, setTngActionErr] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const res  = await fetch(`/api/claims/${id}`)
@@ -995,6 +1043,32 @@ export default function ClaimDetailPage() {
   async function deleteItem(itemId: string) {
     await fetch(`/api/claims/${id}/items/${itemId}`, { method: 'DELETE' })
     await load()
+  }
+
+  async function unlinkTng(item: ClaimItem) {
+    const tngId = item.tng_transaction_id
+    if (!tngId) return
+
+    if (!confirm('Unlink this TNG transaction from the claim item?')) return
+
+    setTngActionErr(null)
+    setUnlinkingTngId(tngId)
+
+    try {
+      const res  = await fetch(`/api/transactions/${tngId}/link`, { method: 'DELETE' })
+      const json = await res.json().catch(() => ({} as { error?: { message?: string } }))
+
+      if (!res.ok) {
+        setTngActionErr(json.error?.message ?? 'Failed to unlink TNG transaction.')
+        return
+      }
+
+      await load()
+    } catch {
+      setTngActionErr('Network error. Please try again.')
+    } finally {
+      setUnlinkingTngId(null)
+    }
   }
 
   async function updateExpense(itemId: string, type: 'MEAL' | 'LODGING', data: Record<string, unknown>) {
@@ -1108,6 +1182,10 @@ export default function ClaimDetailPage() {
         </div>
       )}
 
+      {tngActionErr && (
+        <div style={{ ...S.errorBox, marginBottom: 8 }}>{tngActionErr}</div>
+      )}
+
       {/* Items */}
       <div style={S.section}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #f1f5f9' }}>
@@ -1148,6 +1226,8 @@ export default function ClaimDetailPage() {
                   key={item.id} item={item} locked={locked}
                   onDelete={deleteItem}
                   onEdit={item => { setEditingItem(item); setModal(item.type === 'MEAL' ? 'EDIT_MEAL' : 'EDIT_LODGING') }}
+                  onUnlinkTng={unlinkTng}
+                  unlinkingTngId={unlinkingTngId}
                 />
               ))}
             </div>

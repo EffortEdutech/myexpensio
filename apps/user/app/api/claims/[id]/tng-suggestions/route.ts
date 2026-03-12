@@ -12,7 +12,7 @@
 // Response:
 // {
 //   matches:               TngMatch[]           — scored pairs, sorted by confidence
-//   unmatched_claim_items: UnmatchedClaimItem[] — TOLL/PARKING with no suggestion
+//   unmatched_claim_items: UnmatchedClaimItem[] — TNG-linkable claim items with no suggestion
 //   unmatched_tng_rows:    UnmatchedTngRow[]    — unclaimed TNG rows in date window
 // }
 //
@@ -74,30 +74,38 @@ export async function GET(_req: NextRequest, { params }: Params) {
     return err('CONFLICT', 'This claim is submitted and locked. TNG linking is not applicable.', 409)
   }
 
-  // ── 2. Fetch TOLL + PARKING items for this claim ──────────────────────────
+  // ── 2. Fetch TNG-linkable items for this claim ─────────────────────────────
   const { data: rawItems, error: itemsErr } = await supabase
     .from('claim_items')
-    .select('id, type, mode, claim_date, amount, merchant, tng_transaction_id')
+    .select('id, type, mode, paid_via_tng, claim_date, amount, merchant, tng_transaction_id')
     .eq('claim_id', claim_id)
-    .in('type', ['TOLL', 'PARKING'])
+    .in('type', ['TOLL', 'PARKING', 'TAXI', 'GRAB', 'TRAIN', 'BUS'])
 
   if (itemsErr) {
     console.error('[GET tng-suggestions] items fetch:', itemsErr.message)
     return err('SERVER_ERROR', 'Failed to load claim items.', 500)
   }
 
-  // If no TOLL/PARKING items at all — return empty result immediately
-  if (!rawItems || rawItems.length === 0) {
+  // Keep only items that should participate in TNG linking.
+  const eligibleItems = (rawItems ?? []).filter((i: {
+    type: string; mode: string | null; paid_via_tng?: boolean | null
+  }) => {
+    if (i.type === 'TOLL' || i.type === 'PARKING') return true
+    return ['TAXI', 'GRAB', 'TRAIN', 'BUS'].includes(i.type) && (i.mode === 'TNG' || i.paid_via_tng === true)
+  })
+
+  if (eligibleItems.length === 0) {
     return NextResponse.json({
       matches:               [],
       unmatched_claim_items: [],
       unmatched_tng_rows:    [],
+      already_linked:        [],
     })
   }
 
   // Separate already-linked items from unlinked ones.
   // Already-linked items should not be re-matched (they're done).
-  const unlinkedItems = rawItems.filter(
+  const unlinkedItems = eligibleItems.filter(
     (i: { tng_transaction_id: string | null }) => !i.tng_transaction_id
   )
 
@@ -107,7 +115,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     claim_date: string | null; amount: number; merchant: string | null
   }) => ({
     id:         i.id,
-    type:       i.type as 'TOLL' | 'PARKING',
+    type:       i.type as MatchableClaimItem['type'],
     claim_date: i.claim_date ?? new Date().toISOString().slice(0, 10),
     amount:     Number(i.amount) ?? 0,
     merchant:   i.merchant,
@@ -138,7 +146,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     .eq('user_id', user.id)
     .eq('org_id', org.org_id)
     .eq('claimed', false)
-    .in('sector', ['TOLL', 'PARKING'])
+.in('sector', ['TOLL', 'PARKING', 'RETAIL'])
     .order('exit_datetime', { ascending: true })
     .limit(200)
 
@@ -159,7 +167,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     amount: number; trans_no: string | null
   }) => ({
     id:             t.id,
-    sector:         t.sector as 'TOLL' | 'PARKING' | 'RETAIL',
+    sector:         t.sector as MatchableTngRow['sector'],
     exit_datetime:  t.exit_datetime,
     entry_datetime: t.entry_datetime,
     entry_location: t.entry_location,
@@ -172,7 +180,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   const result = matchTngToClaimItems({ claimItems, tngRows })
 
   // ── 6. Attach already-linked items as a separate informational field ──────
-  const alreadyLinked = rawItems
+  const alreadyLinked = eligibleItems
     .filter((i: { tng_transaction_id: string | null }) => !!i.tng_transaction_id)
     .map((i: {
       id: string; type: string; mode: string | null

@@ -54,6 +54,18 @@ type LinkPair = {
   tng_transaction_id: string
 }
 
+const TRANSPORT_TNG_TYPES = ['TAXI', 'GRAB', 'TRAIN', 'BUS'] as const
+
+function isClaimTngType(type: string): boolean {
+  return type === 'TOLL' || type === 'PARKING' || TRANSPORT_TNG_TYPES.includes(type as typeof TRANSPORT_TNG_TYPES[number])
+}
+
+function isCompatibleTngPair(itemType: string, sector: string): boolean {
+  if (itemType === 'TOLL') return sector === 'TOLL'
+  if (itemType === 'PARKING') return sector === 'PARKING'
+  return TRANSPORT_TNG_TYPES.includes(itemType as typeof TRANSPORT_TNG_TYPES[number]) && sector === 'RETAIL'
+}
+
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest, { params }: Params) {
@@ -133,7 +145,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   const itemIds = links.map(l => l.claim_item_id)
   const { data: claimItems, error: itemsErr } = await supabase
     .from('claim_items')
-    .select('id, claim_id, type, mode, amount, tng_transaction_id')
+    .select('id, claim_id, type, mode, amount, paid_via_tng, tng_transaction_id')
     .in('id', itemIds)
     .eq('org_id', org.org_id)
 
@@ -145,7 +157,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   // Index for fast lookup
   const itemMap = new Map<string, {
     id: string; claim_id: string; type: string
-    mode: string | null; amount: number; tng_transaction_id: string | null
+    mode: string | null; amount: number; paid_via_tng?: boolean | null; tng_transaction_id: string | null
   }>()
   for (const item of (claimItems ?? [])) {
     itemMap.set(item.id, item)
@@ -189,13 +201,21 @@ export async function POST(request: NextRequest, { params }: Params) {
     if (item.claim_id !== claim_id) {
       return err('NOT_FOUND', `Claim item ${pair.claim_item_id} does not belong to this claim.`, 404)
     }
-    if (item.type !== 'TOLL' && item.type !== 'PARKING') {
-      return err('VALIDATION_ERROR', `Only TOLL and PARKING items can be linked to TNG transactions.`, 400)
+    if (!isClaimTngType(item.type)) {
+      return err('VALIDATION_ERROR', `Only TNG-linkable items can be linked to TNG transactions.`, 400)
     }
 
     // Validate TNG row
     if (!txn) {
       return err('NOT_FOUND', `TNG transaction ${pair.tng_transaction_id} not found.`, 404)
+    }
+
+    if (!isCompatibleTngPair(item.type, txn.sector)) {
+      return err(
+        'VALIDATION_ERROR',
+        `Claim item ${pair.claim_item_id} (${item.type}) cannot be linked to TNG sector ${txn.sector}.`,
+        400,
+      )
     }
 
     // Idempotent: already linked to the SAME item → skip silently
@@ -217,6 +237,13 @@ export async function POST(request: NextRequest, { params }: Params) {
     // ── Write claim_items side ───────────────────────────────────────────────
     const itemUpdate: Record<string, unknown> = {
       tng_transaction_id: txn.id,
+    }
+
+    if (item.mode === 'TNG') {
+      itemUpdate.mode = 'TNG'
+    }
+    if (TRANSPORT_TNG_TYPES.includes(item.type as typeof TRANSPORT_TNG_TYPES[number])) {
+      itemUpdate.paid_via_tng = true
     }
 
     // If item was TNG-pending (amount=0), fill in the real amount from the TNG row.

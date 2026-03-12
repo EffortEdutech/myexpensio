@@ -32,7 +32,7 @@ type TngMatch = {
   confidence:          MatchConfidence
   pre_ticked:          boolean
   breakdown:           ScoreBreakdown[]
-  claim_item_type:     'TOLL' | 'PARKING'
+  claim_item_type:     'TOLL' | 'PARKING' | 'TAXI' | 'GRAB' | 'TRAIN' | 'BUS'
   claim_item_date:     string
   claim_item_amount:   number
   claim_item_merchant: string | null
@@ -45,7 +45,7 @@ type TngMatch = {
 
 type UnmatchedClaimItem = {
   id:       string
-  type:     'TOLL' | 'PARKING'
+  type:     'TOLL' | 'PARKING' | 'TAXI' | 'GRAB' | 'TRAIN' | 'BUS'
   date:     string | null
   amount:   number
   merchant: string | null
@@ -54,7 +54,7 @@ type UnmatchedClaimItem = {
 
 type UnmatchedTngRow = {
   id:       string
-  sector:   'TOLL' | 'PARKING'
+  sector:   'TOLL' | 'PARKING' | 'RETAIL'
   date:     string
   amount:   number
   location: string
@@ -75,6 +75,20 @@ type SuggestionsResult = {
   unmatched_claim_items: UnmatchedClaimItem[]
   unmatched_tng_rows:    UnmatchedTngRow[]
   already_linked:        AlreadyLinked[]
+}
+
+type RetailTransportType = 'TRAIN' | 'BUS' | 'TAXI' | 'GRAB'
+
+function inferRetailTransportType(...values: Array<string | null | undefined>): RetailTransportType | null {
+  const hay = values.filter(Boolean).join(' ').toLowerCase()
+  if (!hay) return null
+
+  if (/\b(mrt|lrt|ktm|erl|monorail|rapid rail|rapidrail|train|tren|rail|station|stesen)\b/.test(hay)) return 'TRAIN'
+  if (/\b(bus|bas|rapid bus|rapidbus|go kl|mybas|stage bus|shuttle bus)\b/.test(hay)) return 'BUS'
+  if (/\b(grab|mycar|maxim|indrive)\b/.test(hay)) return 'GRAB'
+  if (/\b(taxi|teksi|cab)\b/.test(hay)) return 'TAXI'
+
+  return null
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -107,7 +121,7 @@ function ConfidenceBadge({ c }: { c: MatchConfidence }) {
 
 // ── Type icon ─────────────────────────────────────────────────────────────────
 
-const TYPE_ICON: Record<string, string> = { TOLL: '🛣️', PARKING: '🅿️' }
+const TYPE_ICON: Record<string, string> = { TOLL: '🛣️', PARKING: '🅿️', TAXI: '🚕', GRAB: '🟢', TRAIN: '🚂', BUS: '🚌', RETAIL: '💳' }
 
 // ── Match Card ────────────────────────────────────────────────────────────────
 
@@ -233,10 +247,17 @@ function UnmatchedItemRow({ item }: { item: UnmatchedClaimItem }) {
 
 // ── Unmatched TNG Row ─────────────────────────────────────────────────────────
 
-function UnmatchedTngRow({ row, onAddToClaim }: {
+function UnmatchedTngRow({
+  row,
+  onAddToClaim,
+  adding,
+}: {
   row:          UnmatchedTngRow
   onAddToClaim: (row: UnmatchedTngRow) => void
+  adding?:      boolean
 }) {
+  const retailHint = row.sector === 'RETAIL' ? inferRetailTransportType(row.location) : null
+
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 10,
@@ -251,17 +272,25 @@ function UnmatchedTngRow({ row, onAddToClaim }: {
           {row.location}
           {row.trans_no && <span style={{ color: '#94a3b8' }}> · #{row.trans_no}</span>}
         </div>
+        {row.sector === 'RETAIL' && (
+          <div style={{ marginTop: 4, fontSize: 10, color: retailHint ? '#0369a1' : '#a16207' }}>
+            {retailHint
+              ? `Will add as ${retailHint}`
+              : 'Transport type needs confirmation'}
+          </div>
+        )}
       </div>
       <button
         onClick={() => onAddToClaim(row)}
+        disabled={adding}
         style={{
           fontSize: 11, fontWeight: 700, padding: '5px 10px',
           border: '1px solid #3b82f6', borderRadius: 8,
           backgroundColor: '#eff6ff', color: '#1d4ed8',
-          cursor: 'pointer', flexShrink: 0,
+          cursor: adding ? 'not-allowed' : 'pointer', flexShrink: 0, opacity: adding ? 0.6 : 1,
         }}
       >
-        + Add to claim
+        {adding ? 'Adding…' : '+ Add to claim'}
       </button>
     </div>
   )
@@ -314,6 +343,67 @@ function SectionHead({ icon, title, count, sub }: {
   )
 }
 
+function RetailTransportPicker({
+  row,
+  onChoose,
+  onClose,
+}: {
+  row: UnmatchedTngRow
+  onChoose: (type: RetailTransportType) => void
+  onClose: () => void
+}) {
+  const options: RetailTransportType[] = ['TRAIN', 'BUS', 'TAXI', 'GRAB']
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 200 }}
+      />
+      <div style={{
+        position: 'fixed', left: 16, right: 16, bottom: 16, zIndex: 201,
+        backgroundColor: '#fff', borderRadius: 16, border: '1px solid #e2e8f0',
+        padding: 16, boxShadow: '0 12px 28px rgba(0,0,0,0.18)',
+      }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a', marginBottom: 6 }}>
+          Choose transport type
+        </div>
+        <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.5, marginBottom: 14 }}>
+          This TNG row is RETAIL, so we need to know which transport claim item to create.
+          <br />
+          <strong>{row.location}</strong> · {fmtMyr(row.amount)}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {options.map(option => (
+            <button
+              key={option}
+              onClick={() => onChoose(option)}
+              style={{
+                padding: '12px 10px', borderRadius: 10, border: '1px solid #cbd5e1',
+                backgroundColor: '#fff', fontSize: 12, fontWeight: 700, color: '#0f172a', cursor: 'pointer',
+              }}
+            >
+              {TYPE_ICON[option]} {option}
+            </button>
+          ))}
+        </div>
+
+        <button
+          onClick={onClose}
+          style={{
+            marginTop: 10, width: '100%', padding: '11px 12px',
+            borderRadius: 10, border: 'none', backgroundColor: '#f1f5f9',
+            color: '#475569', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function TngLinkPage() {
@@ -333,6 +423,7 @@ export default function TngLinkPage() {
 
   // Adding unmatched TNG rows to claim — tracks which rows are being added
   const [addingTngId,  setAddingTngId]  = useState<string | null>(null)
+  const [retailPicker, setRetailPicker] = useState<UnmatchedTngRow | null>(null)
 
   // ── Load suggestions ────────────────────────────────────────────────────────
 
@@ -416,31 +507,56 @@ export default function TngLinkPage() {
 
   // ── Add unmatched TNG row directly to claim ─────────────────────────────────
 
-  async function handleAddToClaim(row: UnmatchedTngRow) {
+  async function addRowToClaim(row: UnmatchedTngRow, transportType?: RetailTransportType) {
     setAddingTngId(row.id)
     try {
-      const body = {
-        type:               row.sector,
+      const body: {
+        type: string
+        tng_transaction_id: string
+        transport_type?: RetailTransportType
+      } = {
+        type: row.sector,
         tng_transaction_id: row.id,
       }
+
+      if (row.sector === 'RETAIL' && transportType) {
+        body.transport_type = transportType
+      }
+
       const res  = await fetch(`/api/claims/${claim_id}/items`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(body),
       })
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       if (!res.ok) {
         alert(json.error?.message ?? 'Failed to add item.')
-        setAddingTngId(null)
         return
       }
-      // Reload suggestions — this row should now disappear from unmatched list
+
+      setRetailPicker(null)
       await loadSuggestions()
     } catch {
       alert('Network error.')
     } finally {
       setAddingTngId(null)
     }
+  }
+
+  async function handleAddToClaim(row: UnmatchedTngRow) {
+    if (addingTngId) return
+
+    if (row.sector === 'RETAIL') {
+      const guessed = inferRetailTransportType(row.location)
+      if (guessed) {
+        await addRowToClaim(row, guessed)
+        return
+      }
+      setRetailPicker(row)
+      return
+    }
+
+    await addRowToClaim(row)
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -467,7 +583,7 @@ export default function TngLinkPage() {
   const hasAnything   = matches.length > 0 || unmatched_claim_items.length > 0
                      || unmatched_tng_rows.length > 0 || already_linked.length > 0
 
-  // Detect "no TNG data at all" — TOLL/PARKING items exist but zero TNG rows in DB
+  // Detect "no TNG data at all" — TNG-linkable items exist but zero TNG rows in DB
   const noTngDataYet  = unmatched_claim_items.length > 0
                      && matches.length === 0
                      && unmatched_tng_rows.length === 0
@@ -500,7 +616,7 @@ export default function TngLinkPage() {
           💳 Link TNG Transactions
         </h1>
         <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0' }}>
-          Match your TNG eStatement entries to toll and parking claim items.
+          Match your TNG eStatement entries to toll, parking, and transport claim items.
         </p>
       </div>
 
@@ -512,7 +628,7 @@ export default function TngLinkPage() {
             No TNG transactions in library yet
           </div>
           <div style={{ fontSize: 13, color: '#92400e', lineHeight: 1.6, marginBottom: 16, textAlign: 'center' }}>
-            You have {unmatched_claim_items.length} toll/parking item{unmatched_claim_items.length > 1 ? 's' : ''} to verify.
+            You have {unmatched_claim_items.length} TNG-linkable item{unmatched_claim_items.length > 1 ? 's' : ''} to verify.
             <br />
             Import your TNG statement first — rows stay in your library and are reusable across claims.
           </div>
@@ -538,7 +654,7 @@ export default function TngLinkPage() {
           <div style={{ fontSize: 32, marginBottom: 8 }}>✅</div>
           <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>All done</div>
           <div style={{ fontSize: 13, color: '#64748b', marginBottom: 16 }}>
-            No TOLL or PARKING items found, or all are already linked.
+            No TNG-linkable items found, or all are already linked.
           </div>
           <Link href={`/claims/${claim_id}`} style={{ fontSize: 13, fontWeight: 700, color: '#3b82f6', textDecoration: 'none' }}>
             ← Back to claim
@@ -616,20 +732,16 @@ export default function TngLinkPage() {
           <SectionHead
             icon="💳" title="Unmatched TNG transactions"
             count={unmatched_tng_rows.length}
-            sub="These are in your TNG statement but have no claim item yet. Add them directly to this claim."
+            sub="These are in your TNG statement but have no claim item yet. Add them directly to this claim. Retail rows may ask for a transport type first."
           />
           {unmatched_tng_rows.map(row => (
             <UnmatchedTngRow
               key={row.id}
               row={row}
-              onAddToClaim={addingTngId ? () => {} : handleAddToClaim}
+              adding={addingTngId === row.id}
+              onAddToClaim={handleAddToClaim}
             />
           ))}
-          {addingTngId && (
-            <div style={{ padding: '10px 16px', fontSize: 12, color: '#64748b' }}>
-              Adding…
-            </div>
-          )}
         </div>
       )}
 
@@ -672,6 +784,14 @@ export default function TngLinkPage() {
             📄 Import another TNG statement
           </Link>
         </div>
+      )}
+
+      {retailPicker && (
+        <RetailTransportPicker
+          row={retailPicker}
+          onChoose={(type) => { void addRowToClaim(retailPicker, type) }}
+          onClose={() => setRetailPicker(null)}
+        />
       )}
 
     </div>

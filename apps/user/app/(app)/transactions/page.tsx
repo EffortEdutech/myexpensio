@@ -61,6 +61,8 @@ type ClaimItem = {
   merchant:           string | null
   amount:             number
   tng_transaction_id: string | null
+  mode?:              string | null
+  paid_via_tng?:      boolean | null
 }
 
 type Filter = 'ALL' | 'UNMATCHED' | 'TOLL' | 'PARKING' | 'GRAB' | 'TRAIN' | 'BUS' | 'TAXI' | 'FLIGHT'
@@ -102,6 +104,7 @@ const TYPE_ICONS: Record<string, string> = {
   BUS:     '🚌',
   TAXI:    '🚕',
   FLIGHT:  '✈️',
+  RETAIL:  '💳',
   MEAL:    '🍽️',
   LODGING: '🏨',
   MILEAGE: '🚗',
@@ -162,12 +165,21 @@ function claimLabel(c: DraftClaim): string {
 function TxnRow({
   txn,
   onLinkTap,
+  onUnlinkTap,
+  onOpenClaimLink,
+  busy,
 }: {
-  txn:        UnifiedTransaction
-  onLinkTap:  (t: UnifiedTransaction) => void
+  txn:             UnifiedTransaction
+  onLinkTap:       (t: UnifiedTransaction) => void
+  onUnlinkTap:     (t: UnifiedTransaction) => void
+  onOpenClaimLink: (t: UnifiedTransaction) => void
+  busy:            boolean
 }) {
-  const icon     = TYPE_ICONS[txn.type] ?? '💳'
-  const isUnmatched = txn.source === 'TNG' && !txn.matched
+  const icon               = TYPE_ICONS[txn.type] ?? '💳'
+  const isPendingClaimTng  = txn.source === 'CLAIM' && txn.paid_via_tng && !txn.matched && !!txn.claim_id
+  const isUnmatchedTngRow  = txn.source === 'TNG' && !txn.matched
+  const isUnmatched        = isUnmatchedTngRow || isPendingClaimTng
+  const canUnlink          = txn.source === 'TNG' && txn.matched && !!txn.tng_id
 
   return (
     <div style={{
@@ -187,7 +199,10 @@ function TxnRow({
           {txn.source === 'TNG' && (
             <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 6, backgroundColor: '#dbeafe', color: '#1d4ed8' }}>TNG</span>
           )}
-          {txn.paid_via_tng && (
+          {txn.paid_via_tng && !txn.matched && (
+            <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 6, backgroundColor: '#fef9c3', color: '#854d0e' }}>TNG · Link pending</span>
+          )}
+          {txn.paid_via_tng && txn.matched && (
             <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 6, backgroundColor: '#f0f9ff', color: '#0369a1' }}>via TNG</span>
           )}
           {txn.matched && txn.claim_title && (
@@ -200,12 +215,31 @@ function TxnRow({
 
       <div style={{ flexShrink: 0, textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{fmtMyr(txn.amount)}</span>
-        {isUnmatched && (
+        {isUnmatchedTngRow && (
           <button
             onClick={() => onLinkTap(txn)}
-            style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', border: 'none', borderRadius: 6, cursor: 'pointer', backgroundColor: '#0f172a', color: '#fff' }}
+            disabled={busy}
+            style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', border: 'none', borderRadius: 6, cursor: busy ? 'not-allowed' : 'pointer', backgroundColor: '#0f172a', color: '#fff', opacity: busy ? 0.65 : 1 }}
           >
             Link →
+          </button>
+        )}
+        {isPendingClaimTng && (
+          <button
+            onClick={() => onOpenClaimLink(txn)}
+            disabled={busy}
+            style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', border: 'none', borderRadius: 6, cursor: busy ? 'not-allowed' : 'pointer', backgroundColor: '#0f172a', color: '#fff', opacity: busy ? 0.65 : 1 }}
+          >
+            Link TNG →
+          </button>
+        )}
+        {canUnlink && (
+          <button
+            onClick={() => onUnlinkTap(txn)}
+            disabled={busy}
+            style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', border: '1px solid #fecaca', borderRadius: 6, cursor: busy ? 'not-allowed' : 'pointer', backgroundColor: '#fff', color: '#dc2626', opacity: busy ? 0.65 : 1 }}
+          >
+            {busy ? 'Unlinking…' : 'Unlink'}
           </button>
         )}
       </div>
@@ -226,6 +260,14 @@ function MatchSheet({
   onSelectItem:  (i: ClaimItem) => void
   onClose:       () => void
 }) {
+  const pickingRetail = state.tng.type === 'RETAIL'
+  const pickItemTitle = pickingRetail ? 'Step 2 — Choose a transport item paid via TNG' : 'Step 2 — Choose a TOLL or PARKING item'
+  const emptyText = pickingRetail
+    ? 'No unlinked GRAB / TAXI / TRAIN / BUS items marked for TNG were found in this claim.'
+    : 'No unlinked TOLL or PARKING items found in this claim.'
+  const emptySubText = pickingRetail
+    ? 'Add a transport item with “Paid via TNG” first.'
+    : 'Add a TOLL or PARKING item to the claim first.'
   const tngDesc = state.tng.description
   const tngAmt  = fmtMyr(state.tng.amount)
 
@@ -343,8 +385,8 @@ function MatchSheet({
                 <div style={{ textAlign: 'center', padding: '24px' }}><div style={S.spinner} /></div>
               ) : state.items.length === 0 ? (
                 <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: 13, color: '#64748b' }}>
-                  No unlinked TOLL or PARKING items found in this claim.<br />
-                  <span style={{ fontSize: 12 }}>Add a TOLL or PARKING item to the claim first.</span>
+                  {emptyText}<br />
+                  <span style={{ fontSize: 12 }}>{emptySubText}</span>
                 </div>
               ) : (
                 state.items.map(item => (
@@ -393,6 +435,8 @@ function TransactionsView() {
   const [loadErr,     setLoadErr]     = useState<string | null>(null)
   const [filter,      setFilter]      = useState<Filter>('ALL')
   const [matchState,  setMatchState]  = useState<MatchState | null>(null)
+  const [actionBusyId, setActionBusyId] = useState<string | null>(null)
+  const [actionErr,    setActionErr]    = useState<string | null>(null)
 
   const loadTransactions = useCallback(async (f: Filter) => {
     setLoading(true); setLoadErr(null)
@@ -438,6 +482,42 @@ function TransactionsView() {
     }
   }
 
+  function handleOpenClaimLink(txn: UnifiedTransaction) {
+    if (!txn.claim_id) return
+    router.push(`/claims/${txn.claim_id}/tng-link`)
+  }
+
+  async function handleUnlinkTap(txn: UnifiedTransaction) {
+    const tng_id = txn.tng_id
+    if (!tng_id) return
+
+    const target = txn.claim_title ? ` from “${txn.claim_title}”` : ''
+    if (!window.confirm(`Unlink this TNG transaction${target}?`)) return
+
+    setActionErr(null)
+    setActionBusyId(tng_id)
+
+    try {
+      const res  = await fetch(`/api/transactions/${tng_id}/link`, { method: 'DELETE' })
+      const json = await res.json().catch(() => ({} as { error?: { message?: string } }))
+
+      if (!res.ok) {
+        setActionErr(json.error?.message ?? 'Failed to unlink.')
+        return
+      }
+
+      if (matchState?.tng.tng_id === tng_id) {
+        setMatchState(null)
+      }
+
+      await loadTransactions(filter)
+    } catch {
+      setActionErr('Network error. Please try again.')
+    } finally {
+      setActionBusyId(null)
+    }
+  }
+
   async function handleSelectClaim(claim: DraftClaim) {
     // If id is empty string it means "go back" was clicked
     if (!claim.id) {
@@ -453,16 +533,42 @@ function TransactionsView() {
       itemsLoading:  true,
     } : null)
 
-    // Fetch TOLL + PARKING items for this claim that have no tng_transaction_id
+    const pickingRetail = matchState?.tng.type === 'RETAIL'
+
     try {
-      const res  = await fetch(`/api/claims/${claim.id}/items?type=TOLL,PARKING&unlinked=true`)
-      const json = await res.json()
-      const ciItems: ClaimItem[] = (json.items ?? []).filter(
-        (i: ClaimItem) => (i.type === 'TOLL' || i.type === 'PARKING') && !i.tng_transaction_id
-      )
+      const typeParam = pickingRetail ? 'GRAB,TAXI,TRAIN,BUS' : 'TOLL,PARKING'
+      const res  = await fetch(`/api/claims/${claim.id}/items?type=${typeParam}&unlinked=true`)
+      const json = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        setMatchState(prev => prev ? {
+          ...prev,
+          step: 'ERROR',
+          errorMsg: json.error?.message ?? 'Failed to load claim items.',
+          items: [],
+          itemsLoading: false,
+        } : null)
+        return
+      }
+
+      const ciItems: ClaimItem[] = (json.items ?? []).filter((i: ClaimItem) => {
+        if (pickingRetail) {
+          return ['GRAB', 'TAXI', 'TRAIN', 'BUS'].includes(i.type)
+            && !i.tng_transaction_id
+            && (i.mode === 'TNG' || i.paid_via_tng === true)
+        }
+        return (i.type === 'TOLL' || i.type === 'PARKING') && !i.tng_transaction_id
+      })
+
       setMatchState(prev => prev ? { ...prev, items: ciItems, itemsLoading: false } : null)
     } catch {
-      setMatchState(prev => prev ? { ...prev, items: [], itemsLoading: false } : null)
+      setMatchState(prev => prev ? {
+        ...prev,
+        step: 'ERROR',
+        errorMsg: 'Network error. Please try again.',
+        items: [],
+        itemsLoading: false,
+      } : null)
     }
   }
 
@@ -571,6 +677,9 @@ function TransactionsView() {
       {!loading && loadErr && (
         <div style={S.errorBox}>{loadErr}</div>
       )}
+      {!loading && !loadErr && actionErr && (
+        <div style={S.errorBox}>{actionErr}</div>
+      )}
       {!loading && !loadErr && items.length === 0 && (
         <div style={{ textAlign: 'center', padding: '40px 20px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12 }}>
           <div style={{ fontSize: 40, marginBottom: 10 }}>💳</div>
@@ -605,6 +714,8 @@ function TransactionsView() {
                 key={`${txn.source}-${txn.id}`}
                 txn={txn}
                 onLinkTap={handleLinkTap}
+                onUnlinkTap={handleUnlinkTap}
+                busy={actionBusyId === txn.tng_id}
               />
             ))}
           </div>

@@ -48,7 +48,7 @@ const MYT_OFFSET_MS = 8 * 60 * 60 * 1000
 
 export type MatchableClaimItem = {
   id:          string            // claim_items.id
-  type:        'TOLL' | 'PARKING'
+  type:        'TOLL' | 'PARKING' | 'TAXI' | 'GRAB' | 'TRAIN' | 'BUS'
   claim_date:  string            // YYYY-MM-DD (stored date, already MYT)
   amount:      number            // MYR, 0 if mode = 'TNG' (pending)
   merchant:    string | null     // free-text entry/exit label user typed
@@ -84,7 +84,7 @@ export type TngMatch = {
   breakdown:           ScoreBreakdown[] // shown in the UI as "why matched"
 
   // Denormalised display fields (avoids a second DB fetch in the API route)
-  claim_item_type:     'TOLL' | 'PARKING'
+  claim_item_type:     'TOLL' | 'PARKING' | 'TAXI' | 'GRAB' | 'TRAIN' | 'BUS'
   claim_item_date:     string           // YYYY-MM-DD
   claim_item_amount:   number
   claim_item_merchant: string | null
@@ -98,7 +98,7 @@ export type TngMatch = {
 
 export type UnmatchedClaimItem = {
   id:       string
-  type:     'TOLL' | 'PARKING'
+  type:     'TOLL' | 'PARKING' | 'TAXI' | 'GRAB' | 'TRAIN' | 'BUS'
   date:     string
   amount:   number
   merchant: string | null
@@ -107,7 +107,7 @@ export type UnmatchedClaimItem = {
 
 export type UnmatchedTngRow = {
   id:       string
-  sector:   'TOLL' | 'PARKING'
+  sector:   'TOLL' | 'PARKING' | 'RETAIL'
   date:     string
   amount:   number
   location: string
@@ -128,12 +128,10 @@ export function matchTngToClaimItems(input: {
 }): MatchResult {
   const { claimItems, tngRows } = input
 
-  // Only process TOLL + PARKING on both sides; RETAIL is always skipped.
-  const eligibleItems = claimItems.filter(
-    i => i.type === 'TOLL' || i.type === 'PARKING'
-  )
+  // Process TOLL / PARKING plus transport-via-TNG items.
+  const eligibleItems = claimItems.filter(i => isSupportedClaimItemType(i.type))
   const eligibleTng = tngRows.filter(
-    t => t.sector === 'TOLL' || t.sector === 'PARKING'
+    t => t.sector === 'TOLL' || t.sector === 'PARKING' || t.sector === 'RETAIL'
   )
 
   // ── Step 1: Score every (item, txn) pair that passes eligibility gates ───────
@@ -215,7 +213,7 @@ export function matchTngToClaimItems(input: {
     .filter(t => !assignedTxnIds.has(t.id))
     .map(t => ({
       id:       t.id,
-      sector:   t.sector as 'TOLL' | 'PARKING',
+      sector:   t.sector as 'TOLL' | 'PARKING' | 'RETAIL',
       date:     tngDateMyt(t.exit_datetime ?? t.entry_datetime),
       amount:   t.amount,
       location: buildLocation(t),
@@ -236,6 +234,20 @@ export function matchTngToClaimItems(input: {
   })
 
   return { matches: finalMatches, unmatched_claim_items, unmatched_tng_rows }
+}
+
+function isTransportClaimType(type: string): type is 'TAXI' | 'GRAB' | 'TRAIN' | 'BUS' {
+  return type === 'TAXI' || type === 'GRAB' || type === 'TRAIN' || type === 'BUS'
+}
+
+function isSupportedClaimItemType(type: string): type is MatchableClaimItem['type'] {
+  return type === 'TOLL' || type === 'PARKING' || isTransportClaimType(type)
+}
+
+function isCompatiblePair(type: MatchableClaimItem['type'], sector: MatchableTngRow['sector']): boolean {
+  if (type === 'TOLL') return sector === 'TOLL'
+  if (type === 'PARKING') return sector === 'PARKING'
+  return isTransportClaimType(type) && sector === 'RETAIL'
 }
 
 // ── Scoring logic ─────────────────────────────────────────────────────────────

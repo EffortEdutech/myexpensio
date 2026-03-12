@@ -2,7 +2,7 @@
 // GET /api/transactions
 //
 // Unified payment ledger combining two sources:
-//   1. tng_transactions (TOLL + PARKING rows from imported TNG statements)
+//   1. tng_transactions (TOLL + PARKING + RETAIL rows from imported TNG statements)
 //   2. claim_items of transport types (TAXI / GRAB / TRAIN / FLIGHT / BUS / TOLL-manual / PARKING-manual)
 //
 // Returns a single merged + date-sorted array for the Transactions tab.
@@ -26,7 +26,7 @@
 //   description:  string        — entry→exit for TOLL, location/merchant for others
 //   amount:       number
 //   currency:     'MYR'
-//   matched:      boolean       — TNG: claimed=true; CLAIM: always true
+//   matched:      boolean       — TNG: claimed=true; CLAIM: false when a TNG-pending placeholder still needs linking
 //   paid_via_tng: boolean       — CLAIM items with paid_via_tng flag
 //   claim_id:     string|null
 //   claim_title:  string|null
@@ -44,6 +44,7 @@ function err(code: string, message: string, status: number) {
 }
 
 const TRANSPORT_TYPES = ['TAXI', 'GRAB', 'TRAIN', 'FLIGHT', 'BUS', 'TOLL', 'PARKING']
+const TNG_PENDING_TYPES = ['TOLL', 'PARKING', 'TAXI', 'GRAB', 'TRAIN', 'BUS']
 
 type UnifiedTransaction = {
   id:           string
@@ -58,6 +59,7 @@ type UnifiedTransaction = {
   claim_id:     string | null
   claim_title:  string | null
   tng_id:       string | null
+  mode?:        string | null
 }
 
 export async function GET(request: NextRequest) {
@@ -80,7 +82,6 @@ export async function GET(request: NextRequest) {
   const items: UnifiedTransaction[] = []
 
   // ── Source 1: TNG transactions ─────────────────────────────────────────────
-  // Always TOLL or PARKING sector (RETAIL not stored by choice — user ticks flag instead)
   if (filter === 'ALL' || filter === 'UNMATCHED' || filter === 'TOLL' || filter === 'PARKING') {
     let tngQuery = supabase
       .from('tng_transactions')
@@ -93,7 +94,7 @@ export async function GET(request: NextRequest) {
       `)
       .eq('org_id', org.org_id)
       .eq('user_id', user.id)
-      .in('sector', ['TOLL', 'PARKING'])
+.in('sector', ['TOLL', 'PARKING', 'RETAIL'])
       .gte('exit_datetime', sinceIso)
       .order('exit_datetime', { ascending: false })
       .limit(500)
@@ -118,8 +119,12 @@ export async function GET(request: NextRequest) {
         const parts = [row.entry_location, row.exit_location].filter(Boolean)
         description = parts.join(' → ') || 'Toll'
         if (row.trans_no) description += `  [#${row.trans_no}]`
+      } else if (row.sector === 'PARKING') {
+        description = row.entry_location ?? row.exit_location ?? 'Parking'
+        if (row.trans_no) description += `  [#${row.trans_no}]`
       } else {
-        description = row.entry_location ?? 'Parking'
+        const parts = [row.entry_location, row.exit_location].filter(Boolean)
+        description = parts.join(' · ') || row.entry_location || row.exit_location || 'Retail'
         if (row.trans_no) description += `  [#${row.trans_no}]`
       }
 
@@ -136,6 +141,7 @@ export async function GET(request: NextRequest) {
         claim_id:     null,   // we don't join claims here for performance
         claim_title:  null,
         tng_id:       row.id,
+        mode:         null,
       })
     }
   }
@@ -154,7 +160,7 @@ export async function GET(request: NextRequest) {
       .from('claim_items')
       .select(`
         id, type, amount, currency,
-        claim_date, merchant, notes,
+        claim_date, merchant, notes, mode,
         paid_via_tng, receipt_url,
         tng_transaction_id,
         claims!inner (
@@ -174,11 +180,15 @@ export async function GET(request: NextRequest) {
     for (const row of ciRows ?? []) {
       const claim = (Array.isArray(row.claims) ? row.claims[0] : row.claims) as { id: string; title: string | null; period_start: string; period_end: string; status: string } | null ?? null
 
-      // Skip TOLL/PARKING items that came from TNG — they already appear in Source 1
-      // (TNG-linked items have tng_transaction_id set)
-      if ((row.type === 'TOLL' || row.type === 'PARKING') && row.tng_transaction_id) continue
+      // Skip items that are already backed by a linked TNG statement row — they already appear in Source 1.
+      if (row.tng_transaction_id) continue
 
       const description = row.merchant?.trim() || row.notes?.trim() || row.type
+
+      const isTngPendingClaim =
+        row.mode === 'TNG' &&
+        TNG_PENDING_TYPES.includes(row.type) &&
+        !row.tng_transaction_id
 
       items.push({
         id:           row.id,
@@ -188,11 +198,12 @@ export async function GET(request: NextRequest) {
         description,
         amount:       Number(row.amount) || 0,
         currency:     'MYR',
-        matched:      true,   // claim items are always "matched" by definition
-        paid_via_tng: row.paid_via_tng === true,
+        matched:      !isTngPendingClaim,
+        paid_via_tng: row.paid_via_tng === true || row.mode === 'TNG',
         claim_id:     claim?.id ?? null,
         claim_title:  claim?.title ?? buildPeriodLabel(claim?.period_start, claim?.period_end),
         tng_id:       null,
+        mode:         row.mode,
       })
     }
   }
@@ -205,7 +216,7 @@ export async function GET(request: NextRequest) {
   })
 
   // ── Summary ────────────────────────────────────────────────────────────────
-  const unmatched_count = items.filter(i => i.source === 'TNG' && !i.matched).length
+  const unmatched_count = items.filter(i => !i.matched).length
   const total_amount    = items.reduce((s, i) => s + i.amount, 0)
 
   return NextResponse.json({

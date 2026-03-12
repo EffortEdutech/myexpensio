@@ -44,6 +44,7 @@ type StatementBatch = {
   imported_at:   string
   toll_count:    number
   parking_count: number
+  retail_count:  number
   total_amount:  number
   claimed_count: number
   rows:          TngRow[]
@@ -56,7 +57,7 @@ type TngParsedRow = {
   entry_location: string | null
   exit_location:  string | null
   amount:         number
-  sector:         'TOLL' | 'PARKING'
+  sector:         'TOLL' | 'PARKING' | 'RETAIL'
 }
 
 type ParseMeta = { account_name: string | null; period: string | null } | null
@@ -92,6 +93,7 @@ function groupIntoBatches(rows: TngRow[]): StatementBatch[] {
       imported_at:   bRows.reduce((a, b) => a < b.created_at ? a : b.created_at, bRows[0].created_at),
       toll_count:    bRows.filter(r => r.sector === 'TOLL').length,
       parking_count: bRows.filter(r => r.sector === 'PARKING').length,
+      retail_count: bRows.filter(r => r.sector === 'RETAIL').length,
       total_amount:  bRows.reduce((s, r) => s + Number(r.amount), 0),
       claimed_count: bRows.filter(r => r.claimed).length,
       rows:          bRows,
@@ -123,7 +125,7 @@ function StatementCard({ batch, onRemove, expanded, onToggleExpand }: {
 }) {
   const [removing, setRemoving] = useState(false)
   const canRemove  = batch.claimed_count === 0
-  const visibleRows = batch.rows.filter(r => r.sector !== 'RETAIL')
+  const visibleRows = batch.rows
 
   async function handleRemove() {
     if (!confirm(
@@ -156,6 +158,7 @@ function StatementCard({ batch, onRemove, expanded, onToggleExpand }: {
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
               {batch.toll_count > 0    && <Pill bg="#dbeafe" color="#1d4ed8">🛣️ {batch.toll_count} toll</Pill>}
               {batch.parking_count > 0 && <Pill bg="#fef3c7" color="#92400e">🅿️ {batch.parking_count} parking</Pill>}
+              {batch.retail_count > 0  && <Pill bg="#f5f3ff" color="#6d28d9">💳 {batch.retail_count} retail</Pill>}
               <Pill bg="#f1f5f9" color="#475569">{fmtMyr(batch.total_amount)}</Pill>
               {batch.claimed_count > 0 && <Pill bg="#f0fdf4" color="#15803d">✓ {batch.claimed_count} claimed</Pill>}
             </div>
@@ -185,7 +188,7 @@ function StatementCard({ batch, onRemove, expanded, onToggleExpand }: {
       {expanded && (
         <div style={{ borderTop: '1px solid #f1f5f9' }}>
           {visibleRows.length === 0
-            ? <div style={{ padding: '16px', fontSize: 13, color: '#94a3b8', textAlign: 'center' }}>No TOLL/PARKING rows.</div>
+            ? <div style={{ padding: '16px', fontSize: 13, color: '#94a3b8', textAlign: 'center' }}>No TNG rows.</div>
             : visibleRows.map((row, i) => {
                 const loc  = row.sector === 'TOLL'
                   ? [row.entry_location, row.exit_location].filter(Boolean).join(' → ')
@@ -259,7 +262,7 @@ function InlineImporter({ onSaved }: { onSaved: (count: number) => void }) {
 
       const parsed: TngParsedRow[] = Array.isArray(json.rows) ? json.rows : []
       if (parsed.length === 0) {
-        setErrorMsg('No TOLL or PARKING transactions found. Please check this is a TNG Customer Transactions Statement PDF.')
+        setErrorMsg('No TNG transactions found. Please check this is a TNG Customer Transactions Statement PDF.')
         setImportState('ERROR')
         return
       }
@@ -501,7 +504,7 @@ function TngStatementManager() {
   }
 
   const hasStatements = batches.length > 0
-  const totalTxns     = batches.reduce((s, b) => s + b.toll_count + b.parking_count, 0)
+  const totalTxns     = batches.reduce((s, b) => s + b.toll_count + b.parking_count + b.retail_count, 0)
 
   return (
     <div style={S.page}>

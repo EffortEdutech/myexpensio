@@ -4,7 +4,7 @@
 // POST /api/tng/transactions  — save parsed rows from /api/tng/parse
 //
 // GET query params:
-//   ?sector=TOLL|PARKING       filter by sector
+//   ?sector=TOLL|PARKING|RETAIL filter by sector
 //   ?claimed=false             only unclaimed rows (default: all)
 //   ?from=YYYY-MM-DD           filter by exit_datetime >= from
 //   ?to=YYYY-MM-DD             filter by exit_datetime <= to
@@ -39,7 +39,7 @@ type TngParsedRow = {
   entry_location: string | null
   exit_location:  string | null
   amount:         number
-  sector:         'TOLL' | 'PARKING'
+  sector:         'TOLL' | 'PARKING' | 'RETAIL'
 }
 
 // ── GET ───────────────────────────────────────────────────────────────────────
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
     .order('exit_datetime', { ascending: false })
     .limit(200)
 
-  if (sector && ['TOLL', 'PARKING'].includes(sector.toUpperCase())) {
+  if (sector && ['TOLL', 'PARKING', 'RETAIL'].includes(sector.toUpperCase())) {
     query = query.eq('sector', sector.toUpperCase())
   }
   if (claimed === 'false') {
@@ -120,11 +120,11 @@ export async function POST(request: NextRequest) {
     r &&
     typeof r.amount === 'number' &&
     r.amount > 0 &&
-    ['TOLL', 'PARKING'].includes(r.sector)
+    ['TOLL', 'PARKING', 'RETAIL'].includes(r.sector)
   )
 
   if (validRows.length === 0) {
-    return err('VALIDATION_ERROR', 'No valid TOLL or PARKING rows in request.', 400)
+    return err('VALIDATION_ERROR', 'No valid TNG transaction rows in request.', 400)
   }
 
   // source_file_url: the storage path returned by /api/tng/parse
