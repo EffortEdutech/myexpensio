@@ -724,11 +724,14 @@ export async function POST(request: NextRequest, { params }: Params) {
       return err('VALIDATION_ERROR', `amount is required for ${itemType} items.`, 400)
     }
 
+    const hasLinkedTng = !!linkedTng
     const item_amount = tng_flag
-      ? Number(Number(linkedTng?.amount ?? amount ?? 0).toFixed(2))
+      ? (hasLinkedTng
+          ? Number(Number(linkedTng?.amount ?? 0).toFixed(2))
+          : 0)
       : Number(Number(amount).toFixed(2))
 
-    if (tng_flag && item_amount <= 0) {
+    if (tng_flag && hasLinkedTng && item_amount <= 0) {
       return err('VALIDATION_ERROR', `Linked TNG amount is required for ${itemType} items.`, 400)
     }
 
