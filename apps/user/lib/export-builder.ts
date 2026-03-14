@@ -333,7 +333,7 @@ export type ExportRow = {
   item_id:             string
   item_type:           string         // MILEAGE | MEAL | LODGING | TOLL | PARKING | ...
   item_date:           string         // YYYY-MM-DD
-  item_amount_myr:     number         // ← named item_amount_myr to match pdf-builder usage
+  item_amount_myr:     string         // string so pdf-builder can call parseFloat(row.item_amount_myr)
   item_merchant:       string
   item_notes:          string
   item_mode:           string         // FIXED_RATE | RECEIPT | ''
@@ -451,7 +451,7 @@ export async function buildExportRows(
         item_id:             item.id              ?? '',
         item_type:           item.type            ?? '',
         item_date:           formatDate(item.claim_date),
-        item_amount_myr:     Number(item.amount   ?? 0),
+        item_amount_myr:     String(Number(item.amount ?? 0)),
         item_merchant:       item.merchant        ?? '',
         item_notes:          item.notes           ?? '',
         item_mode:           item.mode            ?? '',
