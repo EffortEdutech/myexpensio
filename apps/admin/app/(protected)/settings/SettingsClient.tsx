@@ -1,255 +1,193 @@
-// apps/admin/app/(protected)/settings/SettingsClient.tsx
-//
-// Client component for the admin Settings page.
-// Receives org + subscription data from the server component (page.tsx).
-//
-// Sections:
-//   1. Organisation — name (editable by OWNER only)
-//   2. Subscription — tier + period (read-only; upgrade handled externally)
-//   3. Danger zone — reserved for future (account deletion, data export request)
-
 'use client'
+// apps/admin/app/(protected)/settings/SettingsClient.tsx
+// Platform settings: create organisations, manage tiers.
 
 import { useState } from 'react'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+type Org  = { id: string; name: string; status: string; created_at: string }
+type Sub  = { org_id: string; tier: string; period_start: string | null; period_end: string | null; updated_at: string }
 
-type OrgRow = {
-  id:         string
-  name:       string
-  status:     string | null
-  created_at: string
-} | null
-
-type SubscriptionRow = {
-  tier:         string
-  period_start: string | null
-  period_end:   string | null
-  updated_at:   string
-} | null
-
-type Props = {
-  org:          OrgRow
-  subscription: SubscriptionRow
-  isOwner:      boolean
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function fmtDate(iso: string | null | undefined): string {
+function fmtDate(iso: string | null) {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-MY', {
-    day:   '2-digit',
-    month: 'short',
-    year:  'numeric',
-  })
+  return new Date(iso).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 function TierBadge({ tier }: { tier: string }) {
-  const isPro = tier === 'PRO'
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold
-      ${isPro ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
-      {isPro ? '✦ Pro' : 'Free'}
+    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${tier === 'PRO' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'}`}>
+      {tier === 'PRO' ? '✦ Pro' : 'Free'}
     </span>
   )
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+export default function SettingsClient({ orgs: initialOrgs, subscriptions }: { orgs: Org[]; subscriptions: Sub[] }) {
+  const [orgs,    setOrgs]    = useState(initialOrgs)
+  const [toast,   setToast]   = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
+  const [busy,    setBusy]    = useState<string | null>(null)
 
-export default function SettingsClient({ org, subscription, isOwner }: Props) {
-  const [orgName,   setOrgName]   = useState(org?.name ?? '')
-  const [saving,    setSaving]    = useState(false)
-  const [saveErr,   setSaveErr]   = useState<string | null>(null)
-  const [saveOk,    setSaveOk]    = useState(false)
+  // Create org form
+  const [showNew, setShowNew] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [creating, setCreating] = useState(false)
 
-  async function handleSaveOrg(e: React.FormEvent) {
+  function toast_(type: 'ok' | 'err', msg: string) {
+    setToast({ type, msg }); setTimeout(() => setToast(null), 3500)
+  }
+
+  function subFor(orgId: string): Sub | undefined {
+    return subscriptions.find(s => s.org_id === orgId)
+  }
+
+  async function createOrg(e: React.FormEvent) {
     e.preventDefault()
-    if (!orgName.trim()) { setSaveErr('Organisation name cannot be empty.'); return }
-    setSaving(true); setSaveErr(null); setSaveOk(false)
-
+    if (!newName.trim()) return
+    setCreating(true)
     try {
       const res  = await fetch('/api/admin/settings', {
-        method:  'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ name: orgName.trim() }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create_org', name: newName.trim() }),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to save.')
-      setSaveOk(true)
-      setTimeout(() => setSaveOk(false), 3000)
-    } catch (err: unknown) {
-      setSaveErr(err instanceof Error ? err.message : 'Failed to save.')
-    } finally {
-      setSaving(false)
-    }
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed')
+      setOrgs(prev => [json.org, ...prev])
+      setShowNew(false); setNewName('')
+      toast_('ok', `Organisation "${json.org.name}" created`)
+    } catch (e: unknown) { toast_('err', e instanceof Error ? e.message : 'Failed') }
+    finally { setCreating(false) }
+  }
+
+  async function toggleOrgStatus(org: Org) {
+    const newStatus = org.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE'
+    if (!confirm(`${newStatus === 'SUSPENDED' ? 'Suspend' : 'Reactivate'} "${org.name}"?`)) return
+    setBusy(org.id)
+    try {
+      const res  = await fetch('/api/admin/settings', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: org.id, status: newStatus }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed')
+      setOrgs(prev => prev.map(o => o.id === org.id ? { ...o, status: newStatus } : o))
+      toast_('ok', `"${org.name}" ${newStatus === 'ACTIVE' ? 'reactivated' : 'suspended'}`)
+    } catch (e: unknown) { toast_('err', e instanceof Error ? e.message : 'Failed') }
+    finally { setBusy(null) }
+  }
+
+  async function setTier(org: Org, tier: string) {
+    if (!confirm(`Set "${org.name}" to ${tier}?`)) return
+    setBusy(`tier-${org.id}`)
+    try {
+      const res  = await fetch('/api/admin/settings', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: org.id, tier }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed')
+      // Reflect in local sub data via page reload (simple approach)
+      toast_('ok', `Tier updated to ${tier}`)
+      setTimeout(() => window.location.reload(), 800)
+    } catch (e: unknown) { toast_('err', e instanceof Error ? e.message : 'Failed') }
+    finally { setBusy(null) }
   }
 
   return (
-    <div className="max-w-2xl mx-auto py-8 px-4 space-y-6">
-
-      {/* ── Page header ──────────────────────────────────────────────────── */}
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">Settings</h1>
-        <p className="text-sm text-gray-500 mt-1">Manage your organisation and subscription.</p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Platform Settings</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Manage all organisations and subscriptions</p>
+        </div>
+        <button onClick={() => setShowNew(v => !v)}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
+          {showNew ? 'Cancel' : '+ New Organisation'}
+        </button>
       </div>
 
-      {/* ── Organisation ─────────────────────────────────────────────────── */}
+      {toast && (
+        <div className={`px-4 py-2.5 rounded-lg text-sm font-medium ${toast.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          {toast.msg}
+        </div>
+      )}
+
+      {showNew && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <h2 className="text-sm font-semibold text-gray-900 mb-3">Create New Organisation</h2>
+          <form onSubmit={createOrg} className="flex gap-3">
+            <input value={newName} onChange={e => setNewName(e.target.value)} required
+              placeholder="Organisation name"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <button type="submit" disabled={creating}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+              {creating ? 'Creating…' : 'Create'}
+            </button>
+          </form>
+          <p className="text-xs text-gray-400 mt-2">Organisation will be created on Free tier. Invite members from the Members page.</p>
+        </div>
+      )}
+
+      {/* Orgs table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">Organisation</h2>
-          <p className="text-xs text-gray-500 mt-0.5">
-            {isOwner ? 'Update your organisation details.' : 'View your organisation details. Only Owners can edit.'}
-          </p>
+          <h2 className="text-sm font-semibold text-gray-900">All Organisations ({orgs.length})</h2>
         </div>
-
-        <form onSubmit={handleSaveOrg} className="px-5 py-5 space-y-4">
-
-          {/* Org ID (read-only) */}
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Organisation ID</label>
-            <p className="text-xs font-mono text-gray-400 bg-gray-50 px-3 py-2 rounded-lg border border-gray-100">
-              {org?.id ?? '—'}
-            </p>
-          </div>
-
-          {/* Org name */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Organisation Name {isOwner && <span className="text-red-500">*</span>}
-            </label>
-            {isOwner ? (
-              <input
-                type="text"
-                value={orgName}
-                onChange={(e) => setOrgName(e.target.value)}
-                maxLength={100}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm
-                           focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="e.g. EffortEdutech Sdn Bhd"
-              />
-            ) : (
-              <p className="text-sm text-gray-900 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
-                {org?.name ?? '—'}
-              </p>
-            )}
-          </div>
-
-          {/* Status */}
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold
-              ${org?.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-              {org?.status ?? 'ACTIVE'}
-            </span>
-          </div>
-
-          {/* Created at */}
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Created</label>
-            <p className="text-sm text-gray-600">{fmtDate(org?.created_at)}</p>
-          </div>
-
-          {/* Error / success feedback */}
-          {saveErr && (
-            <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
-              {saveErr}
-            </div>
-          )}
-          {saveOk && (
-            <div className="px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700 font-medium">
-              ✓ Organisation name updated.
-            </div>
-          )}
-
-          {isOwner && (
-            <div className="flex justify-end pt-1">
-              <button
-                type="submit"
-                disabled={saving}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium
-                           rounded-lg disabled:opacity-50 transition-colors"
-              >
-                {saving ? 'Saving…' : 'Save Changes'}
-              </button>
-            </div>
-          )}
-        </form>
-      </div>
-
-      {/* ── Subscription ─────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">Subscription</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Your current plan and billing period.</p>
-        </div>
-
-        <div className="px-5 py-5 space-y-4">
-
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-700">Current Plan</p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {subscription?.tier === 'PRO'
-                  ? 'Unlimited route calculations, exports, and trips.'
-                  : 'Free tier — 2 route calculations per month.'}
-              </p>
-            </div>
-            <TierBadge tier={subscription?.tier ?? 'FREE'} />
-          </div>
-
-          {subscription?.period_start && (
-            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-50">
-              <div>
-                <p className="text-xs font-medium text-gray-500">Period Start</p>
-                <p className="text-sm text-gray-700 mt-0.5">{fmtDate(subscription.period_start)}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-gray-500">Period End</p>
-                <p className="text-sm text-gray-700 mt-0.5">{fmtDate(subscription.period_end)}</p>
-              </div>
-            </div>
-          )}
-
-          {subscription?.tier !== 'PRO' && (
-            <div className="pt-3 border-t border-gray-100">
-              <div className="flex items-start gap-3 p-3 bg-purple-50 rounded-lg border border-purple-100">
-                <span className="text-lg">✦</span>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-purple-800">Upgrade to Pro</p>
-                  <p className="text-xs text-purple-600 mt-0.5">
-                    Unlimited route calculations, exports, and trips for your whole team.
-                  </p>
-                </div>
-              </div>
-              <p className="text-xs text-gray-400 mt-2">
-                Contact your administrator or support to upgrade your plan.
-              </p>
-            </div>
-          )}
-
-          {subscription?.updated_at && (
-            <p className="text-xs text-gray-400">
-              Last updated: {fmtDate(subscription.updated_at)}
-            </p>
-          )}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Organisation</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Tier</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Sub Period</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Created</th>
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {orgs.map(org => {
+                const sub = subFor(org.id)
+                return (
+                  <tr key={org.id} className="hover:bg-gray-50">
+                    <td className="px-5 py-3">
+                      <div className="font-medium text-gray-900">{org.name}</div>
+                      <div className="text-xs text-gray-400 font-mono">{org.id.slice(0, 8)}…</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${org.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                        {org.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <TierBadge tier={sub?.tier ?? 'FREE'} />
+                        <select
+                          value={sub?.tier ?? 'FREE'}
+                          disabled={!!busy}
+                          onChange={e => setTier(org, e.target.value)}
+                          className="text-xs border border-gray-200 rounded px-1.5 py-0.5 text-gray-700 focus:outline-none disabled:opacity-40">
+                          <option value="FREE">Free</option>
+                          <option value="PRO">Pro</option>
+                        </select>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">
+                      {sub?.period_start ? `${fmtDate(sub.period_start)} – ${fmtDate(sub.period_end)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{fmtDate(org.created_at)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        disabled={busy === org.id}
+                        onClick={() => toggleOrgStatus(org)}
+                        className={`text-xs font-medium disabled:opacity-40 ${org.status === 'ACTIVE' ? 'text-red-500 hover:text-red-700' : 'text-green-600 hover:text-green-800'}`}>
+                        {busy === org.id ? '…' : org.status === 'ACTIVE' ? 'Suspend' : 'Reactivate'}
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
-
-      {/* ── Account info (non-editable in Phase 1) ───────────────────────── */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">Data & Account</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Data retention and account management.</p>
-        </div>
-        <div className="px-5 py-5">
-          <p className="text-sm text-gray-500">
-            Data management and account deletion options will be available in a future release.
-            Contact support for urgent data requests.
-          </p>
-        </div>
-      </div>
-
     </div>
   )
 }

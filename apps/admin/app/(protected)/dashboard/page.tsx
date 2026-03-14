@@ -1,148 +1,88 @@
 // apps/admin/app/(protected)/dashboard/page.tsx
-//
-// Admin dashboard — overview stat cards.
-// Server component: fetches data directly via service role client.
+// Platform-wide dashboard — all orgs, all users, all claims.
 
-import { requireAdminAuth } from '@/lib/auth'
 import { createServiceRoleClient } from '@/lib/supabase/server'
-import StatCard from '@/components/StatCard'
-import type { DashboardStats } from '@/lib/types'
 
-async function fetchStats(orgId: string): Promise<DashboardStats> {
-  const db = createServiceRoleClient()
-
-  const now = new Date()
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-    .toISOString().slice(0, 10)
-
-  const [membersRes, claimsRes, exportsRes, subRes, usageRes] = await Promise.all([
-    db.from('org_members').select('status', { count: 'exact', head: true })
-      .eq('org_id', orgId).eq('status', 'ACTIVE'),
-
-    db.from('claims').select('status').eq('org_id', orgId),
-
-    db.from('export_jobs').select('id', { count: 'exact', head: true })
-      .eq('org_id', orgId)
-      .gte('created_at', new Date(now.getFullYear(), now.getMonth(), 1).toISOString()),
-
-    db.from('subscription_status').select('tier').eq('org_id', orgId).single(),
-
-    db.from('usage_counters').select('routes_calls')
-      .eq('org_id', orgId).eq('period_start', monthStart).single(),
-  ])
-
-  const claims = claimsRes.data ?? []
-  const tier = subRes.data?.tier ?? 'FREE'
-
-  return {
-    totalMembers:      membersRes.count ?? 0,
-    activeMembers:     membersRes.count ?? 0,
-    draftClaims:       claims.filter((c) => c.status === 'DRAFT').length,
-    submittedClaims:   claims.filter((c) => c.status === 'SUBMITTED').length,
-    exportsThisMonth:  exportsRes.count ?? 0,
-    routeCallsUsed:    usageRes.data?.routes_calls ?? 0,
-    routeCallsLimit:   tier === 'FREE' ? 2 : null,
-    subscriptionTier:  tier as 'FREE' | 'PRO',
-  }
+function Card({ label, value, sub, color = 'gray' }: {
+  label: string; value: string | number; sub?: string
+  color?: 'gray' | 'green' | 'blue' | 'amber' | 'red' | 'purple'
+}) {
+  const border = { gray: 'border-gray-200', green: 'border-green-200', blue: 'border-blue-200', amber: 'border-amber-200', red: 'border-red-200', purple: 'border-purple-200' }[color]
+  const text   = { gray: 'text-gray-900',   green: 'text-green-800',   blue: 'text-blue-800',   amber: 'text-amber-800',   red: 'text-red-800',   purple: 'text-purple-800'  }[color]
+  return (
+    <div className={`bg-white rounded-xl border-2 ${border} px-5 py-4`}>
+      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">{label}</p>
+      <p className={`text-3xl font-bold ${text}`}>{value}</p>
+      {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+    </div>
+  )
 }
 
 export default async function DashboardPage() {
-  const ctx = await requireAdminAuth('page')
+  const db  = createServiceRoleClient()
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
-  // Platform admins without a selected org see a placeholder
-  if (!ctx!.orgId) {
-    return (
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 mb-1">Dashboard</h1>
-        <p className="text-sm text-gray-500">
-          You are a platform superadmin. Select an organisation to view its stats.
-        </p>
-      </div>
-    )
+  const [orgsRes, usersRes, claimsRes, exportsRes, subRes] = await Promise.all([
+    db.from('organizations').select('id, status'),
+    db.from('profiles').select('id', { count: 'exact', head: true }),
+    db.from('claims').select('status'),
+    db.from('export_jobs').select('created_at'),
+    db.from('subscription_status').select('tier'),
+  ])
+
+  const orgs    = orgsRes.data   ?? []
+  const claims  = claimsRes.data ?? []
+  const exports = exportsRes.data ?? []
+  const subs    = subRes.data    ?? []
+
+  const stats = {
+    totalOrgs:        orgs.length,
+    activeOrgs:       orgs.filter(o => o.status === 'ACTIVE').length,
+    totalUsers:       usersRes.count ?? 0,
+    submittedClaims:  claims.filter(c => c.status === 'SUBMITTED').length,
+    draftClaims:      claims.filter(c => c.status === 'DRAFT').length,
+    exportsThisMonth: exports.filter(e => e.created_at >= monthStart).length,
+    proOrgs:          subs.filter(s => s.tier === 'PRO').length,
+    freeOrgs:         subs.filter(s => s.tier === 'FREE').length,
   }
-
-  const stats = await fetchStats(ctx!.orgId)
-
-  const routeLabel = stats.routeCallsLimit === null
-    ? `${stats.routeCallsUsed} used (unlimited)`
-    : `${stats.routeCallsUsed} / ${stats.routeCallsLimit} this month`
 
   return (
     <div>
-      {/* Header */}
       <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          Overview for your organisation
-        </p>
+        <h1 className="text-xl font-bold text-gray-900">Platform Dashboard</h1>
+        <p className="text-sm text-gray-500 mt-0.5">myexpensio platform — all organisations</p>
       </div>
 
-      {/* Stat grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <StatCard
-          label="Active Members"
-          value={stats.activeMembers}
-          variant="default"
-        />
-        <StatCard
-          label="Submitted Claims"
-          value={stats.submittedClaims}
-          variant="green"
-        />
-        <StatCard
-          label="Draft Claims"
-          value={stats.draftClaims}
-          sublabel="Not yet submitted"
-          variant="amber"
-        />
-        <StatCard
-          label="Exports This Month"
-          value={stats.exportsThisMonth}
-          variant="blue"
-        />
-        <StatCard
-          label="Route API Usage"
-          value={routeLabel}
-          sublabel={stats.subscriptionTier === 'FREE' ? 'Free tier — 2/month limit' : 'Pro — unlimited'}
-          variant={
-            stats.routeCallsLimit !== null && stats.routeCallsUsed >= stats.routeCallsLimit
-              ? 'red'
-              : 'default'
-          }
-        />
-        <StatCard
-          label="Subscription"
-          value={stats.subscriptionTier}
-          variant={stats.subscriptionTier === 'PRO' ? 'green' : 'default'}
-        />
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Organisations</p>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <Card label="Total Orgs"  value={stats.totalOrgs}  color="blue" />
+        <Card label="Active Orgs" value={stats.activeOrgs} color="green" />
+        <Card label="Pro"         value={stats.proOrgs}    color="purple" sub="paying" />
+        <Card label="Free"        value={stats.freeOrgs}   sub="trial/free" />
       </div>
 
-      {/* Quick links */}
-      <div className="mt-8">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">Quick actions</h2>
-        <div className="flex flex-wrap gap-3">
-          <a
-            href="/members"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200
-                       bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            Manage Members
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Users & Claims</p>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <Card label="Total Users"      value={stats.totalUsers}      color="blue" />
+        <Card label="Submitted Claims" value={stats.submittedClaims} color="green" />
+        <Card label="Draft Claims"     value={stats.draftClaims}     color="amber" />
+        <Card label="Exports / Month"  value={stats.exportsThisMonth} color="blue" />
+      </div>
+
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Quick actions</p>
+      <div className="flex flex-wrap gap-3">
+        {[
+          ['/members', 'Manage Members'],
+          ['/claims',  'View All Claims'],
+          ['/rates',   'Manage Rates'],
+          ['/audit',   'Audit Log'],
+        ].map(([href, label]) => (
+          <a key={href} href={href}
+            className="px-4 py-2 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+            {label}
           </a>
-          <a
-            href="/claims"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200
-                       bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            View Claims
-          </a>
-          <a
-            href="/rates/new"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-blue-200
-                       bg-blue-50 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors"
-          >
-            + New Rate Version
-          </a>
-        </div>
+        ))}
       </div>
     </div>
   )
