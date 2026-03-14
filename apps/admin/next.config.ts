@@ -1,7 +1,8 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  /* config options here */
-};
+  // Admin app runs on port 3101 locally
+  // On Vercel: deployed as myexpensio-admin project
+}
 
-export default nextConfig;
+export default nextConfig

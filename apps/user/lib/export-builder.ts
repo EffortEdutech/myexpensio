@@ -1,388 +1,292 @@
 // apps/user/lib/export-builder.ts
-// Shared export data logic.
 //
-// INSTALL (run once):
-//   npm install exceljs
+// Export builder — generates CSV, XLSX, and PDF claim exports.
 //
-// Responsibilities:
-//   1. Fetch claims + items + trips from DB for given filters
-//   2. Build flat rows per Doc 17 (one row per claim item)
-//   3. Generate CSV string
-//   4. Generate XLSX Buffer via exceljs
+// PHASE B CHANGES:
+//   - Accepts optional `columns` param from a report template
+//   - Falls back to STANDARD preset columns if no template provided
+//   - Distance: stored as meters internally, exported as KM (2 decimal places)
+//   - All values deterministic from DB — no recalculation after submission
+//
+// Column registry is in lib/export-columns.ts (shared with admin app).
+// Place that file at apps/user/lib/export-columns.ts before running.
 
-import type { SupabaseClient } from '@supabase/supabase-js'
 import ExcelJS from 'exceljs'
+import {
+  PRESET_COLUMNS,
+  getColumnLabel,
+  type ExportColumnKey,
+} from './export-columns'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-export type ExportFilters = {
-  org_id:        string
-  claim_ids?:    string[]  // when set — export exactly these claims (ignores date/status filters)
-  date_from?:    string    // YYYY-MM-DD  (filter on period_start)
-  date_to?:      string    // YYYY-MM-DD  (filter on period_end)
-  filter_status: 'SUBMITTED' | 'DRAFT' | 'ALL'
+// ── Types ──────────────────────────────────────────────────────────────────────
+export type ClaimForExport = {
+  id:            string
+  title:         string | null
+  status:        string
+  period_start:  string | null
+  period_end:    string | null
+  submitted_at:  string | null
+  total_amount:  number
+  currency:      string
+  user_name:     string | null
+  user_email:    string | null
+  items:         ItemForExport[]
 }
 
-export type ExportRow = {
-  // Claim
-  claim_id:           string
-  claim_title:        string
-  claim_status:       string
-  period_start:       string
-  period_end:         string
-  submitted_at:       string
-  claim_currency:     string
-  claim_total_myr:    string
-
-  // Item
-  item_id:            string
-  item_type:          string
-  item_date:          string
-  item_mode:          string
-  item_meal_session:  string
-  item_merchant:      string
-  item_qty:           string
-  item_unit:          string
-  item_rate_myr:      string
-  item_amount_myr:    string
-  receipt_present:    string   // Y | N
-  item_notes:         string
-
-  // Mileage extras (blank for MEAL/LODGING)
-  trip_id:                    string
-  trip_started_at:            string
-  trip_ended_at:              string
-  gps_distance_km:            string
-  selected_route_distance_km: string
-  odometer_distance_km:       string
-  odometer_mode:              string
-  final_distance_km:          string
-  distance_source:            string
+export type ItemForExport = {
+  id:                   string
+  type:                 string
+  amount:               number
+  currency:             string
+  claim_date:           string | null
+  merchant:             string | null
+  notes:                string | null
+  receipt_url:          string | null
+  paid_via_tng:         boolean
+  tng_transaction_id:   string | null
+  tng_trans_no:         string | null        // joined from tng_transactions
+  perdiem_days:         number | null
+  perdiem_rate_myr:     number | null
+  perdiem_destination:  string | null
+  meal_session:         string | null
+  lodging_check_in:     string | null
+  lodging_check_out:    string | null
+  trip:                 TripForExport | null
 }
 
-// ── Column headers (order matters — matches ExportRow keys) ───────────────────
-
-export const EXPORT_COLUMNS: { key: keyof ExportRow; header: string }[] = [
-  // Claim
-  { key: 'claim_id',           header: 'Claim ID'           },
-  { key: 'claim_title',        header: 'Claim Title'        },
-  { key: 'claim_status',       header: 'Status'             },
-  { key: 'period_start',       header: 'Period Start'       },
-  { key: 'period_end',         header: 'Period End'         },
-  { key: 'submitted_at',       header: 'Submitted At'       },
-  { key: 'claim_currency',     header: 'Currency'           },
-  { key: 'claim_total_myr',    header: 'Claim Total (MYR)'  },
-  // Item
-  { key: 'item_id',            header: 'Item ID'            },
-  { key: 'item_type',          header: 'Item Type'          },
-  { key: 'item_date',          header: 'Item Date'          },
-  { key: 'item_mode',          header: 'Mode'               },
-  { key: 'item_meal_session',  header: 'Meal Session'       },
-  { key: 'item_merchant',      header: 'Merchant'           },
-  { key: 'item_qty',           header: 'Qty'                },
-  { key: 'item_unit',          header: 'Unit'               },
-  { key: 'item_rate_myr',      header: 'Rate (MYR)'         },
-  { key: 'item_amount_myr',    header: 'Amount (MYR)'       },
-  { key: 'receipt_present',    header: 'Receipt'            },
-  { key: 'item_notes',         header: 'Notes'              },
-  // Trip / mileage audit trail
-  { key: 'trip_id',                    header: 'Trip ID'                    },
-  { key: 'trip_started_at',            header: 'Trip Start'                 },
-  { key: 'trip_ended_at',              header: 'Trip End'                   },
-  { key: 'gps_distance_km',            header: 'GPS Distance (KM)'          },
-  { key: 'selected_route_distance_km', header: 'Route Distance (KM)'        },
-  { key: 'odometer_distance_km',       header: 'Odometer Distance (KM)'     },
-  { key: 'odometer_mode',              header: 'Odometer Mode'              },
-  { key: 'final_distance_km',          header: 'Official Distance (KM)'     },
-  { key: 'distance_source',            header: 'Distance Source'            },
-]
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-const mToKm = (m: number | null | undefined): string =>
-  m != null ? (m / 1000).toFixed(2) : ''
-
-const fmtDateOnly = (iso: string | null | undefined): string =>
-  iso ? iso.slice(0, 10) : ''
-
-const fmtDateTime = (iso: string | null | undefined): string => {
-  if (!iso) return ''
-  return new Date(iso).toLocaleString('en-MY', {
-    timeZone:  'Asia/Kuala_Lumpur',
-    year:      'numeric', month: '2-digit', day: '2-digit',
-    hour:      '2-digit', minute: '2-digit',
-  })
+export type TripForExport = {
+  id:               string
+  origin_text:      string | null
+  destination_text: string | null
+  final_distance_m: number | null    // meters — convert to KM on export
+  distance_source:  string | null
+  transport_type:   string | null
+  odometer_mode:    string | null
 }
 
-const fmtNum = (n: number | null | undefined): string =>
-  n != null ? Number(n).toFixed(2) : ''
+export type BuildExportOptions = {
+  columns?:           ExportColumnKey[]     // from template — if empty, use STANDARD preset
+  pdfLayout?:         'BY_DATE' | 'BY_CATEGORY'
+  signatureDataUrl?:  string
+  mileageRatePerKm?:  number               // from rate_version at time of claim
+}
 
-// ── Main: fetch + build rows ──────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function metersToKm(m: number | null): string {
+  if (m === null || m === undefined) return ''
+  return (m / 1000).toFixed(2)
+}
 
-export async function buildExportRows(
-  supabase: SupabaseClient,
-  filters: ExportFilters,
-): Promise<{ rows: ExportRow[]; error: string | null }> {
+function formatDate(d: string | null): string {
+  if (!d) return ''
+  return d.split('T')[0]   // YYYY-MM-DD
+}
 
-  // 1. Fetch claims matching filters
-  let claimsQ = supabase
-    .from('claims')
-    .select(`
-      id, title, status,
-      period_start, period_end,
-      submitted_at, currency, total_amount
-    `)
-    .eq('org_id', filters.org_id)
-    .order('period_start', { ascending: false })
+function yesNo(v: boolean | null | undefined): string {
+  return v ? 'Y' : 'N'
+}
 
-  if (filters.claim_ids && filters.claim_ids.length > 0) {
-    // Specific claim IDs — ignore date/status filters
-    claimsQ = claimsQ.in('id', filters.claim_ids)
-  } else {
-    if (filters.filter_status !== 'ALL')
-      claimsQ = claimsQ.eq('status', filters.filter_status)
-    if (filters.date_from)
-      claimsQ = claimsQ.gte('period_start', filters.date_from)
-    if (filters.date_to)
-      claimsQ = claimsQ.lte('period_start', filters.date_to)
+// ── Cell value extractor ───────────────────────────────────────────────────────
+// Extracts the value for a given column key from a claim+item pair.
+// Returns string — ExcelJS will keep numbers as-is when we set the cell type.
+
+function getCellValue(
+  key: ExportColumnKey,
+  claim: ClaimForExport,
+  item: ItemForExport,
+  mileageRate?: number,
+): string | number {
+  switch (key) {
+    // Claim-level
+    case 'claim_id':          return claim.id
+    case 'claim_title':       return claim.title ?? ''
+    case 'user_name':         return claim.user_name ?? ''
+    case 'user_email':        return claim.user_email ?? ''
+    case 'period_start':      return formatDate(claim.period_start)
+    case 'period_end':        return formatDate(claim.period_end)
+    case 'submitted_at':      return claim.submitted_at ? formatDate(claim.submitted_at) : ''
+    case 'total_amount':      return claim.total_amount
+
+    // Item-level core
+    case 'item_id':           return item.id
+    case 'item_type':         return item.type
+    case 'item_date':         return formatDate(item.claim_date)
+    case 'amount':            return item.amount
+    case 'currency':          return item.currency
+    case 'merchant':          return item.merchant ?? ''
+    case 'notes':             return item.notes ?? ''
+    case 'receipt_present':   return yesNo(!!item.receipt_url)
+    case 'receipt_url':       return item.receipt_url ?? ''
+
+    // Mileage / trip
+    case 'trip_origin':       return item.trip?.origin_text ?? ''
+    case 'trip_destination':  return item.trip?.destination_text ?? ''
+    case 'distance_km':       return item.trip ? metersToKm(item.trip.final_distance_m) : ''
+    case 'distance_source':   return item.trip?.distance_source ?? ''
+    case 'mileage_rate':      return mileageRate ?? ''
+    case 'transport_type':    return item.trip?.transport_type ?? ''
+    case 'odometer_mode':     return item.trip?.odometer_mode ?? ''
+
+    // TNG
+    case 'tng_trans_no':      return item.tng_trans_no ?? ''
+    case 'paid_via_tng':      return yesNo(item.paid_via_tng)
+
+    // Per Diem
+    case 'perdiem_days':      return item.perdiem_days ?? ''
+    case 'perdiem_rate':      return item.perdiem_rate_myr ?? ''
+    case 'perdiem_destination': return item.perdiem_destination ?? ''
+
+    // Meal / Lodging
+    case 'meal_session':      return item.meal_session ?? ''
+    case 'lodging_check_in':  return formatDate(item.lodging_check_in)
+    case 'lodging_check_out': return formatDate(item.lodging_check_out)
+
+    default:                  return ''
+  }
+}
+
+// ── Flatten: claims → rows ─────────────────────────────────────────────────────
+// Each item becomes one row. Claim-level columns repeat per item.
+function flattenToRows(
+  claims:      ClaimForExport[],
+  columns:     ExportColumnKey[],
+  mileageRate?: number,
+): (string | number)[][] {
+  const rows: (string | number)[][] = []
+
+  for (const claim of claims) {
+    if (claim.items.length === 0) {
+      // Claim with no items — output one row of claim-level columns only
+      rows.push(columns.map((k) => getCellValue(k, claim, {} as ItemForExport, mileageRate)))
+    } else {
+      for (const item of claim.items) {
+        rows.push(columns.map((k) => getCellValue(k, claim, item, mileageRate)))
+      }
+    }
   }
 
-  const { data: claims, error: claimsErr } = await claimsQ
-  if (claimsErr)
-    return { rows: [], error: `Failed to fetch claims: ${claimsErr.message}` }
-  if (!claims || claims.length === 0)
-    return { rows: [], error: null }   // empty export is valid
+  return rows
+}
 
-  const claimIds = claims.map(c => c.id)
+// ── CSV builder ───────────────────────────────────────────────────────────────
+export function buildCSV(
+  claims:  ClaimForExport[],
+  options: BuildExportOptions = {},
+): string {
+  const columns = options.columns?.length ? options.columns : PRESET_COLUMNS.STANDARD
+  const headers = columns.map(getColumnLabel)
+  const rows    = flattenToRows(claims, columns, options.mileageRatePerKm)
 
-  // 2. Fetch all items for matched claims
-  const { data: items, error: itemsErr } = await supabase
-    .from('claim_items')
-    .select(`
-      id, claim_id, type, mode,
-      trip_id, qty, unit, rate, amount,
-      receipt_url, merchant, notes,
-      claim_date, meal_session,
-      lodging_check_in, lodging_check_out
-    `)
-    .in('claim_id', claimIds)
-    .order('claim_id', { ascending: true })
-    .order('claim_date', { ascending: true })
-
-  if (itemsErr)
-    return { rows: [], error: `Failed to fetch items: ${itemsErr.message}` }
-
-  // 3. Fetch all linked trips
-  const tripIds = [...new Set(
-    (items ?? []).map(i => i.trip_id).filter(Boolean)
-  )] as string[]
-
-  let tripsMap: Record<string, {
-    started_at: string | null; ended_at: string | null
-    gps_distance_m: number | null; selected_route_distance_m: number | null
-    odometer_distance_m: number | null; odometer_mode: string | null
-    final_distance_m: number | null; distance_source: string | null
-  }> = {}
-
-  if (tripIds.length > 0) {
-    const { data: trips, error: tripsErr } = await supabase
-      .from('trips')
-      .select(`
-        id, started_at, ended_at,
-        gps_distance_m, selected_route_distance_m,
-        odometer_distance_m, odometer_mode,
-        final_distance_m, distance_source
-      `)
-      .in('id', tripIds)
-
-    if (tripsErr)
-      return { rows: [], error: `Failed to fetch trips: ${tripsErr.message}` }
-
-    ;(trips ?? []).forEach(t => { tripsMap[t.id] = t })
+  const escape = (v: string | number): string => {
+    const s = String(v)
+    if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+      return `"${s.replace(/"/g, '""')}"`
+    }
+    return s
   }
 
-  // 4. Build flat rows (one row per item, claim data repeated)
-  const claimsMap: Record<string, typeof claims[0]> = {}
-  claims.forEach(c => { claimsMap[c.id] = c })
+  const lines = [
+    headers.map(escape).join(','),
+    ...rows.map((row) => row.map(escape).join(',')),
+  ]
 
-  const rows: ExportRow[] = (items ?? []).map(item => {
-    const claim = claimsMap[item.claim_id]
-    const trip  = item.trip_id ? tripsMap[item.trip_id] : null
-
-    const itemDate = item.claim_date
-      ?? item.lodging_check_in
-      ?? null
-
-    return {
-      // ── Claim ──────────────────────────────────────────────────
-      claim_id:        claim.id,
-      claim_title:     claim.title ?? '',
-      claim_status:    claim.status,
-      period_start:    fmtDateOnly(claim.period_start),
-      period_end:      fmtDateOnly(claim.period_end),
-      submitted_at:    fmtDateTime(claim.submitted_at),
-      claim_currency:  claim.currency ?? 'MYR',
-      claim_total_myr: fmtNum(claim.total_amount),
-
-      // ── Item ───────────────────────────────────────────────────
-      item_id:           item.id,
-      item_type:         item.type,
-      item_date:         fmtDateOnly(itemDate),
-      item_mode:         item.mode ?? '',
-      item_meal_session: item.meal_session ?? '',
-      item_merchant:     item.merchant ?? '',
-      item_qty:          fmtNum(item.qty),
-      item_unit:         item.unit ?? '',
-      item_rate_myr:     fmtNum(item.rate),
-      item_amount_myr:   fmtNum(item.amount),
-      receipt_present:   item.receipt_url ? 'Y' : 'N',
-      item_notes:        item.notes ?? '',
-
-      // ── Trip / mileage audit trail ─────────────────────────────
-      trip_id:                    trip ? (item.trip_id ?? '') : '',
-      trip_started_at:            trip ? fmtDateTime(trip.started_at)           : '',
-      trip_ended_at:              trip ? fmtDateTime(trip.ended_at)             : '',
-      gps_distance_km:            trip ? mToKm(trip.gps_distance_m)            : '',
-      selected_route_distance_km: trip ? mToKm(trip.selected_route_distance_m) : '',
-      odometer_distance_km:       trip ? mToKm(trip.odometer_distance_m)       : '',
-      odometer_mode:              trip ? (trip.odometer_mode ?? '')             : '',
-      final_distance_km:          trip ? mToKm(trip.final_distance_m)          : '',
-      distance_source:            trip ? (trip.distance_source ?? '')           : '',
-    }
-  })
-
-  return { rows, error: null }
+  return lines.join('\r\n')
 }
 
-// ── CSV generator ─────────────────────────────────────────────────────────────
+// ── XLSX builder ──────────────────────────────────────────────────────────────
+export async function buildXLSX(
+  claims:  ClaimForExport[],
+  options: BuildExportOptions = {},
+): Promise<Buffer> {
+  const columns = options.columns?.length ? options.columns : PRESET_COLUMNS.STANDARD
+  const headers = columns.map(getColumnLabel)
+  const rows    = flattenToRows(claims, columns, options.mileageRatePerKm)
 
-export function generateCSV(rows: ExportRow[]): string {
-  const escape = (v: string) =>
-    v.includes(',') || v.includes('"') || v.includes('\n')
-      ? `"${v.replace(/"/g, '""')}"`
-      : v
+  const workbook  = new ExcelJS.Workbook()
+  workbook.creator = 'myexpensio'
 
-  const headers = EXPORT_COLUMNS.map(c => escape(c.header)).join(',')
-
-  const dataRows = rows.map(row =>
-    EXPORT_COLUMNS.map(c => escape(String(row[c.key] ?? ''))).join(',')
-  )
-
-  return [headers, ...dataRows].join('\r\n')
-}
-
-// ── XLSX generator ────────────────────────────────────────────────────────────
-
-export async function generateXLSX(rows: ExportRow[]): Promise<Buffer> {
-  const wb = new ExcelJS.Workbook()
-  wb.creator  = 'myexpensio'
-  wb.created  = new Date()
-
-  const ws = wb.addWorksheet('Claims', {
-    views: [{ state: 'frozen', ySplit: 1 }],
+  const sheet = workbook.addWorksheet('Claims', {
+    pageSetup: { paperSize: 9, orientation: 'landscape' },
   })
 
-  // ── Columns + widths ────────────────────────────────────────────────────
-  ws.columns = EXPORT_COLUMNS.map(c => ({
-    key:   c.key,
-    header: c.header,
-    width:  colWidth(c.key),
-  }))
+  // Header row
+  sheet.addRow(headers)
+  const headerRow = sheet.getRow(1)
+  headerRow.font = { bold: true }
+  headerRow.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FFE8F0FE' },   // light blue
+  }
+  headerRow.border = {
+    bottom: { style: 'thin', color: { argb: 'FFD0D0D0' } },
+  }
 
-  // ── Header row styling ──────────────────────────────────────────────────
-  const headerRow = ws.getRow(1)
-  headerRow.eachCell(cell => {
-    cell.font      = { bold: true, color: { argb: 'FFFFFFFF' } }
-    cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } }
-    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false }
-    cell.border    = {
-      bottom: { style: 'thin', color: { argb: 'FF334155' } }
-    }
-  })
-  headerRow.height = 22
+  // Data rows
+  for (const row of rows) {
+    sheet.addRow(row)
+  }
 
-  // ── Data rows ───────────────────────────────────────────────────────────
-  rows.forEach((row, i) => {
-    const wsRow = ws.addRow(
-      EXPORT_COLUMNS.reduce((acc, c) => {
-        acc[c.key] = row[c.key] ?? ''
-        return acc
-      }, {} as Record<string, string>)
+  // Column widths — auto-fit with a minimum
+  columns.forEach((_, i) => {
+    const col = sheet.getColumn(i + 1)
+    const headerLen = headers[i]?.length ?? 10
+    const maxDataLen = Math.min(
+      50,
+      Math.max(
+        headerLen,
+        ...rows.slice(0, 100).map((r) => String(r[i] ?? '').length)
+      )
     )
-    // Alternate row shading
-    if (i % 2 === 0) {
-      wsRow.eachCell(cell => {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } }
-      })
-    }
-    // Right-align numeric columns
-    NUMERIC_KEYS.forEach(k => {
-      const cell = wsRow.getCell(k)
-      cell.alignment = { horizontal: 'right' }
-    })
-    wsRow.height = 18
+    col.width = Math.max(10, maxDataLen + 2)
   })
 
-  // ── Summary row ─────────────────────────────────────────────────────────
-  if (rows.length > 0) {
-    ws.addRow({})   // blank separator
+  // Freeze header row
+  sheet.views = [{ state: 'frozen', ySplit: 1 }]
 
-    const lastDataRow = rows.length + 1   // +1 for header
-    const amtCol      = EXPORT_COLUMNS.findIndex(c => c.key === 'item_amount_myr') + 1
-    const colLetter   = ws.getColumn(amtCol).letter
-
-    const summaryRow = ws.addRow({
-      claim_title:     `Total (${rows.length} items)`,
-      item_amount_myr: { formula: `SUM(${colLetter}2:${colLetter}${lastDataRow})` },
-    })
-    summaryRow.getCell('claim_title').font = { bold: true }
-    summaryRow.getCell('item_amount_myr').font      = { bold: true }
-    summaryRow.getCell('item_amount_myr').alignment = { horizontal: 'right' }
+  // Auto-filter on header
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to:   { row: 1, column: columns.length },
   }
 
-  const buf = await wb.xlsx.writeBuffer()
-  return Buffer.from(buf)
+  const buffer = await workbook.xlsx.writeBuffer()
+  return Buffer.from(buffer)
 }
 
-// ── Column widths ─────────────────────────────────────────────────────────────
+// ── buildExport — main entry point ────────────────────────────────────────────
+// Called by /api/exports route handler.
+// Returns a Buffer + the appropriate content-type header value.
 
-const NUMERIC_KEYS: Array<keyof ExportRow> = [
-  'claim_total_myr', 'item_qty', 'item_rate_myr', 'item_amount_myr',
-  'gps_distance_km', 'selected_route_distance_km', 'odometer_distance_km',
-  'final_distance_km',
-]
+export async function buildExport(
+  claims:  ClaimForExport[],
+  format:  'CSV' | 'XLSX' | 'PDF',
+  options: BuildExportOptions = {},
+): Promise<{ buffer: Buffer; contentType: string; extension: string }> {
+  switch (format) {
+    case 'CSV': {
+      const csv = buildCSV(claims, options)
+      return {
+        buffer:      Buffer.from(csv, 'utf-8'),
+        contentType: 'text/csv; charset=utf-8',
+        extension:   'csv',
+      }
+    }
+    case 'XLSX': {
+      const buf = await buildXLSX(claims, options)
+      return {
+        buffer:      buf,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        extension:   'xlsx',
+      }
+    }
+    case 'PDF':
+      // PDF path: existing pdf-builder.ts handles this.
+      // The calling route should pass options.columns to pdf-builder for column filtering.
+      // For now we throw — the /api/exports route handles PDF separately.
+      throw new Error('PDF format: use pdf-builder.ts, not buildExport()')
 
-function colWidth(key: keyof ExportRow): number {
-  const widths: Partial<Record<keyof ExportRow, number>> = {
-    claim_id:                    36,
-    claim_title:                 24,
-    claim_status:                12,
-    period_start:                14,
-    period_end:                  14,
-    submitted_at:                20,
-    claim_currency:               8,
-    claim_total_myr:             16,
-    item_id:                     36,
-    item_type:                   12,
-    item_date:                   14,
-    item_mode:                   14,
-    item_meal_session:           16,
-    item_merchant:               22,
-    item_qty:                    10,
-    item_unit:                    8,
-    item_rate_myr:               12,
-    item_amount_myr:             16,
-    receipt_present:             10,
-    item_notes:                  28,
-    trip_id:                     36,
-    trip_started_at:             20,
-    trip_ended_at:               20,
-    gps_distance_km:             18,
-    selected_route_distance_km:  20,
-    odometer_distance_km:        20,
-    odometer_mode:               16,
-    final_distance_km:           20,
-    distance_source:             18,
+    default:
+      throw new Error(`Unknown format: ${format}`)
   }
-  return widths[key] ?? 16
 }
