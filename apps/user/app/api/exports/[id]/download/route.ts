@@ -173,7 +173,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
     const dateStamp = new Date(job.created_at).toISOString().slice(0, 10).replace(/-/g, '')
     const filename  = `myexpensio_claims_${dateStamp}.${extension}`
 
-    return new NextResponse(buffer, {
+    // NextResponse requires a BodyInit — Buffer is not directly accepted.
+    // Wrapping in Uint8Array satisfies the type and preserves the bytes.
+    return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
         'Content-Type':        contentType,
