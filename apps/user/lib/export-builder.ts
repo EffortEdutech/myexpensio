@@ -10,8 +10,14 @@
 //
 // Column registry is in lib/export-columns.ts (shared with admin app).
 // Place that file at apps/user/lib/export-columns.ts before running.
+//
+// COMPATIBILITY SHIM (added 14 Mar 2026):
+//   pdf-builder.ts uses an older "flat row" API: buildExportRows / ExportFilters / ExportRow.
+//   Those types and that function are added at the bottom of this file so pdf-builder.ts
+//   continues to compile without modification. They bridge to the same DB data.
 
 import ExcelJS from 'exceljs'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   PRESET_COLUMNS,
   getColumnLabel,
@@ -77,7 +83,7 @@ function metersToKm(m: number | null): string {
   return (m / 1000).toFixed(2)
 }
 
-function formatDate(d: string | null): string {
+function formatDate(d: string | null | undefined): string {
   if (!d) return ''
   return d.split('T')[0]   // YYYY-MM-DD
 }
@@ -108,11 +114,11 @@ function getCellValue(
     case 'total_amount':      return claim.total_amount
 
     // Item-level core
-    case 'item_id':           return item.id
-    case 'item_type':         return item.type
+    case 'item_id':           return item.id ?? ''
+    case 'item_type':         return item.type ?? ''
     case 'item_date':         return formatDate(item.claim_date)
-    case 'amount':            return item.amount
-    case 'currency':          return item.currency
+    case 'amount':            return item.amount ?? 0
+    case 'currency':          return item.currency ?? ''
     case 'merchant':          return item.merchant ?? ''
     case 'notes':             return item.notes ?? ''
     case 'receipt_present':   return yesNo(!!item.receipt_url)
@@ -229,7 +235,7 @@ export async function buildXLSX(
 
   // Column widths — auto-fit with a minimum
   columns.forEach((_, i) => {
-    const col = sheet.getColumn(i + 1)
+    const col       = sheet.getColumn(i + 1)
     const headerLen = headers[i]?.length ?? 10
     const maxDataLen = Math.min(
       50,
@@ -281,12 +287,205 @@ export async function buildExport(
       }
     }
     case 'PDF':
-      // PDF path: existing pdf-builder.ts handles this.
-      // The calling route should pass options.columns to pdf-builder for column filtering.
-      // For now we throw — the /api/exports route handles PDF separately.
-      throw new Error('PDF format: use pdf-builder.ts, not buildExport()')
+      // PDF path: pdf-builder.ts handles this.
+      // The calling route should use buildPdfData() from pdf-builder, not this function.
+      throw new Error('PDF format: use pdf-builder.ts → buildPdfData(), not buildExport()')
 
     default:
       throw new Error(`Unknown format: ${format}`)
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPATIBILITY SHIM — Legacy flat-row API used by pdf-builder.ts
+//
+// pdf-builder.ts was written against an older version of this module that
+// exposed a "fetch + flatten to flat rows" API. That API was replaced by the
+// ClaimForExport/ItemForExport nested types above (used by CSV/XLSX builders).
+//
+// To avoid rewriting the 500-line pdf-builder.ts rendering engine, we re-expose
+// the old types and function here as a bridge layer.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── ExportFilters ─────────────────────────────────────────────────────────────
+// Filter params accepted by buildExportRows.
+export type ExportFilters = {
+  org_id:          string
+  claim_ids?:      string[]           // filter by specific IDs (preferred path)
+  date_from?:      string             // YYYY-MM-DD — filter by period_start >=
+  date_to?:        string             // YYYY-MM-DD — filter by period_end <=
+  filter_status?:  'SUBMITTED' | 'DRAFT' | 'ALL'
+}
+
+// ── ExportRow ─────────────────────────────────────────────────────────────────
+// One flat row per claim item — the format pdf-builder.ts uses internally.
+// Field names follow the convention established in the original pdf-builder.
+export type ExportRow = {
+  // Claim-level (repeated per item)
+  claim_id:            string
+  claim_title:         string
+  claim_status:        string
+  period_start:        string         // YYYY-MM-DD
+  period_end:          string         // YYYY-MM-DD
+  submitted_at:        string         // YYYY-MM-DD or ''
+  total_amount:        number
+  // Item-level
+  item_id:             string
+  item_type:           string         // MILEAGE | MEAL | LODGING | TOLL | PARKING | ...
+  item_date:           string         // YYYY-MM-DD
+  amount:              number
+  item_merchant:       string
+  item_notes:          string
+  item_mode:           string         // FIXED_RATE | RECEIPT | ''
+  item_qty:            string         // quantity as string
+  item_rate:           string         // rate as string
+  receipt_present:     'Y' | 'N'
+  receipt_url:         string
+  item_meal_session:   string         // FULL_DAY | MORNING | NOON | EVENING | ''
+  // Mileage / trip
+  final_distance_km:   string         // e.g. '12.34' or ''
+  distance_source:     string
+  transport_type:      string
+  odometer_mode:       string
+  mileage_rate:        string         // rate per km as string, or ''
+  // TNG
+  tng_trans_no:        string
+  paid_via_tng:        string         // 'Y' | 'N'
+  tng_transaction_id:  string
+  // Per Diem
+  perdiem_days:        string
+  perdiem_rate:        string
+  perdiem_destination: string
+  // Lodging
+  lodging_check_in:    string
+  lodging_check_out:   string
+}
+
+// ── buildExportRows ───────────────────────────────────────────────────────────
+// Fetches claims from Supabase using the given filters and returns a flat list
+// of ExportRow — one row per claim item (claim-level fields repeated per item).
+//
+// Called by pdf-builder.ts → buildPdfData() to load data for PDF generation.
+// CSV/XLSX builders use the newer ClaimForExport path via /api/exports route.
+export async function buildExportRows(
+  supabase: SupabaseClient,
+  filters:  ExportFilters,
+): Promise<{ rows: ExportRow[]; error: string | null }> {
+
+  // Build base query
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query: any = supabase
+    .from('claims')
+    .select(`
+      id, title, status, period_start, period_end, submitted_at, total_amount,
+      claim_items (
+        id, type, amount, claim_date, merchant, notes, receipt_url,
+        paid_via_tng, tng_transaction_id,
+        qty, rate, mode,
+        meal_session,
+        lodging_check_in, lodging_check_out,
+        perdiem_days, perdiem_rate_myr, perdiem_destination,
+        tng_transactions ( trans_no ),
+        trips (
+          id, origin_text, destination_text,
+          final_distance_m, distance_source,
+          transport_type, odometer_mode
+        )
+      )
+    `)
+    .eq('org_id', filters.org_id)
+
+  // Apply filters
+  if (filters.claim_ids?.length) {
+    query = query.in('id', filters.claim_ids)
+  }
+  if (filters.date_from) {
+    query = query.gte('period_start', filters.date_from)
+  }
+  if (filters.date_to) {
+    query = query.lte('period_end', filters.date_to)
+  }
+  if (filters.filter_status && filters.filter_status !== 'ALL') {
+    query = query.eq('status', filters.filter_status)
+  }
+
+  const { data: claims, error } = await query.order('period_start', { ascending: false })
+
+  if (error) {
+    console.error('[buildExportRows] DB error:', error)
+    return { rows: [], error: error.message }
+  }
+
+  if (!claims?.length) {
+    return { rows: [], error: null }
+  }
+
+  // Flatten claims → ExportRow[]
+  const rows: ExportRow[] = []
+
+  for (const claim of claims) {
+    const claimItems = Array.isArray(claim.claim_items)
+      ? claim.claim_items
+      : [claim.claim_items].filter(Boolean)
+
+    for (const item of claimItems) {
+      if (!item) continue
+
+      const tngTx = Array.isArray(item.tng_transactions)
+        ? item.tng_transactions[0]
+        : item.tng_transactions
+      const trip = Array.isArray(item.trips)
+        ? item.trips[0]
+        : item.trips
+
+      rows.push({
+        // Claim-level
+        claim_id:            claim.id            ?? '',
+        claim_title:         claim.title          ?? '',
+        claim_status:        claim.status         ?? '',
+        period_start:        formatDate(claim.period_start),
+        period_end:          formatDate(claim.period_end),
+        submitted_at:        formatDate(claim.submitted_at),
+        total_amount:        Number(claim.total_amount ?? 0),
+        // Item-level
+        item_id:             item.id              ?? '',
+        item_type:           item.type            ?? '',
+        item_date:           formatDate(item.claim_date),
+        amount:              Number(item.amount   ?? 0),
+        item_merchant:       item.merchant        ?? '',
+        item_notes:          item.notes           ?? '',
+        item_mode:           item.mode            ?? '',
+        item_qty:            item.qty != null      ? String(item.qty)  : '',
+        item_rate:           item.rate != null     ? String(item.rate) : '',
+        receipt_present:     item.receipt_url ? 'Y' : 'N',
+        receipt_url:         item.receipt_url     ?? '',
+        item_meal_session:   item.meal_session    ?? '',
+        // Mileage / trip
+        final_distance_km:   trip?.final_distance_m != null
+          ? metersToKm(Number(trip.final_distance_m))
+          : '',
+        distance_source:     trip?.distance_source  ?? '',
+        transport_type:      trip?.transport_type   ?? '',
+        odometer_mode:       trip?.odometer_mode    ?? '',
+        mileage_rate:        '',   // not stored on trips; fetched separately if needed
+        // TNG
+        tng_trans_no:        (tngTx as Record<string, unknown> | null)?.trans_no as string ?? '',
+        paid_via_tng:        item.paid_via_tng ? 'Y' : 'N',
+        tng_transaction_id:  item.tng_transaction_id ?? '',
+        // Per Diem
+        perdiem_days:        item.perdiem_days != null
+          ? String(item.perdiem_days)
+          : '',
+        perdiem_rate:        item.perdiem_rate_myr != null
+          ? String(item.perdiem_rate_myr)
+          : '',
+        perdiem_destination: item.perdiem_destination ?? '',
+        // Lodging
+        lodging_check_in:    formatDate(item.lodging_check_in),
+        lodging_check_out:   formatDate(item.lodging_check_out),
+      })
+    }
+  }
+
+  return { rows, error: null }
 }
