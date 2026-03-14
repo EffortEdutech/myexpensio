@@ -8,6 +8,12 @@
 //   4. Picks format (XLSX / CSV / PDF)
 //   5. For PDF: picks layout (By Date | By Category), draws signature
 //   6. Taps Generate → file downloads immediately
+//
+// FIXES (14 Mar 2026):
+//   - FIX 1: S.filterActive / S.filterActivePdf now use `border` (shorthand)
+//            instead of `borderColor` to avoid React style-shorthand conflict warning.
+//   - FIX 2: loadHistory now calls /api/exports/history (dedicated GET route)
+//            with try/catch/finally so a 405/empty body never crashes the page.
 
 import { useState, useEffect, useCallback } from 'react'
 import { SignaturePad } from '@/components/SignaturePad'
@@ -102,32 +108,49 @@ export default function ExportsPage() {
   const [format,       setFormat]      = useState<'XLSX' | 'CSV' | 'PDF'>('XLSX')
 
   // ── PDF-specific options ──────────────────────────────────────────────────
-  const [pdfLayout,    setPdfLayout]   = useState<PdfLayout>('BY_DATE')
-  const [signature,    setSignature]   = useState<string | null>(null)
+  const [pdfLayout,  setPdfLayout] = useState<PdfLayout>('BY_DATE')
+  const [signature,  setSignature] = useState<string | null>(null)
 
-  const [generating,   setGenerating]  = useState(false)
-  const [genError,     setGenError]    = useState<string | null>(null)
-  const [genSuccess,   setGenSuccess]  = useState<string | null>(null)
-  const [history,      setHistory]     = useState<ExportJob[]>([])
-  const [loadingH,     setLoadingH]    = useState(true)
+  const [generating, setGenerating] = useState(false)
+  const [genError,   setGenError]   = useState<string | null>(null)
+  const [genSuccess, setGenSuccess] = useState<string | null>(null)
+  const [history,    setHistory]    = useState<ExportJob[]>([])
+  const [loadingH,   setLoadingH]   = useState(true)
+
+  // ── Load claims ───────────────────────────────────────────────────────────
 
   const loadClaims = useCallback(async () => {
     setLoadingC(true); setClaimsErr(null)
-    const res  = await fetch('/api/claims?limit=100')
-    const json = await res.json()
-    if (!res.ok) { setClaimsErr(json.error?.message ?? 'Failed to load claims.'); setLoadingC(false); return }
-    setClaims(json.items ?? [])
-    setLoadingC(false)
+    try {
+      const res  = await fetch('/api/claims?limit=100')
+      const json = await res.json()
+      if (!res.ok) { setClaimsErr(json.error?.message ?? 'Failed to load claims.'); return }
+      setClaims(json.items ?? [])
+    } catch {
+      setClaimsErr('Network error loading claims.')
+    } finally {
+      setLoadingC(false)
+    }
   }, [])
 
+  // ── FIX 2: Load history — dedicated GET route, safe try/catch/finally ─────
+
   const loadHistory = useCallback(async () => {
-    const res  = await fetch('/api/exports')
-    const json = await res.json()
-    setHistory(json.items ?? [])
-    setLoadingH(false)
+    try {
+      const res = await fetch('/api/exports/history')
+      if (!res.ok) return   // silently degrade — history is non-critical
+      const json = await res.json()
+      setHistory(json.items ?? [])
+    } catch {
+      // non-critical — swallow network errors
+    } finally {
+      setLoadingH(false)
+    }
   }, [])
 
   useEffect(() => { loadClaims(); loadHistory() }, [loadClaims, loadHistory])
+
+  // ── Filtering ─────────────────────────────────────────────────────────────
 
   const filteredClaims = claims.filter(c => {
     if (statusFilter !== 'ALL' && c.status !== statusFilter) return false
@@ -139,9 +162,11 @@ export default function ExportsPage() {
   function toggleOne(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
-  const allSelected  = filteredClaims.length > 0 && filteredClaims.every(c => selected.has(c.id))
+  const allSelected    = filteredClaims.length > 0 && filteredClaims.every(c => selected.has(c.id))
   const selectedClaims = claims.filter(c => selected.has(c.id))
   const selectedTotal  = selectedClaims.reduce((s, c) => s + Number(c.total_amount), 0)
+
+  // ── Generate export ───────────────────────────────────────────────────────
 
   async function handleGenerate() {
     if (selected.size === 0) { setGenError('Select at least one claim.'); return }
@@ -156,30 +181,38 @@ export default function ExportsPage() {
       if (signature) body.signature_data_url = signature
     }
 
-    const res = await fetch('/api/exports', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    setGenerating(false)
+    try {
+      const res = await fetch('/api/exports', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+      })
 
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}))
-      setGenError(json.error?.message ?? 'Export failed. Please try again.')
-      return
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        setGenError(json.error?.message ?? 'Export failed. Please try again.')
+        return
+      }
+
+      const rowCount = parseInt(res.headers.get('X-Row-Count') ?? '0')
+      const blob     = await res.blob()
+      const ext      = format === 'CSV' ? 'csv' : format === 'PDF' ? 'pdf' : 'xlsx'
+      const ds       = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+      const url      = URL.createObjectURL(blob)
+      const a        = document.createElement('a')
+      a.href = url; a.download = `myexpensio_claim_${ds}.${ext}`
+      document.body.appendChild(a); a.click()
+      document.body.removeChild(a); URL.revokeObjectURL(url)
+
+      setGenSuccess(
+        `✓ ${format} downloaded — ${rowCount} item${rowCount !== 1 ? 's' : ''} from ${selected.size} claim${selected.size !== 1 ? 's' : ''}`
+      )
+      loadHistory()
+    } catch {
+      setGenError('Network error. Please try again.')
+    } finally {
+      setGenerating(false)
     }
-
-    const rowCount = parseInt(res.headers.get('X-Row-Count') ?? '0')
-    const blob = await res.blob()
-    const ext  = format === 'CSV' ? 'csv' : format === 'PDF' ? 'pdf' : 'xlsx'
-    const ds   = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
-    a.href = url; a.download = `myexpensio_claim_${ds}.${ext}`
-    document.body.appendChild(a); a.click()
-    document.body.removeChild(a); URL.revokeObjectURL(url)
-
-    setGenSuccess(`✓ ${format} downloaded — ${rowCount} item${rowCount !== 1 ? 's' : ''} from ${selected.size} claim${selected.size !== 1 ? 's' : ''}`)
-    loadHistory()
   }
 
   // ── Layout toggle component ───────────────────────────────────────────────
@@ -211,11 +244,11 @@ export default function ExportsPage() {
               onClick={() => setPdfLayout(o.value)}
               style={{
                 flex: 1, padding: '10px 12px', border: 'none', borderRadius: 10, cursor: 'pointer',
-                textAlign: 'left',
+                textAlign:       'left',
                 backgroundColor: pdfLayout === o.value ? '#7c3aed' : '#fff',
                 color:           pdfLayout === o.value ? '#fff'    : '#0f172a',
-                outline: pdfLayout === o.value ? 'none' : '1px solid #e9d5ff',
-                transition: 'all 0.15s',
+                outline:         pdfLayout === o.value ? 'none'    : '1px solid #e9d5ff',
+                transition:      'all 0.15s',
               }}
             >
               <div style={{ fontSize: 18, marginBottom: 4 }}>{o.icon}</div>
@@ -227,7 +260,6 @@ export default function ExportsPage() {
           ))}
         </div>
 
-        {/* Preview of what each layout produces */}
         {pdfLayout === 'BY_DATE' && (
           <div style={{ marginTop: 10, padding: '8px 10px', backgroundColor: '#f5f3ff', borderRadius: 8, fontSize: 11, color: '#6d28d9', lineHeight: 1.6 }}>
             <strong>Pages:</strong> Cover → Summary → Items (date order) → Declaration → Receipts
@@ -262,7 +294,11 @@ export default function ExportsPage() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
           {(['ALL', 'SUBMITTED', 'DRAFT'] as const).map(s => (
             <button key={s} onClick={() => setStatusFilter(s)}
-              style={{ ...S.filterBtn, ...(statusFilter === s ? S.filterActive : {}) }}>
+              style={{
+                ...S.filterBtn,
+                // FIX 1: use `border` shorthand, not `borderColor`, to avoid React re-render warning
+                ...(statusFilter === s ? S.filterActive : {}),
+              }}>
               {s === 'ALL' ? 'All' : s === 'SUBMITTED' ? '✓ Submitted' : '✏ Draft'}
             </button>
           ))}
@@ -290,7 +326,9 @@ export default function ExportsPage() {
             {/* Select all */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingBottom: 10, borderBottom: '1px solid #f1f5f9' }}>
               <input type='checkbox' checked={allSelected}
-                onChange={() => allSelected ? setSelected(new Set()) : setSelected(new Set(filteredClaims.map(c => c.id)))}
+                onChange={() => allSelected
+                  ? setSelected(new Set())
+                  : setSelected(new Set(filteredClaims.map(c => c.id)))}
                 style={{ width: 16, height: 16, accentColor: '#0f172a', flexShrink: 0 }} />
               <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>
                 {allSelected ? 'Deselect all' : `Select all (${filteredClaims.length})`}
@@ -307,19 +345,22 @@ export default function ExportsPage() {
                   onClick={e => e.stopPropagation()}
                   style={{ width: 16, height: 16, accentColor: '#0f172a', flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {periodLabel(c.period_start, c.period_end, c.title)}
                   </div>
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                    {fmtDateShort(c.period_start)} – {fmtDateShort(c.period_end)}
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
+                      backgroundColor: c.status === 'SUBMITTED' ? '#dcfce7' : '#fef9c3',
+                      color:           c.status === 'SUBMITTED' ? '#15803d' : '#854d0e',
+                    }}>{c.status}</span>
+                    <span style={{ fontSize: 11, color: '#64748b' }}>
+                      {fmtDateShort(c.period_start)} – {fmtDateShort(c.period_end)}
+                    </span>
                   </div>
                 </div>
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{fmtMyr(Number(c.total_amount))}</div>
-                  <div style={{ fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 4, display: 'inline-block',
-                    backgroundColor: c.status === 'SUBMITTED' ? '#f0fdf4' : '#fffbeb',
-                    color:           c.status === 'SUBMITTED' ? '#15803d' : '#92400e',
-                  }}>{c.status}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', flexShrink: 0 }}>
+                  {fmtMyr(c.total_amount)}
                 </div>
               </div>
             ))}
@@ -327,36 +368,39 @@ export default function ExportsPage() {
         )}
 
         {selected.size > 0 && (
-          <div style={{ marginTop: 10, padding: '8px 12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 12, color: '#15803d', fontWeight: 600 }}>
-            {selected.size} claim{selected.size > 1 ? 's' : ''} selected · {fmtMyr(selectedTotal)}
+          <div style={{ marginTop: 12, padding: '10px 12px', backgroundColor: '#f8fafc', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>
+              {selected.size} claim{selected.size !== 1 ? 's' : ''} selected
+            </span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
+              {fmtMyr(selectedTotal)}
+            </span>
           </div>
         )}
       </div>
 
-      {/* ── Format + Options ─────────────────────────────────────────────── */}
+      {/* ── Format & Generate ────────────────────────────────────────────── */}
       <div style={S.card}>
         <div style={S.cardHead}>
-          <span style={S.cardIcon}>⚙️</span>
+          <span style={S.cardIcon}>📥</span>
           <div>
-            <div style={S.cardTitle}>Export Options</div>
-            <div style={S.cardSub}>Choose format and settings</div>
+            <div style={S.cardTitle}>Export Format</div>
+            <div style={S.cardSub}>Choose how you want to download your data</div>
           </div>
         </div>
 
-        {/* Format selector */}
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b', marginBottom: 8 }}>FORMAT</div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {(['XLSX', 'CSV', 'PDF'] as const).map(f => (
-              <button key={f} onClick={() => setFormat(f)} style={{
+        {/* Format picker */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          {(['XLSX', 'CSV', 'PDF'] as const).map(f => (
+            <button key={f} onClick={() => setFormat(f)}
+              style={{
                 ...S.filterBtn,
-                flex: 1,
-                ...(f === format ? (f === 'PDF' ? S.filterActivePdf : S.filterActive) : {}),
+                // FIX 1: use `border` shorthand on active state
+                ...(format === f ? (f === 'PDF' ? S.filterActivePdf : S.filterActive) : {}),
               }}>
-                {f === 'XLSX' ? '📊 Excel' : f === 'CSV' ? '📄 CSV' : '📋 PDF'}
-              </button>
-            ))}
-          </div>
+              {f === 'XLSX' ? '📊 Excel' : f === 'CSV' ? '📄 CSV' : '📋 PDF'}
+            </button>
+          ))}
         </div>
 
         {/* PDF panel */}
@@ -382,12 +426,12 @@ export default function ExportsPage() {
               ))}
             </div>
 
-            {/* ── Layout toggle ──────────────────────────────────────── */}
+            {/* Layout toggle */}
             <div style={{ borderTop: '1px solid #e9d5ff', paddingTop: 14 }}>
               <LayoutToggle />
             </div>
 
-            {/* ── Signature ─────────────────────────────────────────── */}
+            {/* Signature */}
             <div style={{ borderTop: '1px solid #e9d5ff', paddingTop: 14 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>
                 ✍ Your Signature
@@ -436,7 +480,7 @@ export default function ExportsPage() {
           <span style={S.cardIcon}>🕐</span>
           <div>
             <div style={S.cardTitle}>Export History</div>
-            <div style={S.cardSub}>Re-download any previous export</div>
+            <div style={S.cardSub}>Your previous exports</div>
           </div>
         </div>
         {loadingH ? (
@@ -449,14 +493,20 @@ export default function ExportsPage() {
               <div key={job.id} style={{ ...S.histRow, borderTop: i > 0 ? '1px solid #f1f5f9' : 'none' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6,
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6,
                       backgroundColor: job.format === 'PDF' ? '#f5f3ff' : '#dcfce7',
-                      color: job.format === 'PDF' ? '#7c3aed' : '#15803d',
+                      color:           job.format === 'PDF' ? '#7c3aed' : '#15803d',
                     }}>{job.format}</span>
                     <span style={{ fontSize: 11, color: '#64748b' }}>{histPeriodLabel(job)}</span>
                   </div>
                   <div style={{ fontSize: 11, color: '#94a3b8' }}>{fmtDateTime(job.created_at)}</div>
                 </div>
+                {job.row_count !== null && (
+                  <span style={{ fontSize: 11, color: '#64748b', flexShrink: 0 }}>
+                    {job.row_count} row{job.row_count !== 1 ? 's' : ''}
+                  </span>
+                )}
               </div>
             ))}
           </div>
@@ -476,17 +526,20 @@ const S: Record<string, React.CSSProperties> = {
   cardIcon: { fontSize: 22, flexShrink: 0 },
   cardTitle:{ fontSize: 14, fontWeight: 800, color: '#0f172a' },
   cardSub:  { fontSize: 12, color: '#64748b', marginTop: 2 },
-  filterBtn:{ fontSize: 12, fontWeight: 600, padding: '7px 14px', border: '1px solid #e2e8f0', borderRadius: 8, cursor: 'pointer', backgroundColor: '#f8fafc', color: '#374151' },
-  filterActive:    { backgroundColor: '#0f172a', color: '#fff', borderColor: '#0f172a' },
-  filterActivePdf: { backgroundColor: '#7c3aed', color: '#fff', borderColor: '#7c3aed' },
-  select:   { fontSize: 12, padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: 8, backgroundColor: '#f8fafc', color: '#374151' },
-  empty:    { fontSize: 13, color: '#94a3b8', textAlign: 'center', padding: '16px 0' },
-  errorBox: { padding: '10px 12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' },
-  successBox:{ padding: '10px 12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, color: '#15803d', fontWeight: 600 },
-  btnGenerate:   { width: '100%', paddingTop: 14, paddingBottom: 14, backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer' },
-  btnGeneratePdf:{ backgroundColor: '#7c3aed' },
+
+  // FIX 1: use `border` shorthand (not `borderColor`) to avoid React style-mixing warning
+  filterBtn:       { fontSize: 12, fontWeight: 600, padding: '7px 14px', border: '1px solid #e2e8f0', borderRadius: 8, cursor: 'pointer', backgroundColor: '#f8fafc', color: '#374151' },
+  filterActive:    { backgroundColor: '#0f172a', color: '#fff', border: '1px solid #0f172a' },
+  filterActivePdf: { backgroundColor: '#7c3aed', color: '#fff', border: '1px solid #7c3aed' },
+
+  select:     { fontSize: 12, padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: 8, backgroundColor: '#f8fafc', color: '#374151' },
+  empty:      { fontSize: 13, color: '#94a3b8', textAlign: 'center', padding: '16px 0' },
+  errorBox:   { padding: '10px 12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' },
+  successBox: { padding: '10px 12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, color: '#15803d', fontWeight: 600 },
+  btnGenerate:    { width: '100%', paddingTop: 14, paddingBottom: 14, backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer' },
+  btnGeneratePdf: { backgroundColor: '#7c3aed' },
   histRow:  { display: 'flex', alignItems: 'center', gap: 12, paddingTop: 12, paddingBottom: 12 },
   pdfPanel: { backgroundColor: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: 12, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 0 },
-  pdfFeaturesGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 0 },
+  pdfFeaturesGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 },
   pdfFeature: { display: 'flex', alignItems: 'flex-start', gap: 8, backgroundColor: '#fff', border: '1px solid #e9d5ff', borderRadius: 8, padding: '8px 10px' },
 }
