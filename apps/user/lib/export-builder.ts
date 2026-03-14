@@ -333,12 +333,12 @@ export type ExportRow = {
   item_id:             string
   item_type:           string         // MILEAGE | MEAL | LODGING | TOLL | PARKING | ...
   item_date:           string         // YYYY-MM-DD
-  amount:              number
+  item_amount_myr:     number         // ← named item_amount_myr to match pdf-builder usage
   item_merchant:       string
   item_notes:          string
   item_mode:           string         // FIXED_RATE | RECEIPT | ''
   item_qty:            string         // quantity as string
-  item_rate:           string         // rate as string
+  item_rate_myr:       string         // rate as string (named item_rate_myr to match pdf-builder)
   receipt_present:     'Y' | 'N'
   receipt_url:         string
   item_meal_session:   string         // FULL_DAY | MORNING | NOON | EVENING | ''
@@ -451,12 +451,12 @@ export async function buildExportRows(
         item_id:             item.id              ?? '',
         item_type:           item.type            ?? '',
         item_date:           formatDate(item.claim_date),
-        amount:              Number(item.amount   ?? 0),
+        item_amount_myr:     Number(item.amount   ?? 0),
         item_merchant:       item.merchant        ?? '',
         item_notes:          item.notes           ?? '',
         item_mode:           item.mode            ?? '',
         item_qty:            item.qty != null      ? String(item.qty)  : '',
-        item_rate:           item.rate != null     ? String(item.rate) : '',
+        item_rate_myr:       item.rate != null     ? String(item.rate) : '',
         receipt_present:     item.receipt_url ? 'Y' : 'N',
         receipt_url:         item.receipt_url     ?? '',
         item_meal_session:   item.meal_session    ?? '',
