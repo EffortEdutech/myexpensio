@@ -7,10 +7,22 @@ export default async function TemplatesPage() {
 
   const [tplRes, orgsRes] = await Promise.all([
     db.from('report_templates')
-      .select('id, org_id, name, description, schema, is_active, is_default, created_at, updated_at, organizations(name)')
+      .select(`
+        id, org_id, name, description, schema,
+        is_active, is_default, created_at, updated_at,
+        organizations ( name )
+      `)
       .order('created_at', { ascending: true }),
-    db.from('organizations').select('id, name').eq('status', 'ACTIVE').order('name'),
+    db.from('organizations')
+      .select('id, name')
+      .eq('status', 'ACTIVE')
+      .order('name'),
   ])
 
-  return <TemplatesClient initialTemplates={tplRes.data ?? []} orgs={orgsRes.data ?? []} />
+  return (
+    <TemplatesClient
+      initialTemplates={tplRes.data ?? []}
+      orgs={orgsRes.data ?? []}
+    />
+  )
 }

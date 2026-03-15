@@ -1,11 +1,5 @@
-// apps/admin/app/login/page.tsx
-//
-// Admin app login page.
-// Separate from the user app. Uses the same Supabase project.
-// After sign-in, middleware ensures the user has admin/manager access.
-// If not, they are redirected back here with ?error=unauthorized.
-
 'use client'
+// apps/admin/app/login/page.tsx
 
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -15,16 +9,22 @@ export default function LoginPage() {
   const router = useRouter()
   const params = useSearchParams()
 
-  const [email, setEmail]       = useState('')
+  const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState<string | null>(null)
+  const [loading,  setLoading]  = useState(false)
+  const [error,    setError]    = useState<string | null>(null)
 
-  // Show error from middleware redirect
   useEffect(() => {
     const errParam = params.get('error')
     if (errParam === 'unauthorized') {
-      setError('Your account does not have admin access. Please contact your organization owner.')
+      // Always reset loading — we got redirected back here, nothing is in flight
+      setLoading(false)
+      setError('Your account does not have admin access.')
+
+      // Sign the user out so they can try different credentials.
+      // Without this, every submit attempt succeeds at the Supabase level
+      // but middleware keeps rejecting them → infinite "Signing in…" loop.
+      supabaseBrowser.auth.signOut()
     }
   }, [params])
 
@@ -34,7 +34,7 @@ export default function LoginPage() {
     setError(null)
 
     const { error: signInError } = await supabaseBrowser.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
+      email:    email.trim().toLowerCase(),
       password,
     })
 
@@ -44,7 +44,10 @@ export default function LoginPage() {
       return
     }
 
-    // Let middleware handle the role check and redirect
+    // Middleware will check profiles.role — if ADMIN it proceeds,
+    // if not it redirects back to /login?error=unauthorized.
+    // setLoading stays true here on purpose — the page will redirect.
+    // The useEffect above resets it if we come back with ?error=unauthorized.
     const next = params.get('next') ?? '/dashboard'
     router.push(next)
     router.refresh()
@@ -53,6 +56,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-sm">
+
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-gray-900">myexpensio</h1>
@@ -65,35 +69,33 @@ export default function LoginPage() {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
               <input
                 type="email"
                 autoComplete="email"
                 required
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300
-                           text-sm focus:outline-none focus:ring-2 focus:ring-blue-500
-                           focus:border-transparent"
+                onChange={e => setEmail(e.target.value)}
+                disabled={loading}
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm
+                           focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                           disabled:opacity-50 disabled:bg-gray-50"
                 placeholder="you@example.com"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Password
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
               <input
                 type="password"
                 autoComplete="current-password"
                 required
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300
-                           text-sm focus:outline-none focus:ring-2 focus:ring-blue-500
-                           focus:border-transparent"
+                onChange={e => setPassword(e.target.value)}
+                disabled={loading}
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm
+                           focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                           disabled:opacity-50 disabled:bg-gray-50"
                 placeholder="••••••••"
               />
             </div>
@@ -117,7 +119,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-6">
-          Admin access only. Contact your org owner for access.
+          Admin access only. Contact your system administrator for access.
         </p>
       </div>
     </div>

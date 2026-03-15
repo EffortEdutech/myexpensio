@@ -1,19 +1,10 @@
 'use client'
 // apps/user/app/(app)/exports/page.tsx
 //
-// UX flow:
-//   1. Page loads — fetches all claims for the org
-//   2. User filters by status / year / month (optional)
-//   3. User ticks the claims they want to export
-//   4. Picks format (XLSX / CSV / PDF)
-//   5. For PDF: picks layout (By Date | By Category), draws signature
-//   6. Taps Generate → file downloads immediately
-//
-// FIXES (14 Mar 2026):
-//   - FIX 1: S.filterActive / S.filterActivePdf now use `border` (shorthand)
-//            instead of `borderColor` to avoid React style-shorthand conflict warning.
-//   - FIX 2: loadHistory now calls /api/exports/history (dedicated GET route)
-//            with try/catch/finally so a 405/empty body never crashes the page.
+// CHANGES (15 Mar 2026):
+//   - DRAFT claims now exportable (warning badge on draft selection)
+//   - Step 4 PDF Options: removed LayoutToggle (grouping is set in template, Step 3 shows it)
+//   - Step 4 is now purely the signature pad
 
 import { useState, useEffect, useCallback } from 'react'
 import { SignaturePad } from '@/components/SignaturePad'
@@ -43,13 +34,31 @@ type ExportJob = {
   created_at:       string
 }
 
-type PdfLayout = 'BY_DATE' | 'BY_CATEGORY'
+type Template = {
+  id:          string
+  name:        string
+  description: string | null
+  is_default:  boolean
+  schema: {
+    preset?:     string
+    columns?:    string[]
+    pdf_layout?: {
+      grouping?:              string
+      orientation?:           string
+      show_summary_table?:    boolean
+      show_receipt_appendix?: boolean
+      show_tng_appendix?:     boolean
+      show_declaration?:      boolean
+      accent_color?:          string
+    }
+  }
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const MONTHS      = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const currentYear = new Date().getFullYear()
-const YEARS = Array.from({ length: currentYear - 2022 }, (_, i) => 2023 + i)
+const YEARS       = Array.from({ length: currentYear - 2022 }, (_, i) => 2023 + i)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -92,32 +101,31 @@ function histPeriodLabel(job: ExportJob): string {
       return `Year ${f.getFullYear()}`
     return `${fmtDateShort(from)} – ${fmtDateShort(to)}`
   }
-  return from ?? to ?? '—'
+  return from ? `From ${fmtDateShort(from)}` : `To ${fmtDateShort(to)}`
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ExportsPage() {
-  const [claims,       setClaims]      = useState<Claim[]>([])
-  const [loadingC,     setLoadingC]    = useState(true)
-  const [claimsErr,    setClaimsErr]   = useState<string | null>(null)
+  const [claims,       setClaims]       = useState<Claim[]>([])
+  const [loadingC,     setLoadingC]     = useState(true)
+  const [claimsErr,    setClaimsErr]    = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'SUBMITTED' | 'DRAFT'>('ALL')
-  const [yearFilter,   setYearFilter]  = useState<number | null>(null)
-  const [monthFilter,  setMonthFilter] = useState<number | null>(null)
-  const [selected,     setSelected]    = useState<Set<string>>(new Set())
-  const [format,       setFormat]      = useState<'XLSX' | 'CSV' | 'PDF'>('XLSX')
+  const [yearFilter,   setYearFilter]   = useState<number | null>(null)
+  const [monthFilter,  setMonthFilter]  = useState<number | null>(null)
+  const [selected,     setSelected]     = useState<Set<string>>(new Set())
+  const [format,       setFormat]       = useState<'XLSX' | 'CSV' | 'PDF'>('XLSX')
+  const [templates,    setTemplates]    = useState<Template[]>([])
+  const [templateId,   setTemplateId]   = useState<string | null>(null)
+  const [loadingT,     setLoadingT]     = useState(true)
+  const [signature,    setSignature]    = useState<string | null>(null)
+  const [generating,   setGenerating]   = useState(false)
+  const [genError,     setGenError]     = useState<string | null>(null)
+  const [genSuccess,   setGenSuccess]   = useState<string | null>(null)
+  const [history,      setHistory]      = useState<ExportJob[]>([])
+  const [loadingH,     setLoadingH]     = useState(true)
 
-  // ── PDF-specific options ──────────────────────────────────────────────────
-  const [pdfLayout,  setPdfLayout] = useState<PdfLayout>('BY_DATE')
-  const [signature,  setSignature] = useState<string | null>(null)
-
-  const [generating, setGenerating] = useState(false)
-  const [genError,   setGenError]   = useState<string | null>(null)
-  const [genSuccess, setGenSuccess] = useState<string | null>(null)
-  const [history,    setHistory]    = useState<ExportJob[]>([])
-  const [loadingH,   setLoadingH]   = useState(true)
-
-  // ── Load claims ───────────────────────────────────────────────────────────
+  // ── Loaders ──────────────────────────────────────────────────────────────
 
   const loadClaims = useCallback(async () => {
     setLoadingC(true); setClaimsErr(null)
@@ -126,31 +134,39 @@ export default function ExportsPage() {
       const json = await res.json()
       if (!res.ok) { setClaimsErr(json.error?.message ?? 'Failed to load claims.'); return }
       setClaims(json.items ?? [])
-    } catch {
-      setClaimsErr('Network error loading claims.')
-    } finally {
-      setLoadingC(false)
-    }
+    } catch { setClaimsErr('Network error loading claims.') }
+    finally  { setLoadingC(false) }
   }, [])
 
-  // ── FIX 2: Load history — dedicated GET route, safe try/catch/finally ─────
+  const loadTemplates = useCallback(async () => {
+    setLoadingT(true)
+    try {
+      const res  = await fetch('/api/report-templates')
+      if (!res.ok) return
+      const json = await res.json()
+      const list: Template[] = json.templates ?? []
+      setTemplates(list)
+      if (list.length > 0) {
+        const def = list.find(t => t.is_default) ?? list[0]
+        setTemplateId(def.id)
+      }
+    } catch { /* non-critical */ }
+    finally { setLoadingT(false) }
+  }, [])
 
   const loadHistory = useCallback(async () => {
     try {
       const res = await fetch('/api/exports/history')
-      if (!res.ok) return   // silently degrade — history is non-critical
+      if (!res.ok) return
       const json = await res.json()
       setHistory(json.items ?? [])
-    } catch {
-      // non-critical — swallow network errors
-    } finally {
-      setLoadingH(false)
-    }
+    } catch { /* non-critical */ }
+    finally { setLoadingH(false) }
   }, [])
 
-  useEffect(() => { loadClaims(); loadHistory() }, [loadClaims, loadHistory])
+  useEffect(() => { loadClaims(); loadTemplates(); loadHistory() }, [loadClaims, loadTemplates, loadHistory])
 
-  // ── Filtering ─────────────────────────────────────────────────────────────
+  // ── Filtering ────────────────────────────────────────────────────────────
 
   const filteredClaims = claims.filter(c => {
     if (statusFilter !== 'ALL' && c.status !== statusFilter) return false
@@ -162,11 +178,16 @@ export default function ExportsPage() {
   function toggleOne(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
+
   const allSelected    = filteredClaims.length > 0 && filteredClaims.every(c => selected.has(c.id))
   const selectedClaims = claims.filter(c => selected.has(c.id))
   const selectedTotal  = selectedClaims.reduce((s, c) => s + Number(c.total_amount), 0)
+  const draftSelected  = selectedClaims.filter(c => c.status === 'DRAFT').length
 
-  // ── Generate export ───────────────────────────────────────────────────────
+  const activeTpl = templates.find(t => t.id === templateId) ?? null
+  const colCount  = activeTpl?.schema?.columns?.length ?? 0
+
+  // ── Generate ─────────────────────────────────────────────────────────────
 
   async function handleGenerate() {
     if (selected.size === 0) { setGenError('Select at least one claim.'); return }
@@ -176,8 +197,13 @@ export default function ExportsPage() {
       format,
       claim_ids: Array.from(selected),
     }
+
+    if (templateId) body.template_id = templateId
+
     if (format === 'PDF') {
-      body.pdf_layout = pdfLayout
+      // Use grouping from template if available, else default BY_DATE
+      const tplGrouping = activeTpl?.schema?.pdf_layout?.grouping
+      body.pdf_layout = tplGrouping ?? 'BY_DATE'
       if (signature) body.signature_data_url = signature
     }
 
@@ -204,8 +230,9 @@ export default function ExportsPage() {
       document.body.appendChild(a); a.click()
       document.body.removeChild(a); URL.revokeObjectURL(url)
 
+      const tplName = activeTpl ? ` · ${activeTpl.name}` : ''
       setGenSuccess(
-        `✓ ${format} downloaded — ${rowCount} item${rowCount !== 1 ? 's' : ''} from ${selected.size} claim${selected.size !== 1 ? 's' : ''}`
+        `✓ ${format} downloaded — ${rowCount} item${rowCount !== 1 ? 's' : ''} from ${selected.size} claim${selected.size !== 1 ? 's' : ''}${tplName}`
       )
       loadHistory()
     } catch {
@@ -215,77 +242,17 @@ export default function ExportsPage() {
     }
   }
 
-  // ── Layout toggle component ───────────────────────────────────────────────
-
-  function LayoutToggle() {
-    const opts: { value: PdfLayout; icon: string; label: string; desc: string }[] = [
-      {
-        value: 'BY_DATE',
-        icon:  '📅',
-        label: 'By Date',
-        desc:  'All items in one table, sorted chronologically per claim',
-      },
-      {
-        value: 'BY_CATEGORY',
-        icon:  '📂',
-        label: 'By Category',
-        desc:  'Each expense type on its own page — Mileage, Toll, Parking…',
-      },
-    ]
-    return (
-      <div>
-        <div style={{ fontSize: 12, fontWeight: 700, color: '#0f172a', marginBottom: 8 }}>
-          📑 Item Layout
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {opts.map(o => (
-            <button
-              key={o.value}
-              onClick={() => setPdfLayout(o.value)}
-              style={{
-                flex: 1, padding: '10px 12px', border: 'none', borderRadius: 10, cursor: 'pointer',
-                textAlign:       'left',
-                backgroundColor: pdfLayout === o.value ? '#7c3aed' : '#fff',
-                color:           pdfLayout === o.value ? '#fff'    : '#0f172a',
-                outline:         pdfLayout === o.value ? 'none'    : '1px solid #e9d5ff',
-                transition:      'all 0.15s',
-              }}
-            >
-              <div style={{ fontSize: 18, marginBottom: 4 }}>{o.icon}</div>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 3 }}>{o.label}</div>
-              <div style={{ fontSize: 10, opacity: pdfLayout === o.value ? 0.85 : 0.6, lineHeight: 1.4 }}>
-                {o.desc}
-              </div>
-            </button>
-          ))}
-        </div>
-
-        {pdfLayout === 'BY_DATE' && (
-          <div style={{ marginTop: 10, padding: '8px 10px', backgroundColor: '#f5f3ff', borderRadius: 8, fontSize: 11, color: '#6d28d9', lineHeight: 1.6 }}>
-            <strong>Pages:</strong> Cover → Summary → Items (date order) → Declaration → Receipts
-          </div>
-        )}
-        {pdfLayout === 'BY_CATEGORY' && (
-          <div style={{ marginTop: 10, padding: '8px 10px', backgroundColor: '#f5f3ff', borderRadius: 8, fontSize: 11, color: '#6d28d9', lineHeight: 1.6 }}>
-            <strong>Pages:</strong> Cover → Summary → Mileage page → Meal page → Toll page → Parking page → … → Declaration → Receipts
-            <br /><span style={{ opacity: 0.75 }}>Only categories with items appear.</span>
-          </div>
-        )}
-      </div>
-    )
-  }
-
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div style={S.page}>
 
-      {/* ── Select Claims ────────────────────────────────────────────────── */}
+      {/* ── Step 1: Select Claims ──────────────────────────────────────── */}
       <div style={S.card}>
         <div style={S.cardHead}>
           <span style={S.cardIcon}>📋</span>
           <div>
-            <div style={S.cardTitle}>Select Claims</div>
+            <div style={S.cardTitle}>Step 1 — Select Claims</div>
             <div style={S.cardSub}>Tick the claims you want to export</div>
           </div>
         </div>
@@ -294,187 +261,259 @@ export default function ExportsPage() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
           {(['ALL', 'SUBMITTED', 'DRAFT'] as const).map(s => (
             <button key={s} onClick={() => setStatusFilter(s)}
-              style={{
-                ...S.filterBtn,
-                // FIX 1: use `border` shorthand, not `borderColor`, to avoid React re-render warning
-                ...(statusFilter === s ? S.filterActive : {}),
-              }}>
+              style={{ ...S.filterBtn, ...(statusFilter === s ? S.filterActive : {}) }}>
               {s === 'ALL' ? 'All' : s === 'SUBMITTED' ? '✓ Submitted' : '✏ Draft'}
             </button>
           ))}
-          <select value={yearFilter ?? ''} onChange={e => setYearFilter(e.target.value ? Number(e.target.value) : null)}
-            style={S.select}>
+          <select value={yearFilter ?? ''} onChange={e => setYearFilter(e.target.value ? Number(e.target.value) : null)} style={S.select}>
             <option value=''>All years</option>
             {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
-          <select value={monthFilter ?? ''} onChange={e => setMonthFilter(e.target.value !== '' ? Number(e.target.value) : null)}
-            style={S.select}>
+          <select value={monthFilter ?? ''} onChange={e => setMonthFilter(e.target.value !== '' ? Number(e.target.value) : null)} style={S.select}>
             <option value=''>All months</option>
             {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
           </select>
         </div>
 
-        {/* Claims list */}
         {loadingC ? (
           <div style={S.empty}>Loading claims…</div>
         ) : claimsErr ? (
           <div style={S.errorBox}>{claimsErr}</div>
         ) : filteredClaims.length === 0 ? (
-          <div style={S.empty}>No claims match the selected filters.</div>
+          <div style={S.empty}>No claims match this filter.</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {/* Select all */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingBottom: 10, borderBottom: '1px solid #f1f5f9' }}>
-              <input type='checkbox' checked={allSelected}
-                onChange={() => allSelected
-                  ? setSelected(new Set())
-                  : setSelected(new Set(filteredClaims.map(c => c.id)))}
-                style={{ width: 16, height: 16, accentColor: '#0f172a', flexShrink: 0 }} />
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>
-                {allSelected ? 'Deselect all' : `Select all (${filteredClaims.length})`}
-              </span>
+          <>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 8 }}>
+              <button onClick={() => setSelected(new Set(filteredClaims.map(c => c.id)))} style={S.linkBtn}>
+                Select all ({filteredClaims.length})
+              </button>
+              <button onClick={() => setSelected(new Set())} style={S.linkBtn}>Clear</button>
             </div>
 
-            {filteredClaims.map((c, i) => (
-              <div key={c.id} onClick={() => toggleOne(c.id)} style={{
-                display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0',
-                borderBottom: i < filteredClaims.length - 1 ? '1px solid #f8fafc' : 'none',
-                cursor: 'pointer',
-              }}>
-                <input type='checkbox' checked={selected.has(c.id)} onChange={() => toggleOne(c.id)}
-                  onClick={e => e.stopPropagation()}
-                  style={{ width: 16, height: 16, accentColor: '#0f172a', flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {periodLabel(c.period_start, c.period_end, c.title)}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
-                      backgroundColor: c.status === 'SUBMITTED' ? '#dcfce7' : '#fef9c3',
-                      color:           c.status === 'SUBMITTED' ? '#15803d' : '#854d0e',
-                    }}>{c.status}</span>
-                    <span style={{ fontSize: 11, color: '#64748b' }}>
-                      {fmtDateShort(c.period_start)} – {fmtDateShort(c.period_end)}
-                    </span>
-                  </div>
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', flexShrink: 0 }}>
-                  {fmtMyr(c.total_amount)}
-                </div>
-              </div>
-            ))}
-          </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {filteredClaims.map(c => {
+                const isChecked = selected.has(c.id)
+                return (
+                  <button key={c.id} onClick={() => toggleOne(c.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
+                      border: isChecked ? '1.5px solid #0f172a' : '1px solid #f1f5f9',
+                      borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+                      backgroundColor: isChecked ? '#f8fafc' : '#fff', transition: 'all 0.12s',
+                    }}>
+                    <div style={{
+                      width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                      backgroundColor: isChecked ? '#0f172a' : '#fff',
+                      border: isChecked ? '2px solid #0f172a' : '2px solid #cbd5e1',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      {isChecked && <span style={{ color: '#fff', fontSize: 11, fontWeight: 800, lineHeight: 1 }}>✓</span>}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 2 }}>
+                        {periodLabel(c.period_start, c.period_end, c.title)}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                        {fmtDateShort(c.period_start)}
+                        {c.period_end && c.period_end !== c.period_start && ` – ${fmtDateShort(c.period_end)}`}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 10,
+                        backgroundColor: c.status === 'SUBMITTED' ? '#f0fdf4' : '#fef9c3',
+                        color:           c.status === 'SUBMITTED' ? '#15803d' : '#854d0e',
+                      }}>
+                        {c.status === 'SUBMITTED' ? '✓ Submitted' : 'Draft'}
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{fmtMyr(c.total_amount)}</span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </>
         )}
 
         {selected.size > 0 && (
-          <div style={{ marginTop: 12, padding: '10px 12px', backgroundColor: '#f8fafc', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 12, borderTop: '1px solid #f1f5f9' }}>
+            <span style={{ fontSize: 12, color: '#64748b' }}>
               {selected.size} claim{selected.size !== 1 ? 's' : ''} selected
             </span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
-              {fmtMyr(selectedTotal)}
-            </span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{fmtMyr(selectedTotal)}</span>
+          </div>
+        )}
+
+        {/* Draft warning — info only, export still proceeds */}
+        {draftSelected > 0 && (
+          <div style={{ marginTop: 8, padding: '8px 12px', backgroundColor: '#fefce8', border: '1px solid #fde047', borderRadius: 8, fontSize: 12, color: '#854d0e' }}>
+            ⚠️ {draftSelected} Draft claim{draftSelected !== 1 ? 's' : ''} selected — these will be included in the export with DRAFT status marked.
           </div>
         )}
       </div>
 
-      {/* ── Format & Generate ────────────────────────────────────────────── */}
+      {/* ── Step 2: Format ─────────────────────────────────────────────── */}
       <div style={S.card}>
         <div style={S.cardHead}>
           <span style={S.cardIcon}>📥</span>
           <div>
-            <div style={S.cardTitle}>Export Format</div>
+            <div style={S.cardTitle}>Step 2 — Export Format</div>
             <div style={S.cardSub}>Choose how you want to download your data</div>
           </div>
         </div>
-
-        {/* Format picker */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
           {(['XLSX', 'CSV', 'PDF'] as const).map(f => (
             <button key={f} onClick={() => setFormat(f)}
-              style={{
-                ...S.filterBtn,
-                // FIX 1: use `border` shorthand on active state
-                ...(format === f ? (f === 'PDF' ? S.filterActivePdf : S.filterActive) : {}),
-              }}>
+              style={{ ...S.filterBtn, ...(format === f ? (f === 'PDF' ? S.filterActivePdf : S.filterActive) : {}) }}>
               {f === 'XLSX' ? '📊 Excel' : f === 'CSV' ? '📄 CSV' : '📋 PDF'}
             </button>
           ))}
         </div>
+      </div>
 
-        {/* PDF panel */}
-        {format === 'PDF' && (
-          <div style={S.pdfPanel}>
+      {/* ── Step 3: Template ───────────────────────────────────────────── */}
+      <div style={S.card}>
+        <div style={S.cardHead}>
+          <span style={S.cardIcon}>🗂</span>
+          <div>
+            <div style={S.cardTitle}>Step 3 — Report Template</div>
+            <div style={S.cardSub}>Controls columns, order, and PDF layout</div>
+          </div>
+        </div>
 
-            {/* Feature grid */}
-            <div style={S.pdfFeaturesGrid}>
-              {[
-                ['📋', 'Cover page',    'Claimant info + org + grand total'],
-                ['📊', 'Summary table', 'All selected claims'],
-                ['🔍', 'Item detail',   'Every line item'],
-                ['🧾', 'Receipts',      'Original photos embedded'],
-                ['✍',  'Declaration',  'Signature + date'],
-              ].map(([icon, title, desc]) => (
-                <div key={title} style={S.pdfFeature}>
-                  <span style={{ fontSize: 16 }}>{icon}</span>
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#0f172a' }}>{title}</div>
-                    <div style={{ fontSize: 10, color: '#64748b' }}>{desc}</div>
+        {loadingT ? (
+          <div style={S.empty}>Loading templates…</div>
+        ) : templates.length === 0 ? (
+          <div style={{ padding: '10px 14px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12, color: '#64748b' }}>
+            No templates configured. Standard columns will be used.
+          </div>
+        ) : templates.length === 1 ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10 }}>
+            <span style={{ fontSize: 20 }}>📄</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#0369a1' }}>{templates[0].name}</div>
+              {templates[0].description && <div style={{ fontSize: 11, color: '#0284c7', marginTop: 2 }}>{templates[0].description}</div>}
+              <div style={{ fontSize: 10, color: '#7dd3fc', marginTop: 3 }}>
+                {templates[0].schema?.columns?.length ?? 0} columns · {templates[0].schema?.preset ?? 'Standard'}
+                {templates[0].is_default && ' · Default'}
+                {format === 'PDF' && templates[0].schema?.pdf_layout?.grouping && ` · PDF: ${templates[0].schema.pdf_layout.grouping === 'BY_CATEGORY' ? 'By category' : 'By date'}`}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {templates.map(t => {
+              const isActive = templateId === t.id
+              const cols     = t.schema?.columns?.length ?? 0
+              const preset   = t.schema?.preset ?? 'Standard'
+              const pdfCfg   = t.schema?.pdf_layout
+
+              return (
+                <button key={t.id} onClick={() => setTemplateId(t.id)}
+                  style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 12,
+                    padding: '12px 14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+                    transition: 'all 0.12s',
+                    border:          isActive ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                    backgroundColor: isActive ? '#eff6ff' : '#fff',
+                  }}>
+                  <div style={{
+                    width: 16, height: 16, borderRadius: '50%', marginTop: 2, flexShrink: 0,
+                    border: isActive ? '5px solid #2563eb' : '2px solid #cbd5e1',
+                    backgroundColor: '#fff', transition: 'all 0.12s',
+                  }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: isActive ? '#1d4ed8' : '#0f172a' }}>
+                        {t.name}
+                      </span>
+                      {t.is_default && (
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4, backgroundColor: '#2563eb', color: '#fff' }}>
+                          DEFAULT
+                        </span>
+                      )}
+                    </div>
+                    {t.description && <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{t.description}</div>}
+                    <div style={{ display: 'flex', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, fontWeight: 600, backgroundColor: isActive ? '#dbeafe' : '#f1f5f9', color: isActive ? '#1d4ed8' : '#64748b' }}>
+                        {cols} columns
+                      </span>
+                      <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, fontWeight: 600, backgroundColor: isActive ? '#dbeafe' : '#f1f5f9', color: isActive ? '#1d4ed8' : '#64748b' }}>
+                        {preset}
+                      </span>
+                      {format === 'PDF' && pdfCfg?.grouping && (
+                        <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, fontWeight: 600, backgroundColor: isActive ? '#ede9fe' : '#f5f3ff', color: isActive ? '#7c3aed' : '#6d28d9' }}>
+                          PDF: {pdfCfg.grouping === 'BY_CATEGORY' ? 'By category' : 'By date'} · {pdfCfg.orientation ?? 'portrait'}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Layout toggle */}
-            <div style={{ borderTop: '1px solid #e9d5ff', paddingTop: 14 }}>
-              <LayoutToggle />
-            </div>
-
-            {/* Signature */}
-            <div style={{ borderTop: '1px solid #e9d5ff', paddingTop: 14 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>
-                ✍ Your Signature
-              </div>
-              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>
-                Optional. Appears on the Declaration page.
-              </div>
-              <SignaturePad onCapture={dataUrl => setSignature(dataUrl)} width={420} height={130} />
-              {signature
-                ? <div style={{ fontSize: 11, color: '#15803d', fontWeight: 600, marginTop: 6 }}>✓ Signature ready</div>
-                : <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>No signature — blank line will appear</div>
-              }
-            </div>
-
+                  {format === 'PDF' && pdfCfg?.accent_color && (
+                    <div style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, backgroundColor: pdfCfg.accent_color, border: '2px solid rgba(0,0,0,0.08)', marginTop: 2 }} />
+                  )}
+                </button>
+              )
+            })}
           </div>
         )}
 
-        {genError   && <div style={{ ...S.errorBox,   marginTop: 12 }}>{genError}</div>}
-        {genSuccess && <div style={{ ...S.successBox, marginTop: 12 }}>{genSuccess}</div>}
+        {templateId && activeTpl && templates.length > 0 && (
+          <div style={{ marginTop: 10, padding: '8px 12px', backgroundColor: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.6 }}>
+              <strong style={{ color: '#0f172a' }}>{activeTpl.name}</strong>
+              {' '}will export{' '}
+              <strong>{colCount > 0 ? `${colCount} columns` : 'standard columns'}</strong>
+              {format === 'PDF' && activeTpl.schema?.pdf_layout?.grouping && (
+                <> — grouped <strong>{activeTpl.schema.pdf_layout.grouping === 'BY_CATEGORY' ? 'by category' : 'by date'}</strong>, {activeTpl.schema.pdf_layout.orientation ?? 'portrait'}</>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
-        <button
-          onClick={handleGenerate}
-          disabled={generating || selected.size === 0}
-          style={{
-            ...S.btnGenerate,
-            ...(format === 'PDF' ? S.btnGeneratePdf : {}),
-            marginTop: 14,
-            opacity: generating || selected.size === 0 ? 0.45 : 1,
-            cursor:  selected.size === 0 ? 'not-allowed' : 'pointer',
-          }}
-        >
+      {/* ── Step 4: Signature (PDF only) ─────────────────────────────── */}
+      {/* Grouping toggle REMOVED — it is set in the template (Step 3 shows it) */}
+      {format === 'PDF' && (
+        <div style={{ ...S.card, border: '1px solid #e9d5ff' }}>
+          <div style={S.cardHead}>
+            <span style={S.cardIcon}>✍</span>
+            <div>
+              <div style={S.cardTitle}>Step 4 — Signature</div>
+              <div style={S.cardSub}>Appears on the Declaration page of the PDF</div>
+            </div>
+          </div>
+          <SignaturePad onCapture={dataUrl => setSignature(dataUrl)} width={420} height={130} />
+          {signature
+            ? <div style={{ fontSize: 11, color: '#15803d', fontWeight: 600, marginTop: 6 }}>✓ Signature ready</div>
+            : <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>Optional — leave blank for an unsigned line</div>
+          }
+        </div>
+      )}
+
+      {/* ── Generate ─────────────────────────────────────────────────── */}
+      <div style={S.card}>
+        {genError   && <div style={{ ...S.errorBox,   marginBottom: 12 }}>{genError}</div>}
+        {genSuccess && <div style={{ ...S.successBox, marginBottom: 12 }}>{genSuccess}</div>}
+
+        <button onClick={handleGenerate} disabled={generating || selected.size === 0}
+          style={{ ...S.btnGenerate, ...(format === 'PDF' ? S.btnGeneratePdf : {}), opacity: generating || selected.size === 0 ? 0.45 : 1, cursor: selected.size === 0 ? 'not-allowed' : 'pointer' }}>
           {generating
             ? `Generating ${format}…`
             : selected.size === 0
               ? 'Select claims above first'
-              : format === 'PDF'
-                ? `Generate PDF — ${selected.size} claim${selected.size !== 1 ? 's' : ''} · ${pdfLayout === 'BY_CATEGORY' ? 'By Category' : 'By Date'} · ${fmtMyr(selectedTotal)}`
-                : `Generate ${format} — ${selected.size} claim${selected.size !== 1 ? 's' : ''}`
+              : `Generate ${format} — ${selected.size} claim${selected.size !== 1 ? 's' : ''}`
           }
         </button>
+
+        {activeTpl && selected.size > 0 && (
+          <div style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', marginTop: 8 }}>
+            Using template: <strong style={{ color: '#64748b' }}>{activeTpl.name}</strong>
+            {colCount > 0 && ` · ${colCount} columns`}
+          </div>
+        )}
       </div>
 
-      {/* ── History ──────────────────────────────────────────────────────── */}
+      {/* ── History ──────────────────────────────────────────────────── */}
       <div style={S.card}>
         <div style={S.cardHead}>
           <span style={S.cardIcon}>🕐</span>
@@ -520,26 +559,21 @@ export default function ExportsPage() {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const S: Record<string, React.CSSProperties> = {
-  page:     { maxWidth: 560, margin: '0 auto', padding: '20px 16px 60px', fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', gap: 16 },
-  card:     { backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '16px' },
-  cardHead: { display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 14 },
-  cardIcon: { fontSize: 22, flexShrink: 0 },
-  cardTitle:{ fontSize: 14, fontWeight: 800, color: '#0f172a' },
-  cardSub:  { fontSize: 12, color: '#64748b', marginTop: 2 },
-
-  // FIX 1: use `border` shorthand (not `borderColor`) to avoid React style-mixing warning
+  page:            { maxWidth: 560, margin: '0 auto', padding: '20px 16px 60px', fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', gap: 16 },
+  card:            { backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '16px' },
+  cardHead:        { display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 14 },
+  cardIcon:        { fontSize: 22, flexShrink: 0 },
+  cardTitle:       { fontSize: 14, fontWeight: 800, color: '#0f172a' },
+  cardSub:         { fontSize: 12, color: '#64748b', marginTop: 2 },
   filterBtn:       { fontSize: 12, fontWeight: 600, padding: '7px 14px', border: '1px solid #e2e8f0', borderRadius: 8, cursor: 'pointer', backgroundColor: '#f8fafc', color: '#374151' },
   filterActive:    { backgroundColor: '#0f172a', color: '#fff', border: '1px solid #0f172a' },
   filterActivePdf: { backgroundColor: '#7c3aed', color: '#fff', border: '1px solid #7c3aed' },
-
-  select:     { fontSize: 12, padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: 8, backgroundColor: '#f8fafc', color: '#374151' },
-  empty:      { fontSize: 13, color: '#94a3b8', textAlign: 'center', padding: '16px 0' },
-  errorBox:   { padding: '10px 12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' },
-  successBox: { padding: '10px 12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, color: '#15803d', fontWeight: 600 },
-  btnGenerate:    { width: '100%', paddingTop: 14, paddingBottom: 14, backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer' },
-  btnGeneratePdf: { backgroundColor: '#7c3aed' },
-  histRow:  { display: 'flex', alignItems: 'center', gap: 12, paddingTop: 12, paddingBottom: 12 },
-  pdfPanel: { backgroundColor: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: 12, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 0 },
-  pdfFeaturesGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 },
-  pdfFeature: { display: 'flex', alignItems: 'flex-start', gap: 8, backgroundColor: '#fff', border: '1px solid #e9d5ff', borderRadius: 8, padding: '8px 10px' },
+  select:          { fontSize: 12, padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: 8, backgroundColor: '#f8fafc', color: '#374151' },
+  linkBtn:         { fontSize: 12, fontWeight: 600, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0 },
+  empty:           { fontSize: 13, color: '#94a3b8', textAlign: 'center', padding: '16px 0' },
+  errorBox:        { padding: '10px 12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' },
+  successBox:      { padding: '10px 12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, color: '#15803d', fontWeight: 600 },
+  btnGenerate:     { width: '100%', paddingTop: 14, paddingBottom: 14, backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer' },
+  btnGeneratePdf:  { backgroundColor: '#7c3aed' },
+  histRow:         { display: 'flex', alignItems: 'center', gap: 12, paddingTop: 12, paddingBottom: 12 },
 }

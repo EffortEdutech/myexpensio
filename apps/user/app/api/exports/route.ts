@@ -1,37 +1,19 @@
 // apps/user/app/api/exports/route.ts
 //
-// POST /api/exports
+// POST /api/exports — synchronous export, streams file immediately.
 //
-// Synchronous export — builds the file inline and streams it back.
-// The export job row is recorded for history (re-download via /api/exports/[id]/download).
-//
-// Accepts optional template_id to use admin-defined column sets.
-// Falls back to STANDARD preset columns if no template provided.
-//
-// Request body:
-//   {
-//     claim_ids:           string[]
-//     format:              'CSV' | 'XLSX' | 'PDF'
-//     template_id?:        string
-//     pdf_layout?:         'BY_DATE' | 'BY_CATEGORY'
-//     signature_data_url?: string
-//   }
-//
-// Response:
-//   200  — file buffer with Content-Disposition: attachment
-//   4xx  — { error: { code, message } }
-//   5xx  — { error: { code, message } }
-//
-// FIXES (14 Mar 2026):
-//   FIX 1: formatOverride?.columns narrowed with explicit undefined guard before access
-//           (was: `formatOverride?.columns?.length > 0` then `formatOverride.columns` —
-//            TypeScript correctly rejects this as formatOverride is possibly undefined)
-//   FIX 2: NextResponse body now uses `new Uint8Array(buffer)` instead of raw Buffer
-//           (Buffer is not assignable to BodyInit in strict TypeScript)
+// CHANGE LOG:
+//   14 Mar FIX 1: formatOverride?.columns narrowed before access
+//   14 Mar FIX 2: NextResponse body uses Uint8Array
+//   15 Mar FIX 3: tng_transactions join uses FK hint (PGRST201 fix)
+//   15 Mar FIX 4: PDF 501 replaced with real buildPdfData + generatePDF
+//   15 Mar FIX 5: PdfLayoutConfig defined inline (import caused module-load failure)
+//   15 Mar FIX 6: Removed .eq('status','SUBMITTED') — DRAFT claims are now exportable
 
 import { type NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { buildExport } from '@/lib/export-builder'
+import { createClient }               from '@/lib/supabase/server'
+import { buildExport }                from '@/lib/export-builder'
+import { buildPdfData, generatePDF }  from '@/lib/pdf-builder'
 import {
   PRESET_COLUMNS,
   resolveColumns,
@@ -41,6 +23,27 @@ import type { ClaimForExport, ItemForExport, TripForExport } from '@/lib/export-
 
 export const runtime = 'nodejs'
 
+// Defined inline — importing from pdf-builder caused module-load failure
+// when pdf-builder didn't export these names, breaking ALL exports (CSV/XLSX too).
+type PdfLayoutConfig = {
+  orientation:           'portrait' | 'landscape'
+  grouping:              'BY_DATE' | 'BY_CATEGORY'
+  show_summary_table:    boolean
+  show_receipt_appendix: boolean
+  show_tng_appendix:     boolean
+  show_declaration:      boolean
+  accent_color:          string
+}
+const DEFAULT_PDF_LAYOUT: PdfLayoutConfig = {
+  orientation:           'portrait',
+  grouping:              'BY_DATE',
+  show_summary_table:    true,
+  show_receipt_appendix: true,
+  show_tng_appendix:     true,
+  show_declaration:      true,
+  accent_color:          '#0f172a',
+}
+
 function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
 }
@@ -48,7 +51,6 @@ function err(code: string, message: string, status: number) {
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
 
-  // ── Auth ──────────────────────────────────────────────────────────────────
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return err('UNAUTHORIZED', 'Not authenticated', 401)
 
@@ -62,25 +64,17 @@ export async function POST(request: NextRequest) {
 
   if (!membership) return err('NOT_MEMBER', 'No active org membership', 403)
 
-  // ── Parse body ────────────────────────────────────────────────────────────
   const body = await request.json().catch(() => null)
   if (!body) return err('VALIDATION_ERROR', 'Request body required', 400)
 
-  const {
-    claim_ids,
-    format,
-    template_id,
-    pdf_layout,
-    signature_data_url: _signature_data_url,  // reserved for PDF phase
-  } = body
+  const { claim_ids, format, template_id, pdf_layout, signature_data_url } = body
 
-  if (!claim_ids?.length) return err('VALIDATION_ERROR', 'claim_ids is required', 400)
-  if (!['CSV', 'XLSX', 'PDF'].includes(format)) {
-    return err('VALIDATION_ERROR', 'format must be CSV | XLSX | PDF', 400)
-  }
+  if (!claim_ids?.length)                       return err('VALIDATION_ERROR', 'claim_ids is required', 400)
+  if (!['CSV', 'XLSX', 'PDF'].includes(format)) return err('VALIDATION_ERROR', 'format must be CSV | XLSX | PDF', 400)
 
-  // ── Resolve export columns from template ──────────────────────────────────
-  let columns: ExportColumnKey[] = PRESET_COLUMNS.STANDARD
+  // ── Resolve template ──────────────────────────────────────────────────────
+  let columns: ExportColumnKey[]                  = PRESET_COLUMNS.STANDARD
+  let templatePdfLayout: Partial<PdfLayoutConfig> = {}
 
   if (template_id) {
     const { data: templateRow } = await supabase
@@ -92,27 +86,30 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (templateRow) {
-      // Try format-specific column override first
       const exportFormats = Array.isArray(templateRow.export_formats)
         ? templateRow.export_formats
         : [templateRow.export_formats]
 
       const formatOverride = (exportFormats as Array<{ format_type: string; columns?: unknown } | null>)
-        .find((f) => f?.format_type === format)
+        .find(f => f?.format_type === format)
 
-      // FIX 1: explicitly check formatOverride is defined before accessing .columns
       const overrideCols = formatOverride?.columns
       if (Array.isArray(overrideCols) && overrideCols.length > 0) {
         columns = overrideCols as ExportColumnKey[]
       } else {
-        // Fall back to template schema columns
         columns = resolveColumns(templateRow.schema as Parameters<typeof resolveColumns>[0])
       }
+
+      const schemaPdfLayout = (templateRow.schema as Record<string, unknown>)?.pdf_layout
+      if (schemaPdfLayout && typeof schemaPdfLayout === 'object') {
+        templatePdfLayout = schemaPdfLayout as Partial<PdfLayoutConfig>
+      }
     }
-    // If template not found — silently fall back to STANDARD (backward compat)
   }
 
-  // ── Fetch claims (SUBMITTED only, org-scoped, user's own) ─────────────────
+  // ── Fetch claims — DRAFT and SUBMITTED both allowed ───────────────────────
+  // FIX 6: removed .eq('status', 'SUBMITTED') — users may export draft claims
+  // FIX 3: tng_transactions uses FK hint to fix PGRST201 ambiguous relationship
   const { data: claims, error: claimsError } = await supabase
     .from('claims')
     .select(`
@@ -126,7 +123,7 @@ export async function POST(request: NextRequest) {
         perdiem_days, perdiem_rate_myr, perdiem_destination,
         meal_session, lodging_check_in, lodging_check_out,
         trip_id,
-        tng_transactions ( trans_no ),
+        tng_transactions!claim_items_tng_transaction_id_fkey ( trans_no ),
         trips (
           id, origin_text, destination_text,
           final_distance_m, distance_source,
@@ -137,7 +134,6 @@ export async function POST(request: NextRequest) {
     .in('id', claim_ids)
     .eq('org_id', membership.org_id)
     .eq('user_id', user.id)
-    .eq('status', 'SUBMITTED')
 
   if (claimsError) {
     console.error('[/api/exports] claims fetch error:', claimsError)
@@ -145,10 +141,10 @@ export async function POST(request: NextRequest) {
   }
 
   if (!claims?.length) {
-    return err('VALIDATION_ERROR', 'No submitted claims found for the given IDs', 400)
+    return err('VALIDATION_ERROR', 'No claims found for the given IDs', 400)
   }
 
-  // ── Get mileage rate (latest rate version) ────────────────────────────────
+  // ── Mileage rate ──────────────────────────────────────────────────────────
   const { data: rateRow } = await supabase
     .from('rate_versions')
     .select('mileage_rate_per_km')
@@ -159,8 +155,8 @@ export async function POST(request: NextRequest) {
 
   const mileageRatePerKm = rateRow?.mileage_rate_per_km ?? undefined
 
-  // ── Shape claims → ClaimForExport ─────────────────────────────────────────
-  const shaped: ClaimForExport[] = claims.map((c) => {
+  // ── Shape claims ──────────────────────────────────────────────────────────
+  const shaped: ClaimForExport[] = claims.map(c => {
     const profile = Array.isArray(c.profiles) ? c.profiles[0] : c.profiles
     const items   = (Array.isArray(c.claim_items) ? c.claim_items : [c.claim_items]).filter(Boolean)
 
@@ -174,7 +170,7 @@ export async function POST(request: NextRequest) {
       total_amount: c.total_amount,
       currency:     c.currency,
       user_name:    profile?.display_name ?? null,
-      user_email:   profile?.email ?? null,
+      user_email:   profile?.email        ?? null,
       items: items.map((item: Record<string, unknown>) => {
         const tngTx = Array.isArray(item.tng_transactions)
           ? item.tng_transactions[0]
@@ -213,8 +209,16 @@ export async function POST(request: NextRequest) {
     }
   })
 
-  // ── Record export job ─────────────────────────────────────────────────────
   const rowCount = shaped.reduce((n, c) => n + Math.max(c.items.length, 1), 0)
+
+  // ── Resolve FULL PDF layout from template → body fallback → defaults ───────
+  // template.schema.pdf_layout overrides EVERYTHING the user set manually.
+  // This is intentional: the admin controls the format for audit consistency.
+  const resolvedLayout: PdfLayoutConfig = {
+    ...DEFAULT_PDF_LAYOUT,
+    ...(pdf_layout ? { grouping: pdf_layout as 'BY_DATE' | 'BY_CATEGORY' } : {}),
+    ...templatePdfLayout,  // template wins last
+  }
 
   const { data: jobRow } = await supabase
     .from('export_jobs')
@@ -225,42 +229,59 @@ export async function POST(request: NextRequest) {
       format,
       status:      'RUNNING',
       template_id: template_id ?? null,
-      pdf_layout:  pdf_layout  ?? null,
+      pdf_layout:  resolvedLayout.grouping,  // store effective grouping (column constraint)
       row_count:   rowCount,
     })
     .select('id')
     .single()
 
-  // ── Build and stream file ─────────────────────────────────────────────────
   try {
+    // ── PDF ─────────────────────────────────────────────────────────────────
     if (format === 'PDF') {
-      // PDF generation is handled by pdf-builder (separate path).
-      // Phase C will route PDF exports through pdf-builder with column support.
-      if (jobRow?.id) {
-        await supabase
-          .from('export_jobs')
-          .update({ status: 'FAILED', error_message: 'PDF not yet available via this route', completed_at: new Date().toISOString() })
-          .eq('id', jobRow.id)
+      // Pass full resolvedLayout — new buildPdfData accepts PdfLayoutConfig.
+      // orientation, accent_color, show_* all flow through to PdfData.layout
+      // so every draw function reads from it. Nothing hardcoded.
+      const { data: pdfData, error: pdfErr } = await buildPdfData(
+        supabase,
+        { org_id: membership.org_id, claim_ids },
+        user.id,
+        resolvedLayout,
+      )
+
+      if (pdfErr || !pdfData) {
+        if (jobRow?.id) await supabase.from('export_jobs')
+          .update({ status: 'FAILED', completed_at: new Date().toISOString() }).eq('id', jobRow.id)
+        return err('PDF_DATA_ERROR', pdfErr ?? 'No data found', 500)
       }
-      return err('NOT_IMPLEMENTED', 'PDF export coming in Phase C — use CSV or XLSX for now', 501)
+
+      const pdfBuffer = await generatePDF(supabase, pdfData, signature_data_url ?? null)
+
+      if (jobRow?.id) await supabase.from('export_jobs')
+        .update({ status: 'DONE', completed_at: new Date().toISOString() }).eq('id', jobRow.id)
+
+      const filename = `myexpensio-claim-${new Date().toISOString().slice(0, 10)}.pdf`
+      return new NextResponse(new Uint8Array(pdfBuffer), {
+        status: 200,
+        headers: {
+          'Content-Type':        'application/pdf',
+          'Content-Disposition': `attachment; filename="${filename}"`,
+          'Content-Length':      String(pdfBuffer.length),
+          'Cache-Control':       'no-store',
+          'X-Row-Count':         String(rowCount),
+        },
+      })
     }
 
-    const { buffer, contentType, extension } = await buildExport(shaped, format as 'CSV' | 'XLSX', {
-      columns,
-      mileageRatePerKm,
-    })
+    // ── CSV / XLSX ───────────────────────────────────────────────────────────
+    const { buffer, contentType, extension } = await buildExport(
+      shaped, format as 'CSV' | 'XLSX', { columns, mileageRatePerKm },
+    )
 
     const filename = `myexpensio-export-${new Date().toISOString().slice(0, 10)}.${extension}`
 
-    // Mark job done
-    if (jobRow?.id) {
-      await supabase
-        .from('export_jobs')
-        .update({ status: 'DONE', completed_at: new Date().toISOString() })
-        .eq('id', jobRow.id)
-    }
+    if (jobRow?.id) await supabase.from('export_jobs')
+      .update({ status: 'DONE', completed_at: new Date().toISOString() }).eq('id', jobRow.id)
 
-    // FIX 2: Buffer is not assignable to BodyInit — wrap in Uint8Array
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
@@ -271,20 +292,12 @@ export async function POST(request: NextRequest) {
         'X-Row-Count':         String(rowCount),
       },
     })
+
   } catch (buildError) {
     console.error('[/api/exports] build error:', buildError)
-
-    if (jobRow?.id) {
-      await supabase
-        .from('export_jobs')
-        .update({
-          status:        'FAILED',
-          error_message: buildError instanceof Error ? buildError.message : 'Unknown error',
-          completed_at:  new Date().toISOString(),
-        })
-        .eq('id', jobRow.id)
-    }
-
+    if (jobRow?.id) await supabase.from('export_jobs')
+      .update({ status: 'FAILED', error_message: buildError instanceof Error ? buildError.message : 'Unknown', completed_at: new Date().toISOString() })
+      .eq('id', jobRow.id)
     return err('BUILD_ERROR', 'Failed to generate export file', 500)
   }
 }
