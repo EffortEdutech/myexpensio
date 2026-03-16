@@ -182,7 +182,7 @@ type PdfClaim = {
 }
 
 type TngStatement = {
-  path:      string | null  // null = original PDF not in storage (upload failed at import time)
+  path:      string
   trans_nos: string[]
 }
 
@@ -273,30 +273,49 @@ export async function buildPdfData(
   const tollParkingItemIds = allItems.filter(i => i.type === 'TOLL' || i.type === 'PARKING').map(i => i.id)
   const tngStatements: TngStatement[] = []
 
+  // ── DEBUG 2: TNG enrichment entry ──────────────────────────────────────────
+  console.log('[PDF-BUILDER buildPdfData] TNG enrichment start')
+  console.log('[PDF-BUILDER buildPdfData] total claim items:', allItems.length)
+  console.log('[PDF-BUILDER buildPdfData] TOLL/PARKING item ids:', tollParkingItemIds)
+
+  if (tollParkingItemIds.length === 0) {
+    console.warn('[PDF-BUILDER buildPdfData] NO TOLL/PARKING items — tngStatements will be empty, no Appendix B')
+  }
+
   if (tollParkingItemIds.length > 0) {
-    const { data: linkRows } = await supabase
+    const { data: linkRows, error: linkErr } = await supabase
       .from('claim_items').select('id, tng_transaction_id').in('id', tollParkingItemIds)
+
+    console.log('[PDF-BUILDER buildPdfData] claim_items link query error:', linkErr?.message ?? 'none')
+    console.log('[PDF-BUILDER buildPdfData] linkRows:', JSON.stringify(linkRows ?? []))
 
     const itemToTngId: Record<string, string> = {}
     for (const r of linkRows ?? []) {
       if (r.tng_transaction_id) itemToTngId[r.id] = r.tng_transaction_id
     }
 
+    console.log('[PDF-BUILDER buildPdfData] itemToTngId (item_id → tng_transaction_id):', itemToTngId)
+
     const tngIds = Object.values(itemToTngId)
+    console.log('[PDF-BUILDER buildPdfData] tng_transaction ids to fetch:', tngIds)
+
+    if (tngIds.length === 0) {
+      console.warn('[PDF-BUILDER buildPdfData] TOLL/PARKING items exist but NONE have tng_transaction_id set')
+      console.warn('[PDF-BUILDER buildPdfData] → These items were added manually (not from TNG statement import)')
+      console.warn('[PDF-BUILDER buildPdfData] → tngStatements will be empty → no Appendix B')
+    }
+
     if (tngIds.length > 0) {
-      const { data: tngRows } = await supabase
+      const { data: tngRows, error: tngErr } = await supabase
         .from('tng_transactions').select('id, trans_no, source_file_url').in('id', tngIds)
+
+      console.log('[PDF-BUILDER buildPdfData] tng_transactions query error:', tngErr?.message ?? 'none')
+      console.log('[PDF-BUILDER buildPdfData] tngRows:', JSON.stringify(tngRows ?? []))
 
       const tngMap: Record<string, { trans_no: string | null; source_file_url: string | null }> = {}
       for (const t of tngRows ?? []) tngMap[t.id] = t
 
-      // Group by source_file_url (nullable).
-      // Use null as the map key for transactions where the original PDF was
-      // not saved to storage (storage upload failed silently at import time).
-      // Those entries still appear on the Appendix B cover page (trans_nos listed)
-      // but no PDF pages can be embedded for them.
       const stmtMap = new Map<string | null, string[]>()
-
       for (const item of allItems) {
         const tngId = itemToTngId[item.id]
         if (!tngId) continue
@@ -305,17 +324,27 @@ export async function buildPdfData(
         item.tng_trans_no = tng.trans_no
         if (tng.trans_no) item.description = `${item.description}  [TNG #${tng.trans_no}]`
 
-        // Always group — even if source_file_url is null
         const key = tng.source_file_url ?? null
         if (!stmtMap.has(key)) stmtMap.set(key, [])
         if (tng.trans_no) stmtMap.get(key)!.push(tng.trans_no)
+
+        console.log(`[PDF-BUILDER buildPdfData] item ${item.id} (${item.type}):`,
+          `tng_id=${tngId}`,
+          `trans_no=${tng.trans_no ?? '(null)'}`,
+          `source_file_url=${tng.source_file_url ?? '(null — no PDF saved)'}`,
+        )
       }
 
       for (const [path, trans_nos] of stmtMap.entries()) {
         tngStatements.push({ path, trans_nos })
+        console.log('[PDF-BUILDER buildPdfData] tngStatement added:',
+          { path: path ?? '(null)', trans_nos })
       }
     }
   }
+
+  console.log('[PDF-BUILDER buildPdfData] final tngStatements:', JSON.stringify(tngStatements))
+  console.log('[PDF-BUILDER buildPdfData] show_tng_appendix:', layout.show_tng_appendix)
 
   return {
     data: {
@@ -342,10 +371,17 @@ export async function generatePDF(
   data:             PdfData,
   signatureDataUrl: string | null,
 ): Promise<Buffer> {
+  console.log('[PDF-BUILDER generatePDF] called')
+  console.log('[PDF-BUILDER generatePDF] tng_statements.length:', data.tng_statements.length)
+  console.log('[PDF-BUILDER generatePDF] show_tng_appendix:', data.layout.show_tng_appendix)
+  console.log('[PDF-BUILDER generatePDF] will merge:', data.layout.show_tng_appendix && data.tng_statements.length > 0)
+
   const pdfkitBuf = await generatePdfKitBuffer(supabase, data, signatureDataUrl)
   if (data.layout.show_tng_appendix && data.tng_statements.length > 0) {
+    console.log('[PDF-BUILDER generatePDF] calling mergeTngStatements...')
     return mergeTngStatements(pdfkitBuf, data.tng_statements, supabase)
   }
+  console.log('[PDF-BUILDER generatePDF] skipping merge (no TNG statements or show_tng_appendix=false)')
   return pdfkitBuf
 }
 
@@ -775,17 +811,9 @@ function drawTngAppendixCover(
   for (let i = 0; i < tngStatements.length; i++) {
     if (y + 60 > dim.PH - MB) { doc.addPage(); y = MT }
     const stmt = tngStatements[i]
-
     doc.rect(ML, y, dim.CW, 24).fill(C.light)
     doc.font(BOLD).fontSize(9).fillColor(C.dark)
     doc.text(`Statement ${i + 1} of ${tngStatements.length}`, ML + 10, y + 8, { lineBreak: false })
-
-    // If path is null, note that the original file was not saved
-    if (!stmt.path) {
-      doc.font(OBLIQUE).fontSize(7.5).fillColor(C.muted)
-      doc.text('(original PDF not available — import before storage was configured)', ML + dim.CW * 0.45, y + 9, { lineBreak: false, ellipsis: true, width: dim.CW * 0.52 })
-    }
-
     y += 24 + 6
     if (stmt.trans_nos.length > 0) {
       doc.font(BOLD).fontSize(7.5).fillColor(C.muted)
@@ -799,82 +827,124 @@ function drawTngAppendixCover(
   }
 }
 
-// ── TNG PDF merge — with per-row highlighting ─────────────────────────────────
-//
-// For each TNG statement in the export:
-//   1. Download the original PDF from Supabase storage (tng-statements bucket)
-//   2. Call highlightTransNos() — draws yellow highlight on every row whose
-//      Trans No appears in stmt.trans_nos (the claimed transactions)
-//   3. Copy the highlighted pages into the main claim PDF using pdf-lib
-//
-// If highlighting fails for any statement the original un-highlighted pages
-// are still merged — the export never fails because of the highlighter.
+// ── TNG PDF merge — with Python highlight + full debug logging ────────────────
+// Every step logs to console so you can see exactly what happens in Vercel logs.
 
 async function mergeTngStatements(
   mainBuf:       Buffer,
   tngStatements: TngStatement[],
   supabase:      SupabaseClient,
 ): Promise<Buffer> {
-  let mainPdf: Awaited<ReturnType<typeof PdfLibDocument.load>>
-  try {
-    mainPdf = await PdfLibDocument.load(mainBuf)
-  } catch (e) {
-    console.error('[mergeTngStatements] failed to load main PDF:', e)
+
+  // ── DEBUG 1: What did we receive? ─────────────────────────────────────────
+  console.log('[PDF-BUILDER mergeTngStatements] called')
+  console.log('[PDF-BUILDER mergeTngStatements] tngStatements count:', tngStatements.length)
+  for (const [i, stmt] of tngStatements.entries()) {
+    console.log(`[PDF-BUILDER mergeTngStatements] stmt[${i}]:`, {
+      path:      stmt.path,
+      trans_nos: stmt.trans_nos,
+      has_path:  !!stmt.path,
+    })
+  }
+
+  if (tngStatements.length === 0) {
+    console.warn('[PDF-BUILDER mergeTngStatements] NO statements to merge — returning mainBuf unchanged')
     return mainBuf
   }
 
-  for (const stmt of tngStatements) {
-    // No path = original PDF was not saved to storage at import time.
-    // The cover page entry is already rendered by pdfkit — nothing to merge here.
-    if (!stmt.path) continue
+  let mainPdf: Awaited<ReturnType<typeof PdfLibDocument.load>>
+  try {
+    mainPdf = await PdfLibDocument.load(mainBuf)
+    console.log('[PDF-BUILDER mergeTngStatements] main PDF loaded OK, pages:', mainPdf.getPageCount())
+  } catch (e) {
+    console.error('[PDF-BUILDER mergeTngStatements] FAILED to load main PDF:', (e as Error).message)
+    return mainBuf
+  }
 
-    // ── 1. Download statement PDF ───────────────────────────────────────────
+  for (const [i, stmt] of tngStatements.entries()) {
+    console.log(`\n[PDF-BUILDER mergeTngStatements] ── Processing stmt[${i}] ──`)
+    console.log(`  path:      ${stmt.path ?? '(null — no storage file)'}`)
+    console.log(`  trans_nos: [${stmt.trans_nos.join(', ')}]`)
+
+    // ── Skip if no storage path ────────────────────────────────────────────
+    if (!stmt.path) {
+      console.warn(`  SKIP: path is null — was imported before bucket existed`)
+      continue
+    }
+
+    // ── Download PDF from storage ──────────────────────────────────────────
     let stmtBuf: Buffer | null = null
     try {
+      console.log(`  Downloading from tng-statements/${stmt.path} ...`)
       const { data: fileData, error } = await supabase.storage
         .from('tng-statements')
         .download(stmt.path)
+
       if (!error && fileData) {
         stmtBuf = Buffer.from(await fileData.arrayBuffer())
+        console.log(`  Download OK — ${stmtBuf.length} bytes`)
       } else {
-        console.warn('[mergeTngStatements] download error:', stmt.path, error?.message)
+        console.error(`  Download FAILED: ${error?.message ?? 'unknown error'}`)
       }
     } catch (e) {
-      console.warn('[mergeTngStatements] download exception:', stmt.path, (e as Error).message)
+      console.error(`  Download EXCEPTION: ${(e as Error).message}`)
     }
 
-    if (!stmtBuf) continue   // skip — don't abort entire merge
+    if (!stmtBuf) {
+      console.warn(`  SKIP stmt[${i}] — no bytes downloaded`)
+      continue
+    }
 
-    // ── 2. Highlight claimed rows ───────────────────────────────────────────
-    // highlightTransNos() is safe — returns original buffer on any error
+    // ── Call Python highlighter ────────────────────────────────────────────
     let highlightedBuf = stmtBuf
+
     if (stmt.trans_nos.length > 0) {
-      highlightedBuf = await highlightTransNos(stmtBuf, stmt.trans_nos)
+      console.log(`  Calling highlightTransNos with trans_nos: [${stmt.trans_nos.join(', ')}]`)
+      console.log(`  SCAN_API_URL = "${process.env.SCAN_API_URL ?? '(NOT SET)'}"`)
+
+      try {
+        highlightedBuf = await highlightTransNos(stmtBuf, stmt.trans_nos)
+        const changed = highlightedBuf !== stmtBuf && highlightedBuf.length !== stmtBuf.length
+        console.log(`  highlightTransNos returned: ${highlightedBuf.length} bytes (changed: ${highlightedBuf !== stmtBuf})`)
+        if (!changed) {
+          console.warn(`  WARNING: highlighted buffer same size as original — highlights may not have been applied`)
+        }
+      } catch (e) {
+        console.error(`  highlightTransNos EXCEPTION: ${(e as Error).message}`)
+        highlightedBuf = stmtBuf
+      }
+    } else {
+      console.warn(`  trans_nos is empty — skipping highlight, merging original`)
     }
 
-    // ── 3. Copy highlighted pages into main PDF ─────────────────────────────
+    // ── Merge pages into main PDF ──────────────────────────────────────────
     try {
+      console.log(`  Loading highlighted buf into pdf-lib...`)
       const stmtPdf = await PdfLibDocument.load(highlightedBuf)
-      const pages   = await mainPdf.copyPages(stmtPdf, stmtPdf.getPageIndices())
+      console.log(`  Statement PDF pages: ${stmtPdf.getPageCount()}`)
+      const pages = await mainPdf.copyPages(stmtPdf, stmtPdf.getPageIndices())
       for (const page of pages) mainPdf.addPage(page)
+      console.log(`  Pages merged OK. Main PDF now has ${mainPdf.getPageCount()} pages`)
     } catch (e) {
-      console.warn('[mergeTngStatements] embed error:', stmt.path, (e as Error).message)
-      // Fallback: try embedding original un-highlighted PDF before giving up
+      console.error(`  Merge FAILED: ${(e as Error).message}`)
+      // Fallback: try merging original un-highlighted PDF
       try {
         const stmtPdf = await PdfLibDocument.load(stmtBuf)
         const pages   = await mainPdf.copyPages(stmtPdf, stmtPdf.getPageIndices())
         for (const page of pages) mainPdf.addPage(page)
-        console.warn('[mergeTngStatements] embedded original (unhighlighted) as fallback')
+        console.warn(`  Fallback merge OK (original, unhighlighted)`)
       } catch (e2) {
-        console.warn('[mergeTngStatements] fallback embed also failed:', (e2 as Error).message)
+        console.error(`  Fallback merge also FAILED: ${(e2 as Error).message}`)
       }
     }
   }
 
   try {
-    return Buffer.from(await mainPdf.save())
+    const saved = Buffer.from(await mainPdf.save())
+    console.log(`[PDF-BUILDER mergeTngStatements] Final PDF: ${saved.length} bytes, ${mainPdf.getPageCount()} pages`)
+    return saved
   } catch (e) {
-    console.error('[mergeTngStatements] save error:', e)
+    console.error('[PDF-BUILDER mergeTngStatements] SAVE FAILED:', (e as Error).message)
     return mainBuf
   }
 }
