@@ -23,6 +23,7 @@ import PDFDocument          from 'pdfkit'
 import { PDFDocument as PdfLibDocument } from 'pdf-lib'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { buildExportRows, type ExportFilters, type ExportRow } from './export-builder'
+import { highlightTransNos } from './tng-highlighter'
 
 // ── PDF Layout Config — mirrors admin TemplateEditor PDF Settings ─────────────
 export type PdfLayoutConfig = {
@@ -181,7 +182,7 @@ type PdfClaim = {
 }
 
 type TngStatement = {
-  path:      string
+  path:      string | null  // null = original PDF not in storage (upload failed at import time)
   trans_nos: string[]
 }
 
@@ -289,7 +290,13 @@ export async function buildPdfData(
       const tngMap: Record<string, { trans_no: string | null; source_file_url: string | null }> = {}
       for (const t of tngRows ?? []) tngMap[t.id] = t
 
-      const stmtMap = new Map<string, string[]>()
+      // Group by source_file_url (nullable).
+      // Use null as the map key for transactions where the original PDF was
+      // not saved to storage (storage upload failed silently at import time).
+      // Those entries still appear on the Appendix B cover page (trans_nos listed)
+      // but no PDF pages can be embedded for them.
+      const stmtMap = new Map<string | null, string[]>()
+
       for (const item of allItems) {
         const tngId = itemToTngId[item.id]
         if (!tngId) continue
@@ -297,10 +304,11 @@ export async function buildPdfData(
         if (!tng) continue
         item.tng_trans_no = tng.trans_no
         if (tng.trans_no) item.description = `${item.description}  [TNG #${tng.trans_no}]`
-        if (tng.source_file_url) {
-          if (!stmtMap.has(tng.source_file_url)) stmtMap.set(tng.source_file_url, [])
-          if (tng.trans_no) stmtMap.get(tng.source_file_url)!.push(tng.trans_no)
-        }
+
+        // Always group — even if source_file_url is null
+        const key = tng.source_file_url ?? null
+        if (!stmtMap.has(key)) stmtMap.set(key, [])
+        if (tng.trans_no) stmtMap.get(key)!.push(tng.trans_no)
       }
 
       for (const [path, trans_nos] of stmtMap.entries()) {
@@ -767,9 +775,17 @@ function drawTngAppendixCover(
   for (let i = 0; i < tngStatements.length; i++) {
     if (y + 60 > dim.PH - MB) { doc.addPage(); y = MT }
     const stmt = tngStatements[i]
+
     doc.rect(ML, y, dim.CW, 24).fill(C.light)
     doc.font(BOLD).fontSize(9).fillColor(C.dark)
     doc.text(`Statement ${i + 1} of ${tngStatements.length}`, ML + 10, y + 8, { lineBreak: false })
+
+    // If path is null, note that the original file was not saved
+    if (!stmt.path) {
+      doc.font(OBLIQUE).fontSize(7.5).fillColor(C.muted)
+      doc.text('(original PDF not available — import before storage was configured)', ML + dim.CW * 0.45, y + 9, { lineBreak: false, ellipsis: true, width: dim.CW * 0.52 })
+    }
+
     y += 24 + 6
     if (stmt.trans_nos.length > 0) {
       doc.font(BOLD).fontSize(7.5).fillColor(C.muted)
@@ -783,7 +799,16 @@ function drawTngAppendixCover(
   }
 }
 
-// ── TNG PDF merge ─────────────────────────────────────────────────────────────
+// ── TNG PDF merge — with per-row highlighting ─────────────────────────────────
+//
+// For each TNG statement in the export:
+//   1. Download the original PDF from Supabase storage (tng-statements bucket)
+//   2. Call highlightTransNos() — draws yellow highlight on every row whose
+//      Trans No appears in stmt.trans_nos (the claimed transactions)
+//   3. Copy the highlighted pages into the main claim PDF using pdf-lib
+//
+// If highlighting fails for any statement the original un-highlighted pages
+// are still merged — the export never fails because of the highlighter.
 
 async function mergeTngStatements(
   mainBuf:       Buffer,
@@ -799,22 +824,50 @@ async function mergeTngStatements(
   }
 
   for (const stmt of tngStatements) {
+    // No path = original PDF was not saved to storage at import time.
+    // The cover page entry is already rendered by pdfkit — nothing to merge here.
+    if (!stmt.path) continue
+
+    // ── 1. Download statement PDF ───────────────────────────────────────────
     let stmtBuf: Buffer | null = null
     try {
-      const { data: fileData, error } = await supabase.storage.from('tng-statements').download(stmt.path)
-      if (!error && fileData) stmtBuf = Buffer.from(await fileData.arrayBuffer())
-      else console.warn('[mergeTngStatements] download error', stmt.path, error?.message)
+      const { data: fileData, error } = await supabase.storage
+        .from('tng-statements')
+        .download(stmt.path)
+      if (!error && fileData) {
+        stmtBuf = Buffer.from(await fileData.arrayBuffer())
+      } else {
+        console.warn('[mergeTngStatements] download error:', stmt.path, error?.message)
+      }
     } catch (e) {
-      console.warn('[mergeTngStatements] exception', stmt.path, (e as Error).message)
+      console.warn('[mergeTngStatements] download exception:', stmt.path, (e as Error).message)
     }
-    if (!stmtBuf) continue
 
+    if (!stmtBuf) continue   // skip — don't abort entire merge
+
+    // ── 2. Highlight claimed rows ───────────────────────────────────────────
+    // highlightTransNos() is safe — returns original buffer on any error
+    let highlightedBuf = stmtBuf
+    if (stmt.trans_nos.length > 0) {
+      highlightedBuf = await highlightTransNos(stmtBuf, stmt.trans_nos)
+    }
+
+    // ── 3. Copy highlighted pages into main PDF ─────────────────────────────
     try {
-      const stmtPdf = await PdfLibDocument.load(stmtBuf)
+      const stmtPdf = await PdfLibDocument.load(highlightedBuf)
       const pages   = await mainPdf.copyPages(stmtPdf, stmtPdf.getPageIndices())
       for (const page of pages) mainPdf.addPage(page)
     } catch (e) {
-      console.warn('[mergeTngStatements] embed error', stmt.path, (e as Error).message)
+      console.warn('[mergeTngStatements] embed error:', stmt.path, (e as Error).message)
+      // Fallback: try embedding original un-highlighted PDF before giving up
+      try {
+        const stmtPdf = await PdfLibDocument.load(stmtBuf)
+        const pages   = await mainPdf.copyPages(stmtPdf, stmtPdf.getPageIndices())
+        for (const page of pages) mainPdf.addPage(page)
+        console.warn('[mergeTngStatements] embedded original (unhighlighted) as fallback')
+      } catch (e2) {
+        console.warn('[mergeTngStatements] fallback embed also failed:', (e2 as Error).message)
+      }
     }
   }
 

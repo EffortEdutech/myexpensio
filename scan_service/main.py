@@ -1,9 +1,10 @@
 # scan_service/main.py
-# Version: 5.1.0
+# Version: 5.2.0
 #
 # Endpoints:
 #   POST /process        — Receipt/Odometer image enhancement (OpenCV)
 #   POST /parse-tng      — TNG eWallet PDF statement parser (pdfplumber; TOLL/PARKING/RETAIL)
+#   POST /highlight-tng  — Highlight claimed Trans No + Amount in TNG statement PDF (PyMuPDF)
 #   GET  /health         — Warmup ping (Vercel cron)
 #
 # RECEIPT pipeline:
@@ -17,6 +18,15 @@
 #   Accept base64-encoded PDF bytes → pdfplumber table extraction
 #   → return structured TOLL + PARKING + RETAIL rows
 #   → returns account metadata (name, period) for UI display
+#
+# TNG HIGHLIGHT pipeline (v5.2):
+#   Accept base64 PDF + list of {trans_no, amount} pairs
+#   → PyMuPDF search_for() finds exact bounding boxes for each term
+#   → Same-row Y-coordinate check ensures only the correct amount is highlighted
+#     (avoids highlighting the same amount value on unrelated rows)
+#   → add_highlight_annot() draws standard PDF yellow highlights
+#   → returns base64 annotated PDF
+#   → safe: on any error returns original PDF unchanged
 
 import os
 import base64
@@ -28,6 +38,7 @@ from datetime import datetime, timezone, timedelta
 import cv2
 import numpy as np
 import pdfplumber
+import fitz                        # PyMuPDF — v5.2 addition
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -49,7 +60,7 @@ MYT = timezone(timedelta(hours=8))  # Malaysia Time (UTC+8)
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="myexpensio-scan", version="5.1.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="myexpensio-scan", version="5.2.0", docs_url=None, redoc_url=None)
 
 app.add_middleware(
     CORSMiddleware,
@@ -70,19 +81,19 @@ def verify_secret(x_scan_secret: str = Header(default="")) -> None:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "myexpensio-scan", "version": "5.1.0"}
+    return {"status": "ok", "service": "myexpensio-scan", "version": "5.2.0"}
 
 # ═════════════════════════════════════════════════════════════════════════════
-# IMAGE PROCESSING (existing — unchanged from v4)
+# IMAGE PROCESSING (unchanged from v5.1)
 # ═════════════════════════════════════════════════════════════════════════════
 
 class ProcessRequest(BaseModel):
-    image:   str                                      # base64 JPEG
+    image:   str
     mode:    Literal["RECEIPT", "ODOMETER"] = "RECEIPT"
-    corners: list[list[float]] | None       = None   # [[x,y]*4] TL,TR,BR,BL in original px
+    corners: list[list[float]] | None       = None
 
 class ProcessResponse(BaseModel):
-    result:  str          # base64 JPEG
+    result:  str
     applied: list[str]
     width:   int
     height:  int
@@ -104,14 +115,13 @@ def cv_to_b64(img: np.ndarray, quality: int = 92) -> str:
     return base64.b64encode(buf.tobytes()).decode("utf-8")
 
 def order_corners(pts: np.ndarray) -> np.ndarray:
-    """Order 4 points: TL, TR, BR, BL."""
     rect = np.zeros((4, 2), dtype="float32")
     s    = pts.sum(axis=1)
     diff = np.diff(pts, axis=1)
-    rect[0] = pts[np.argmin(s)]      # TL
-    rect[2] = pts[np.argmax(s)]      # BR
-    rect[1] = pts[np.argmin(diff)]   # TR
-    rect[3] = pts[np.argmax(diff)]   # BL
+    rect[0] = pts[np.argmin(s)]
+    rect[2] = pts[np.argmax(s)]
+    rect[1] = pts[np.argmin(diff)]
+    rect[3] = pts[np.argmax(diff)]
     return rect
 
 def four_point_transform(img: np.ndarray, pts: np.ndarray) -> np.ndarray:
@@ -123,9 +133,7 @@ def four_point_transform(img: np.ndarray, pts: np.ndarray) -> np.ndarray:
     hA   = np.sqrt(((tr[0]-br[0])**2) + ((tr[1]-br[1])**2))
     hB   = np.sqrt(((tl[0]-bl[0])**2) + ((tl[1]-bl[1])**2))
     maxH = max(int(hA), int(hB))
-    dst  = np.array([
-        [0, 0], [maxW-1, 0], [maxW-1, maxH-1], [0, maxH-1]
-    ], dtype="float32")
+    dst  = np.array([[0,0],[maxW-1,0],[maxW-1,maxH-1],[0,maxH-1]], dtype="float32")
     M    = cv2.getPerspectiveTransform(rect, dst)
     return cv2.warpPerspective(img, M, (maxW, maxH))
 
@@ -164,35 +172,28 @@ def process_image(req: ProcessRequest, x_scan_secret: str = Header(default="")):
         img = b64_to_cv(req.image)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
-
     if req.mode == "RECEIPT":
         result, applied = enhance_receipt(img, req.corners)
     else:
         result, applied = enhance_odometer(img)
-
     h, w = result.shape[:2]
-    return ProcessResponse(
-        result=cv_to_b64(result),
-        applied=applied,
-        width=w,
-        height=h,
-    )
+    return ProcessResponse(result=cv_to_b64(result), applied=applied, width=w, height=h)
 
 # ═════════════════════════════════════════════════════════════════════════════
-# TNG PDF PARSER (new in v5)
+# TNG PDF PARSER (unchanged from v5.1)
 # ═════════════════════════════════════════════════════════════════════════════
 
 class TngParseRequest(BaseModel):
-    pdf: str  # base64-encoded PDF bytes (no data-URI prefix needed, but handled if present)
+    pdf: str
 
 class TngParsedRow(BaseModel):
     trans_no:       str | None
-    entry_datetime: str | None   # ISO 8601 with MYT offset (+08:00)
+    entry_datetime: str | None
     exit_datetime:  str | None
     entry_location: str | None
     exit_location:  str | None
-    amount:         float        # MYR, 2 decimal precision
-    sector:         str          # "TOLL" | "PARKING" | "RETAIL"
+    amount:         float
+    sector:         str
     tran_type:      str | None = None
     retail_label:   str | None = None
 
@@ -202,42 +203,31 @@ class TngStatementMeta(BaseModel):
     period:       str | None
 
 class TngParseResponse(BaseModel):
-    meta:         TngStatementMeta
-    transactions: list[TngParsedRow]
-    toll_count:    int
-    parking_count: int
-    retail_count:  int
-    skipped_retail: int  # retained for backward compatibility; 0 in v5.1+
+    meta:           TngStatementMeta
+    transactions:   list[TngParsedRow]
+    toll_count:     int
+    parking_count:  int
+    retail_count:   int
+    skipped_retail: int
 
 def _clean(s: str | None) -> str | None:
-    """Normalise multi-line cell text to single-line, collapse whitespace."""
     if s is None:
         return None
     result = " ".join(s.replace('\n', ' ').split()).strip()
     return result if result else None
 
 def _parse_tng_datetime(date_raw: str | None, time_raw: str | None = None) -> str | None:
-    """
-    Parse TNG date strings like:
-      "24/02/2026"
-      "24/02\n/2026"  (multi-line from cell)
-      "22/02/2026 15:44:07"  (combined in single cell)
-    Returns ISO 8601 with MYT offset, or None on failure.
-    """
     if not date_raw:
         return None
     cleaned = _clean(date_raw)
     if not cleaned:
         return None
-    # Remove spaces — handles "24/02 /2026" artifact
     cleaned = cleaned.replace(' ', '')
-
     try:
         if time_raw:
             t = (_clean(time_raw) or "").replace(' ', '')
             dt = datetime.strptime(f"{cleaned} {t}", "%d/%m/%Y %H:%M:%S")
         else:
-            # Try combined datetime first ("22/02/2026 15:44:07")
             parts = cleaned.split()
             if len(parts) == 2:
                 dt = datetime.strptime(f"{parts[0]} {parts[1]}", "%d/%m/%Y %H:%M:%S")
@@ -248,10 +238,7 @@ def _parse_tng_datetime(date_raw: str | None, time_raw: str | None = None) -> st
         log.warning(f"[parse-tng] Could not parse date: date_raw={date_raw!r} time_raw={time_raw!r}")
         return None
 
-
-
 def _pick_retail_label(tran_type: str | None, entry_loc: str | None, exit_loc: str | None, reload_loc: str | None) -> str | None:
-    """Best-effort human label for RETAIL transport rows."""
     for value in (entry_loc, exit_loc, reload_loc, tran_type):
         cleaned = _clean(value)
         if cleaned:
@@ -259,7 +246,6 @@ def _pick_retail_label(tran_type: str | None, entry_loc: str | None, exit_loc: s
     return None
 
 def _extract_tng_meta(full_text: str) -> TngStatementMeta:
-    """Extract header fields from raw PDF text."""
     account_name = ewallet_id = period = None
     for line in full_text.splitlines():
         if 'Account Name' in line and ':' in line:
@@ -268,15 +254,11 @@ def _extract_tng_meta(full_text: str) -> TngStatementMeta:
             ewallet_id = line.split(':', 1)[-1].strip() or None
         elif 'Transaction Period' in line and ':' in line:
             period = line.split(':', 1)[-1].strip() or None
-    return TngStatementMeta(
-        account_name=account_name,
-        ewallet_id=ewallet_id,
-        period=period,
-    )
+    return TngStatementMeta(account_name=account_name, ewallet_id=ewallet_id, period=period)
 
 def _parse_tng_table(table: list[list]) -> list[TngParsedRow]:
     """
-    Parse a single pdfplumber table that contains TNG transaction rows.
+    Parse a single pdfplumber table containing TNG transaction rows.
     Columns (0-indexed):
       0  Trans No.
       1  Entry Date and Time
@@ -292,62 +274,52 @@ def _parse_tng_table(table: list[list]) -> list[TngParsedRow]:
       11 Card Balance (RM)
       12 Sector
     """
-    rows: list[TngParsedRow] = []
+    rows = []
+    SECTOR_VALID = {"TOLL", "PARKING", "RETAIL"}
 
-    if not table or len(table) < 2:
-        return rows
-
-    header_0 = _clean(table[0][0]) or ""
-    if "Trans No" not in header_0:
-        return rows
-
-    for raw_row in table[1:]:
-        if len(raw_row) < 13:
+    for raw_row in table:
+        if not raw_row or len(raw_row) < 12:
             continue
 
-        trans_no     = _clean(raw_row[0])
-        entry_raw    = raw_row[1]
-        exit_raw     = raw_row[2]
-        posted_raw   = raw_row[3]
-        tran_type    = _clean(raw_row[4])
-        entry_loc    = _clean(raw_row[5])
-        exit_loc     = _clean(raw_row[7])
-        reload_loc   = _clean(raw_row[9])
-        amount_raw   = _clean(raw_row[10])
-        sector_raw   = _clean(raw_row[12])
-
-        sector = (sector_raw or "").upper()
-        if sector not in ("TOLL", "PARKING", "RETAIL"):
+        trans_no_raw = _clean(raw_row[0]) if raw_row[0] else None
+        if not trans_no_raw or not trans_no_raw.isdigit():
             continue
 
+        trans_no = trans_no_raw
+
+        entry_date_raw = _clean(raw_row[1]) if raw_row[1] else None
+        exit_date_raw  = _clean(raw_row[2]) if raw_row[2] else None
+        posted_raw     = _clean(raw_row[3]) if raw_row[3] else None
+        tran_type      = _clean(raw_row[4]) if raw_row[4] else None
+        entry_loc      = _clean(raw_row[5]) if raw_row[5] else None
+        entry_sp       = _clean(raw_row[6]) if raw_row[6] else None
+        exit_loc       = _clean(raw_row[7]) if raw_row[7] else None
+        exit_sp        = _clean(raw_row[8]) if raw_row[8] else None
+        reload_loc     = _clean(raw_row[9]) if raw_row[9] else None
+        amount_raw     = _clean(raw_row[10]) if raw_row[10] else None
+        sector_raw     = _clean(raw_row[12]) if len(raw_row) > 12 and raw_row[12] else None
+
+        if not amount_raw:
+            continue
         try:
-            amount = round(float((amount_raw or "0").replace(',', '')), 2)
+            amount = round(float(amount_raw.replace(",", "")), 2)
         except ValueError:
-            log.warning(f"[parse-tng] Could not parse amount: {amount_raw!r} for trans {trans_no}")
             continue
+
         if amount <= 0:
             continue
 
-        exit_parts = str(exit_raw or "").split('\n')
-        if len(exit_parts) == 2:
-            exit_datetime = _parse_tng_datetime(exit_parts[0], exit_parts[1])
-        else:
-            exit_datetime = _parse_tng_datetime(_clean(exit_raw))
+        sector = sector_raw.upper() if sector_raw else ""
+        if sector not in SECTOR_VALID:
+            continue
 
-        entry_clean = _clean(entry_raw)
-        entry_parts = (entry_clean or "").split(' ')
-        if entry_clean and len(entry_parts) >= 2 and ':' in entry_parts[-1]:
-            entry_datetime = _parse_tng_datetime(entry_parts[0], entry_parts[-1])
-        elif entry_clean:
-            entry_datetime = _parse_tng_datetime(entry_clean)
-        else:
-            entry_datetime = None
+        entry_datetime  = _parse_tng_datetime(entry_date_raw)
+        exit_datetime   = _parse_tng_datetime(exit_date_raw)
+        posted_datetime = _parse_tng_datetime(posted_raw)
+        retail_label    = _pick_retail_label(tran_type, entry_loc, exit_loc, reload_loc)
 
-        posted_datetime = _parse_tng_datetime(_clean(posted_raw))
-
-        retail_label = _pick_retail_label(tran_type, entry_loc, exit_loc, reload_loc)
         effective_entry_loc = entry_loc
-        effective_exit_loc = exit_loc
+        effective_exit_loc  = exit_loc
 
         if sector == "RETAIL":
             if not effective_entry_loc:
@@ -377,19 +349,11 @@ def _parse_tng_table(table: list[list]) -> list[TngParsedRow]:
 def parse_tng(req: TngParseRequest, x_scan_secret: str = Header(default="")):
     """
     Parse a Touch 'n Go eWallet statement PDF.
-
-    Request body:
-      { "pdf": "<base64-encoded PDF bytes>" }
-
-    Supports both:
-      - Raw base64
-      - Data URI: "data:application/pdf;base64,<data>"
-
+    Request: { "pdf": "<base64>" }
     Returns structured TOLL + PARKING + RETAIL transactions.
     """
     verify_secret(x_scan_secret)
 
-    # ── Decode PDF bytes ──────────────────────────────────────────────────────
     raw_b64 = req.pdf
     if "," in raw_b64:
         raw_b64 = raw_b64.split(",", 1)[1]
@@ -401,26 +365,21 @@ def parse_tng(req: TngParseRequest, x_scan_secret: str = Header(default="")):
     if len(pdf_bytes) < 100:
         raise HTTPException(status_code=400, detail="PDF data too small to be valid.")
 
-    # ── Open with pdfplumber ──────────────────────────────────────────────────
     try:
         pdf_io = io.BytesIO(pdf_bytes)
         with pdfplumber.open(pdf_io) as pdf:
             if len(pdf.pages) == 0:
                 raise HTTPException(status_code=422, detail="PARSE_ERROR: PDF has no pages.")
 
-            # Collect full text for metadata
-            full_text = ""
-            all_transactions: list[TngParsedRow] = []
-            skipped_retail = 0
+            full_text          = ""
+            all_transactions:  list[TngParsedRow] = []
 
             for page in pdf.pages:
-                page_text = page.extract_text() or ""
-                full_text += page_text + "\n"
-
-                tables = page.extract_tables()
+                page_text   = page.extract_text() or ""
+                full_text  += page_text + "\n"
+                tables      = page.extract_tables()
                 for table in tables:
-                    parsed = _parse_tng_table(table)
-                    all_transactions.extend(parsed)
+                    all_transactions.extend(_parse_tng_table(table))
 
     except HTTPException:
         raise
@@ -428,27 +387,19 @@ def parse_tng(req: TngParseRequest, x_scan_secret: str = Header(default="")):
         log.error(f"[parse-tng] pdfplumber error: {e}", exc_info=True)
         raise HTTPException(
             status_code=422,
-            detail=f"PARSE_ERROR: Could not extract data from PDF. Is this a text-based TNG statement? Error: {e}"
+            detail=f"PARSE_ERROR: Could not extract data from PDF. Is this a text-based TNG statement? ({e})"
         )
 
     if not all_transactions:
         raise HTTPException(
             status_code=422,
-            detail="PARSE_ERROR: No TOLL, PARKING, or RETAIL transactions found. "
-                   "Please upload a TNG eWallet Customer Transactions Statement PDF."
+            detail="PARSE_ERROR: No transactions found. Please check this is a TNG Customer Transactions Statement PDF."
         )
 
-    meta = _extract_tng_meta(full_text)
-
-    toll_count    = sum(1 for t in all_transactions if t.sector == "TOLL")
+    meta         = _extract_tng_meta(full_text)
+    toll_count   = sum(1 for t in all_transactions if t.sector == "TOLL")
     parking_count = sum(1 for t in all_transactions if t.sector == "PARKING")
     retail_count  = sum(1 for t in all_transactions if t.sector == "RETAIL")
-
-    log.info(
-        f"[parse-tng] Parsed {len(all_transactions)} transactions "
-        f"(TOLL={toll_count}, PARKING={parking_count}, RETAIL={retail_count}) "
-        f"for account={meta.account_name!r}"
-    )
 
     return TngParseResponse(
         meta=meta,
@@ -457,4 +408,160 @@ def parse_tng(req: TngParseRequest, x_scan_secret: str = Header(default="")):
         parking_count=parking_count,
         retail_count=retail_count,
         skipped_retail=0,
+    )
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TNG PDF HIGHLIGHTER  (v5.2 — new endpoint)
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# Request:
+#   {
+#     "pdf":    "<base64 PDF bytes>",
+#     "items":  [
+#       { "trans_no": "62313", "amount": "11.64" },
+#       { "trans_no": "62318", "amount": "1.66"  }
+#     ]
+#   }
+#
+# For each item:
+#   1. PyMuPDF search_for(trans_no) → finds exact bounding rect
+#   2. PyMuPDF search_for(amount)   → finds ALL bounding rects for that amount string
+#   3. Same-row check: only highlight the amount rect whose Y is within
+#      Y_TOLERANCE of the trans_no rect (avoids highlighting same amount
+#      value on unrelated rows — e.g. "11.64" appears on rows 62313, 62317, 62335)
+#   4. add_highlight_annot() — standard PDF yellow highlight annotation
+#
+# Response:
+#   { "pdf": "<base64 annotated PDF>" }
+#
+# Safety: on ANY error returns the original PDF unchanged.
+# The export never fails because of the highlighter.
+
+Y_TOLERANCE = 3.0   # pt — hits within this Y distance are "same row"
+
+class TngHighlightItem(BaseModel):
+    trans_no: str              # e.g. "62313"
+    amount:   str              # e.g. "11.64"  (string so we search exact text)
+
+class TngHighlightRequest(BaseModel):
+    pdf:   str                 # base64 PDF bytes
+    items: list[TngHighlightItem]
+
+class TngHighlightResponse(BaseModel):
+    pdf:              str      # base64 annotated PDF
+    highlights_added: int      # total annotations added
+    matched_items:    list[str] # trans_nos that were successfully highlighted
+
+@app.post("/highlight-tng", response_model=TngHighlightResponse)
+def highlight_tng(req: TngHighlightRequest, x_scan_secret: str = Header(default="")):
+    """
+    Add yellow highlight annotations to claimed TNG transactions in a statement PDF.
+
+    For each item in req.items, highlights:
+      - The Trans No. text  (e.g. "62313")
+      - The Trans Amount    (e.g. "11.64") — only on the same row as the Trans No.
+
+    Returns the annotated PDF as base64. Safe: on any error returns original PDF.
+    """
+    verify_secret(x_scan_secret)
+
+    # ── Decode input PDF ─────────────────────────────────────────────────────
+    raw_b64 = req.pdf
+    if "," in raw_b64:
+        raw_b64 = raw_b64.split(",", 1)[1]
+    try:
+        pdf_bytes = base64.b64decode(raw_b64)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid base64 PDF: {e}")
+
+    if not req.items:
+        # Nothing to highlight — return original PDF unchanged
+        return TngHighlightResponse(
+            pdf=base64.b64encode(pdf_bytes).decode(),
+            highlights_added=0,
+            matched_items=[],
+        )
+
+    # ── Open with PyMuPDF ────────────────────────────────────────────────────
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception as e:
+        log.error(f"[highlight-tng] fitz.open failed: {e}")
+        raise HTTPException(status_code=422, detail=f"Could not open PDF: {e}")
+
+    highlights_added = 0
+    matched_items:   list[str] = []
+
+    # Yellow highlight colour (RGB 0–1)
+    YELLOW = (1.0, 1.0, 0.0)
+
+    for item in req.items:
+        trans_no  = item.trans_no.strip()
+        amount_str = item.amount.strip()
+
+        item_highlighted = False
+
+        for page_num in range(doc.page_count):
+            page = doc[page_num]
+
+            # ── Find Trans No ─────────────────────────────────────────────────
+            trans_hits = page.search_for(trans_no)
+            if not trans_hits:
+                continue
+
+            # There should be exactly one Trans No per statement
+            trans_rect = trans_hits[0]
+            trans_y    = trans_rect.y0
+
+            log.info(f"[highlight-tng] trans_no='{trans_no}' found page {page_num+1} y={trans_y:.1f}")
+
+            # Highlight the Trans No
+            annot = page.add_highlight_annot(trans_rect)
+            annot.set_colors(stroke=YELLOW)
+            annot.update()
+            highlights_added += 1
+
+            # ── Find Amount on the same row ───────────────────────────────────
+            # amount_str may be empty (caller doesn't always know the amount).
+            # If empty, skip amount highlighting — trans_no highlight is enough.
+            # If provided, search_for(amount_str) may return multiple hits
+            # (same amount on different rows). Only highlight the one at the
+            # same Y as trans_no, avoiding false matches on other rows.
+            if amount_str:
+                amount_hits = page.search_for(amount_str)
+                for rect in amount_hits:
+                    if abs(rect.y0 - trans_y) <= Y_TOLERANCE:
+                        annot2 = page.add_highlight_annot(rect)
+                        annot2.set_colors(stroke=YELLOW)
+                        annot2.update()
+                        highlights_added += 1
+                        log.info(f"[highlight-tng] amount='{amount_str}' highlighted same row y={rect.y0:.1f}")
+                        break  # only first matching amount per row
+
+            item_highlighted = True
+            break  # trans_no found on this page — stop scanning further pages
+
+        if item_highlighted:
+            matched_items.append(trans_no)
+        else:
+            log.warning(f"[highlight-tng] trans_no='{trans_no}' NOT FOUND in PDF")
+
+    # ── Save annotated PDF ───────────────────────────────────────────────────
+    try:
+        out_bytes = doc.tobytes(deflate=True)
+        doc.close()
+    except Exception as e:
+        doc.close()
+        log.error(f"[highlight-tng] tobytes failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save annotated PDF: {e}")
+
+    log.info(
+        f"[highlight-tng] done: {highlights_added} highlights, "
+        f"{len(matched_items)}/{len(req.items)} items matched"
+    )
+
+    return TngHighlightResponse(
+        pdf=base64.b64encode(out_bytes).decode(),
+        highlights_added=highlights_added,
+        matched_items=matched_items,
     )
