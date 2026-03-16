@@ -336,7 +336,7 @@ export async function buildPdfData(
       }
 
       for (const [path, trans_nos] of stmtMap.entries()) {
-        tngStatements.push({ path, trans_nos })
+        tngStatements.push({ path: path as string | null, trans_nos })
         console.log('[PDF-BUILDER buildPdfData] tngStatement added:',
           { path: path ?? '(null)', trans_nos })
       }
