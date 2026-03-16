@@ -37,17 +37,22 @@ type HighlightResponse = {
 // ── Public entry ──────────────────────────────────────────────────────────────
 
 /**
- * Given a TNG statement PDF buffer and a list of {trans_no, amount} pairs,
+ * Given a TNG statement PDF buffer and a list of {trans_no, amount} items,
  * returns a new PDF buffer with those transactions highlighted in yellow.
+ * Both the Trans No. and Trans Amount (RM) columns are highlighted.
  *
  * If the scan service is unreachable or fails, the original buffer is returned.
  */
 export async function highlightTransNos(
   pdfBytes: Buffer,
-  transNos: string[],
+  items:    Array<{ trans_no: string; amount: string }>,
   supabase?: SupabaseClient,  // unused — kept for call-site compatibility
 ): Promise<Buffer> {
-  if (transNos.length === 0) return pdfBytes
+  const validItems = items
+    .map(i => ({ trans_no: i.trans_no.trim(), amount: i.amount.trim() }))
+    .filter(i => i.trans_no)
+
+  if (validItems.length === 0) return pdfBytes
 
   const SCAN_API_URL    = process.env.SCAN_API_URL    ?? ''
   const SCAN_API_SECRET = process.env.SCAN_API_SECRET ?? ''
@@ -56,21 +61,6 @@ export async function highlightTransNos(
     console.warn('[tng-highlighter] SCAN_API_URL not set — skipping highlight')
     return pdfBytes
   }
-
-  // Build items list — trans_nos array contains only the trans_no strings.
-  // The amount will be found by the Python service via same-row Y matching
-  // after it locates the trans_no. We pass amount as empty string to trigger
-  // the trans_no-only search path, OR we can pass the amounts if available.
-  // Current architecture: trans_nos only → Python finds amount from same row.
-  // We pass amount: "" to tell Python to highlight trans_no only (still useful).
-  // 
-  // NOTE: pdf-builder.ts passes TngStatement.trans_nos which are just the
-  // trans_no strings. The amount is found automatically by Python via same-row
-  // matching — it searches for the Trans Amount column value on that same Y.
-  const items: HighlightItem[] = transNos
-    .map(t => t.trim())
-    .filter(Boolean)
-    .map(trans_no => ({ trans_no, amount: '' }))
 
   try {
     const pdfBase64 = pdfBytes.toString('base64')
@@ -81,8 +71,8 @@ export async function highlightTransNos(
         'Content-Type':  'application/json',
         'X-Scan-Secret': SCAN_API_SECRET,
       },
-      body:   JSON.stringify({ pdf: pdfBase64, items }),
-      signal: AbortSignal.timeout(60_000),  // 60s — allows for cold start
+      body:   JSON.stringify({ pdf: pdfBase64, items: validItems }),
+      signal: AbortSignal.timeout(60_000),
     })
 
     if (!response.ok) {
@@ -96,7 +86,6 @@ export async function highlightTransNos(
     console.log(
       `[tng-highlighter] ${result.highlights_added} highlights added,`,
       `matched: [${result.matched_items.join(', ')}]`,
-      `of requested: [${transNos.join(', ')}]`,
     )
 
     if (result.highlights_added === 0) {

@@ -183,7 +183,8 @@ type PdfClaim = {
 
 type TngStatement = {
   path:      string | null   // null when PDF was not saved to storage at import time
-  trans_nos: string[]
+  trans_nos: string[]        // for cover page display
+  items:     Array<{ trans_no: string; amount: string }>  // for highlighting (trans_no + formatted amount)
 }
 
 // ── PdfData — carries ALL template settings through to every draw function ────
@@ -307,15 +308,15 @@ export async function buildPdfData(
 
     if (tngIds.length > 0) {
       const { data: tngRows, error: tngErr } = await supabase
-        .from('tng_transactions').select('id, trans_no, source_file_url').in('id', tngIds)
+        .from('tng_transactions').select('id, trans_no, source_file_url, amount').in('id', tngIds)
 
       console.log('[PDF-BUILDER buildPdfData] tng_transactions query error:', tngErr?.message ?? 'none')
       console.log('[PDF-BUILDER buildPdfData] tngRows:', JSON.stringify(tngRows ?? []))
 
-      const tngMap: Record<string, { trans_no: string | null; source_file_url: string | null }> = {}
+      const tngMap: Record<string, { trans_no: string | null; source_file_url: string | null; amount: number | null }> = {}
       for (const t of tngRows ?? []) tngMap[t.id] = t
 
-      const stmtMap = new Map<string | null, string[]>()
+      const stmtMap = new Map<string | null, { trans_nos: string[]; items: Array<{ trans_no: string; amount: string }> }>()
       for (const item of allItems) {
         const tngId = itemToTngId[item.id]
         if (!tngId) continue
@@ -325,8 +326,13 @@ export async function buildPdfData(
         if (tng.trans_no) item.description = `${item.description}  [TNG #${tng.trans_no}]`
 
         const key = tng.source_file_url ?? null
-        if (!stmtMap.has(key)) stmtMap.set(key, [])
-        if (tng.trans_no) stmtMap.get(key)!.push(tng.trans_no)
+        if (!stmtMap.has(key)) stmtMap.set(key, { trans_nos: [], items: [] })
+        if (tng.trans_no) {
+          stmtMap.get(key)!.trans_nos.push(tng.trans_no)
+          // Format amount to 2 decimal places to match exact PDF text (e.g. "11.64")
+          const amountStr = tng.amount != null ? Number(tng.amount).toFixed(2) : ''
+          stmtMap.get(key)!.items.push({ trans_no: tng.trans_no, amount: amountStr })
+        }
 
         console.log(`[PDF-BUILDER buildPdfData] item ${item.id} (${item.type}):`,
           `tng_id=${tngId}`,
@@ -335,10 +341,10 @@ export async function buildPdfData(
         )
       }
 
-      for (const [path, trans_nos] of stmtMap.entries()) {
-        tngStatements.push({ path: path as string | null, trans_nos })
+      for (const [path, { trans_nos, items }] of stmtMap.entries()) {
+        tngStatements.push({ path: path as string | null, trans_nos, items })
         console.log('[PDF-BUILDER buildPdfData] tngStatement added:',
-          { path: path ?? '(null)', trans_nos })
+          { path: path ?? '(null)', trans_nos, items })
       }
     }
   }
@@ -899,11 +905,11 @@ async function mergeTngStatements(
     let highlightedBuf = stmtBuf
 
     if (stmt.trans_nos.length > 0) {
-      console.log(`  Calling highlightTransNos with trans_nos: [${stmt.trans_nos.join(', ')}]`)
+      console.log(`  Calling highlightTransNos with items:`, stmt.items)
       console.log(`  SCAN_API_URL = "${process.env.SCAN_API_URL ?? '(NOT SET)'}"`)
 
       try {
-        highlightedBuf = await highlightTransNos(stmtBuf, stmt.trans_nos)
+        highlightedBuf = await highlightTransNos(stmtBuf, stmt.items)
         const changed = highlightedBuf !== stmtBuf && highlightedBuf.length !== stmtBuf.length
         console.log(`  highlightTransNos returned: ${highlightedBuf.length} bytes (changed: ${highlightedBuf !== stmtBuf})`)
         if (!changed) {
