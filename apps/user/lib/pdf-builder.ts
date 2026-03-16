@@ -182,7 +182,7 @@ type PdfClaim = {
 }
 
 type TngStatement = {
-  path:      string
+  path:      string | null   // null when PDF was not saved to storage at import time
   trans_nos: string[]
 }
 
