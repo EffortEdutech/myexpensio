@@ -5,14 +5,18 @@ import TemplatesClient from './TemplatesClient'
 export default async function TemplatesPage() {
   const db = createServiceRoleClient()
 
-  const [tplRes, orgsRes] = await Promise.all([
+  const [tplRes, assignRes, orgsRes] = await Promise.all([
+    // Global template library
     db.from('report_templates')
-      .select(`
-        id, org_id, name, description, schema,
-        is_active, is_default, created_at, updated_at,
-        organizations ( name )
-      `)
-      .order('created_at', { ascending: true }),
+      .select('id, name, description, schema, is_active, created_at, updated_at')
+      .order('name', { ascending: true }),
+
+    // All assignments (all orgs)
+    db.from('org_template_assignments')
+      .select('org_id, template_id, is_default, assigned_at')
+      .order('assigned_at', { ascending: true }),
+
+    // Active organisations
     db.from('organizations')
       .select('id, name')
       .eq('status', 'ACTIVE')
@@ -21,7 +25,8 @@ export default async function TemplatesPage() {
 
   return (
     <TemplatesClient
-      initialTemplates={tplRes.data ?? []}
+      initialTemplates={tplRes.data   ?? []}
+      initialAssignments={assignRes.data ?? []}
       orgs={orgsRes.data ?? []}
     />
   )

@@ -1,6 +1,6 @@
 // apps/admin/app/api/admin/templates/route.ts
-// GET  — all templates across all orgs
-// POST — create template for any org (includes pdf_layout in schema)
+// GET  — all templates in the global library
+// POST — create a new global template (no org_id — assign to orgs separately)
 
 import { NextResponse } from 'next/server'
 import { requireAdminAuth } from '@/lib/auth'
@@ -8,7 +8,6 @@ import { createServiceRoleClient } from '@/lib/supabase/server'
 import { PRESET_COLUMNS, resolveColumns } from '@/lib/export-columns'
 import type { ExportColumnKey, ColumnPreset } from '@/lib/export-columns'
 
-// ── Default PDF layout (must match DEFAULT_PDF_LAYOUT in TemplateEditor.tsx) ──
 const DEFAULT_PDF_LAYOUT = {
   orientation:           'portrait',
   grouping:              'BY_DATE',
@@ -23,23 +22,25 @@ function err(code: string, msg: string, s: number) {
   return NextResponse.json({ error: { code, message: msg } }, { status: s })
 }
 
+// ── GET — full template library ────────────────────────────────────────────────
+
 export async function GET() {
   const ctx = await requireAdminAuth('api')
   if (!ctx) return err('UNAUTHORIZED', 'Access denied', 403)
 
   const db = createServiceRoleClient()
+
   const { data, error } = await db
     .from('report_templates')
-    .select(`
-      id, org_id, name, description, schema,
-      is_active, is_default, created_by, created_at, updated_at,
-      organizations ( name )
-    `)
-    .order('created_at', { ascending: true })
+    .select('id, name, description, schema, is_active, created_by, created_at, updated_at')
+    .order('name', { ascending: true })
 
   if (error) return err('DB_ERROR', error.message, 500)
-  return NextResponse.json({ templates: data })
+  return NextResponse.json({ templates: data ?? [] })
 }
+
+// ── POST — create a template in the global library ─────────────────────────────
+// After creation, assign it to orgs via POST /api/admin/assignments
 
 export async function POST(req: Request) {
   const ctx = await requireAdminAuth('api')
@@ -48,8 +49,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null)
   if (!body) return err('VALIDATION_ERROR', 'Body required', 400)
 
-  const { org_id, name, description, preset, columns, pdf_layout, is_default } = body
-  if (!org_id)    return err('VALIDATION_ERROR', 'org_id required', 400)
+  const { name, description, preset, columns, pdf_layout } = body
   if (!name?.trim()) return err('VALIDATION_ERROR', 'name required', 400)
 
   const validPresets: ColumnPreset[] = ['STANDARD', 'COMPLETE', 'ORIGINAL_HIGHLIGHT']
@@ -59,14 +59,10 @@ export async function POST(req: Request) {
     ? resolveColumns({ preset: resolvedPreset, columns })
     : PRESET_COLUMNS[resolvedPreset === 'ORIGINAL_HIGHLIGHT' ? 'COMPLETE' : resolvedPreset]
 
-  // Merge pdf_layout with defaults so missing fields are always present
-  const resolvedPdfLayout = {
-    ...DEFAULT_PDF_LAYOUT,
-    ...(pdf_layout ?? {}),
-  }
+  const resolvedPdfLayout = { ...DEFAULT_PDF_LAYOUT, ...(pdf_layout ?? {}) }
 
   const schema = {
-    version:    2,              // bumped to 2 to indicate pdf_layout is present
+    version:    2,
     preset:     resolvedPreset,
     columns:    resolvedColumns,
     pdf_layout: resolvedPdfLayout,
@@ -74,26 +70,20 @@ export async function POST(req: Request) {
 
   const db = createServiceRoleClient()
 
-  if (is_default) {
-    await db.from('report_templates').update({ is_default: false }).eq('org_id', org_id)
-  }
-
   const { data: template, error } = await db
     .from('report_templates')
     .insert({
-      org_id,
       name:        name.trim(),
       description: description?.trim() ?? null,
       schema,
       is_active:   true,
-      is_default:  is_default === true,
       created_by:  ctx.userId,
     })
-    .select(`id, org_id, name, description, schema, is_active, is_default, created_at, updated_at, organizations(name)`)
+    .select('id, name, description, schema, is_active, created_at, updated_at')
     .single()
 
   if (error) {
-    if (error.code === '23505') return err('CONFLICT', `Template "${name.trim()}" already exists`, 409)
+    if (error.code === '23505') return err('CONFLICT', `Template "${name.trim()}" already exists in the library`, 409)
     return err('DB_ERROR', error.message, 500)
   }
 
@@ -107,7 +97,7 @@ export async function POST(req: Request) {
   )
 
   await db.from('audit_logs').insert({
-    org_id,
+    org_id:        null,   // global template — not org-specific
     actor_user_id: ctx.userId,
     entity_type:   'report_template',
     entity_id:     template.id,
