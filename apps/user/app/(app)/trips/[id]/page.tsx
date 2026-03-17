@@ -344,18 +344,18 @@ export default function TripDetailPage() {
                   <ReceiptUploader
                     label="📷 Start Reading"
                     purpose="ODOMETER"
-                    existingUrl={odoStartUrl}
+                    storagePath={odoStartUrl}
                     onUploaded={path => handlePhotoUploaded('odometer_start_url', path)}
-                    compact
+
                   />
                 )}
                 {(odoEndUrl || odoStartUrl) && (
                   <ReceiptUploader
                     label="📷 End Reading"
                     purpose="ODOMETER"
-                    existingUrl={odoEndUrl}
+                    storagePath={odoEndUrl}
                     onUploaded={path => handlePhotoUploaded('odometer_end_url', path)}
-                    compact
+
                   />
                 )}
               </div>
@@ -415,16 +415,16 @@ export default function TripDetailPage() {
                 <ReceiptUploader
                   label="📷 Start Reading"
                   purpose="ODOMETER"
-                  existingUrl={odoStartUrl}
+                  storagePath={odoStartUrl}
                   onUploaded={path => handlePhotoUploaded('odometer_start_url', path)}
-                  compact
+
                 />
                 <ReceiptUploader
                   label="📷 End Reading"
                   purpose="ODOMETER"
-                  existingUrl={odoEndUrl}
+                  storagePath={odoEndUrl}
                   onUploaded={path => handlePhotoUploaded('odometer_end_url', path)}
-                  compact
+
                 />
               </div>
             )}
