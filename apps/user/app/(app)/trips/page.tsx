@@ -1,7 +1,9 @@
 // apps/user/app/(app)/trips/page.tsx
 // Trips list — Server Component.
-// Shows all trips for the user's org, newest first.
-// Two floating action buttons: Start Trip (GPS) + Mileage Calculator (Route).
+// Three floating action buttons:
+//   ▶ Start GPS Trip   (was "Start Trip")
+//   🔢 Odometer Trip   (NEW)
+//   📐 Mileage Calculator
 
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
@@ -25,8 +27,6 @@ type Trip = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-// Always render in Malaysia time (UTC+8) regardless of server timezone.
-// Vercel servers run UTC — without explicit timeZone, times show UTC not MYR.
 const MY_TZ = 'Asia/Kuala_Lumpur'
 
 function fmtDate(iso: string | null): string {
@@ -44,6 +44,7 @@ function fmtTime(iso: string | null): string {
     hour: '2-digit', minute: '2-digit',
   })
 }
+
 const SOURCE_BADGE: Record<string, { label: string; bg: string; color: string }> = {
   GPS:               { label: 'GPS',       bg: '#f0fdf4', color: '#16a34a' },
   SELECTED_ROUTE:    { label: 'Route',     bg: '#eff6ff', color: '#2563eb' },
@@ -51,14 +52,23 @@ const SOURCE_BADGE: Record<string, { label: string; bg: string; color: string }>
 }
 
 function TripCard({ trip }: { trip: Trip }) {
-  const badge     = SOURCE_BADGE[trip.distance_source ?? '']
-  const isDraft   = trip.status === 'DRAFT'
-  const modeIcon  = trip.calculation_mode === 'GPS_TRACKING' ? '📍' : '🗺'
-  const title     = trip.origin_text && trip.destination_text
-    ? `${trip.origin_text} → ${trip.destination_text}`
-    : trip.calculation_mode === 'GPS_TRACKING'
-      ? 'GPS Trip'
-      : 'Planned Trip'
+  const badge   = SOURCE_BADGE[trip.distance_source ?? '']
+  const isDraft = trip.status === 'DRAFT'
+
+  // ── Icon: GPS = 📍, Odometer Override = 📏, Route = 🗺 ──────────────────
+  const modeIcon =
+    trip.calculation_mode === 'GPS_TRACKING'       ? '📍'
+    : trip.distance_source === 'ODOMETER_OVERRIDE' ? '📏'
+    : '🗺'
+
+  const title =
+    trip.origin_text && trip.destination_text
+      ? `${trip.origin_text} → ${trip.destination_text}`
+      : trip.calculation_mode === 'GPS_TRACKING'
+        ? 'GPS Trip'
+        : trip.distance_source === 'ODOMETER_OVERRIDE'
+          ? 'Odometer Trip'
+          : 'Planned Trip'
 
   return (
     <Link href={`/trips/${trip.id}`} style={S.card}>
@@ -80,20 +90,20 @@ function TripCard({ trip }: { trip: Trip }) {
         <div style={S.cardMeta}>
           <span>{fmtDate(trip.started_at)}</span>
           <span style={{ color: '#cbd5e1' }}>·</span>
-          <span>{fmtTime(trip.started_at)}{trip.ended_at ? ` – ${fmtTime(trip.ended_at)}` : ''}</span>
+          <span>{fmtTime(trip.started_at)}{trip.ended_at ? ` → ${fmtTime(trip.ended_at)}` : ''}</span>
         </div>
         <div style={S.cardFooter}>
-          <span style={S.distanceText}>
-            {isDraft ? 'Recording…' : fmtKm(trip.final_distance_m)}
-          </span>
+          {trip.final_distance_m != null && (
+            <span style={S.distanceText}>{fmtKm(trip.final_distance_m)}</span>
+          )}
           {trip.odometer_mode && trip.odometer_mode !== 'NONE' && (
             <span style={S.odoTag}>
-              {trip.odometer_mode === 'OVERRIDE' ? '⊙ Override' : '⊙ Evidence'}
+              {trip.odometer_mode === 'OVERRIDE' ? '📏 Override' : '📷 Evidence'}
             </span>
           )}
         </div>
       </div>
-      <div style={S.cardArrow}>›</div>
+      <span style={S.cardArrow}>›</span>
     </Link>
   )
 }
@@ -102,11 +112,9 @@ function TripCard({ trip }: { trip: Trip }) {
 
 export default async function TripsPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const org = await getActiveOrg()
+  const org      = await getActiveOrg()
 
   let trips: Trip[] = []
-
   if (org) {
     const { data } = await supabase
       .from('trips')
@@ -118,38 +126,39 @@ export default async function TripsPage() {
       .eq('org_id', org.org_id)
       .order('started_at', { ascending: false })
       .limit(50)
-
     trips = (data ?? []) as Trip[]
   }
 
-  const inProgress = trips.filter(t => t.status === 'DRAFT')
+  const inProgress = trips.filter(t => t.status === 'DRAFT' && t.calculation_mode === 'GPS_TRACKING')
 
   return (
     <div style={S.page}>
 
-      {/* ── Header ───────────────────────────────────────────────────── */}
+      {/* Header */}
       <div style={S.header}>
-        <h1 style={S.title}>Trips</h1>
-        <span style={S.count}>{trips.length} total</span>
+        <h1 style={S.title}>My Trips</h1>
+        {trips.length > 0 && (
+          <span style={S.count}>{trips.length} trip{trips.length !== 1 ? 's' : ''}</span>
+        )}
       </div>
 
-      {/* ── Active trip banner ───────────────────────────────────────── */}
+      {/* Active GPS trip banner */}
       {inProgress.length > 0 && (
         <Link href={`/trips/start?resume=${inProgress[0].id}`} style={S.activeBanner}>
           <span style={S.activeGlow} />
-          <span style={S.activeBannerText}>
-            🔴 Trip in progress — tap to return
-          </span>
+          <span style={S.activeBannerText}>GPS trip in progress — tap to return</span>
           <span>›</span>
         </Link>
       )}
 
-      {/* ── List ─────────────────────────────────────────────────────── */}
+      {/* Trip list */}
       {trips.length === 0 ? (
         <div style={S.empty}>
           <span style={{ fontSize: 36 }}>🗺</span>
           <p style={S.emptyTitle}>No trips yet</p>
-          <p style={S.emptyText}>Start a GPS trip or use the Mileage Calculator to record a route.</p>
+          <p style={S.emptyText}>
+            Start a GPS trip, enter an odometer reading, or use the Mileage Calculator.
+          </p>
         </div>
       ) : (
         <div style={S.list}>
@@ -157,15 +166,27 @@ export default async function TripsPage() {
         </div>
       )}
 
-      {/* ── Floating actions ─────────────────────────────────────────── */}
+      {/* ── Floating action buttons ──────────────────────────────────────── */}
       <div style={S.fab}>
-        <Link href="/trips/plan" style={S.fabSecondary}>📐 Mileage Calculator</Link>
+        {/* Bottom (tertiary): Mileage Calculator */}
+        <Link href="/trips/plan" style={S.fabTertiary}>
+          📐 Mileage Calculator
+        </Link>
+
+        {/* Middle (secondary): Odometer Trip */}
+        <Link href="/trips/odometer" style={S.fabSecondary}>
+          📏 Odometer Trip
+        </Link>
+
+        {/* Top (primary): Start GPS Trip — or resume if one in progress */}
         {inProgress.length > 0 ? (
           <Link href={`/trips/start?resume=${inProgress[0].id}`} style={S.fabPrimary}>
             🔴 Return to Tracker
           </Link>
         ) : (
-          <Link href="/trips/start" style={S.fabPrimary}>▶ Start Trip</Link>
+          <Link href="/trips/start" style={S.fabPrimary}>
+            ▶ Start GPS Trip
+          </Link>
         )}
       </div>
 
@@ -176,7 +197,7 @@ export default async function TripsPage() {
 // ── Styles ─────────────────────────────────────────────────────────────────
 
 const S: Record<string, React.CSSProperties> = {
-  page:    { display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 80 },
+  page:    { display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 100 },
   header:  { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' },
   title:   { fontSize: 22, fontWeight: 800, color: '#0f172a', margin: 0 },
   count:   { fontSize: 13, color: '#94a3b8' },
@@ -202,7 +223,10 @@ const S: Record<string, React.CSSProperties> = {
   cardIcon:     { fontSize: 22 },
   cardBody:     { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 },
   cardRow:      { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  cardTitle:    { fontSize: 14, fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  cardTitle: {
+    fontSize: 14, fontWeight: 600, color: '#0f172a',
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
   cardMeta:     { display: 'flex', gap: 6, fontSize: 11, color: '#94a3b8' },
   cardFooter:   { display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 },
   distanceText: { fontSize: 13, fontWeight: 700, color: '#0f172a' },
@@ -217,21 +241,37 @@ const S: Record<string, React.CSSProperties> = {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
     gap: 8, padding: '48px 16px', textAlign: 'center',
   },
-  emptyTitle:   { fontSize: 16, fontWeight: 700, color: '#0f172a', margin: 0 },
-  emptyText:    { fontSize: 13, color: '#64748b', margin: 0, lineHeight: 1.6 },
+  emptyTitle: { fontSize: 16, fontWeight: 700, color: '#0f172a', margin: 0 },
+  emptyText:  { fontSize: 13, color: '#64748b', margin: 0, lineHeight: 1.6 },
+
+  // FAB stack — 3 buttons, right-aligned, stacked bottom to top
+  // All same padding + shape. Colors only differ.
   fab: {
     position: 'fixed', bottom: 80, right: 16,
     display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end',
   },
   fabPrimary: {
-    padding: '12px 20px', backgroundColor: '#0f172a', color: '#fff',
-    borderRadius: 24, textDecoration: 'none', fontSize: 14, fontWeight: 700,
-    boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+    padding: '12px 20px',
+    backgroundColor: '#0f172a', color: '#fff',
+    borderRadius: 24, textDecoration: 'none',
+    fontSize: 14, fontWeight: 700,
+    boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+    whiteSpace: 'nowrap' as const,
   },
   fabSecondary: {
-    padding: '10px 18px', backgroundColor: '#fff', color: '#0f172a',
-    border: '1.5px solid #e2e8f0', borderRadius: 24,
-    textDecoration: 'none', fontSize: 13, fontWeight: 600,
-    boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+    padding: '12px 20px',
+    backgroundColor: '#ca8a04', color: '#fff',
+    borderRadius: 24, textDecoration: 'none',
+    fontSize: 14, fontWeight: 700,
+    boxShadow: '0 4px 16px rgba(202,138,4,0.25)',
+    whiteSpace: 'nowrap' as const,
+  },
+  fabTertiary: {
+    padding: '12px 20px',
+    backgroundColor: '#2563eb', color: '#fff',
+    borderRadius: 24, textDecoration: 'none',
+    fontSize: 14, fontWeight: 700,
+    boxShadow: '0 4px 16px rgba(37,99,235,0.25)',
+    whiteSpace: 'nowrap' as const,
   },
 }
