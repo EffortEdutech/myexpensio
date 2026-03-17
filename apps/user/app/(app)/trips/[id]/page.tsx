@@ -343,6 +343,7 @@ export default function TripDetailPage() {
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <ReceiptUploader
+                key={`odo-start-${odoStartUrl ?? 'empty'}`}
                 label="📷 Start Reading"
                 purpose="ODOMETER"
                 storagePath={odoStartUrl}
@@ -350,6 +351,7 @@ export default function TripDetailPage() {
                 enableScan={true}
               />
               <ReceiptUploader
+                key={`odo-end-${odoEndUrl ?? 'empty'}`}
                 label="📷 End Reading"
                 purpose="ODOMETER"
                 storagePath={odoEndUrl}
@@ -410,6 +412,7 @@ export default function TripDetailPage() {
                 )}
 
                 <ReceiptUploader
+                  key={`odo-start-${odoStartUrl ?? 'empty'}`}
                   label="📷 Start Reading"
                   purpose="ODOMETER"
                   storagePath={odoStartUrl}
@@ -417,6 +420,7 @@ export default function TripDetailPage() {
                   enableScan={true}
                 />
                 <ReceiptUploader
+                  key={`odo-end-${odoEndUrl ?? 'empty'}`}
                   label="📷 End Reading"
                   purpose="ODOMETER"
                   storagePath={odoEndUrl}
