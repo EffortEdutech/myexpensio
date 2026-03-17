@@ -334,34 +334,31 @@ export default function TripDetailPage() {
       {/* ── CHANGE 2: Odometer trips — photo viewer only, no mode selector */}
       {/* GPS/Route trips — full editable NONE/EVIDENCE_ONLY/OVERRIDE      */}
       {isOdometer ? (
-        // Odometer Trip: just show the attached photos (read-only, can update)
-        (odoStartUrl || odoEndUrl) && (
-          <SectionCard>
-            <div style={{ padding: '14px 18px' }}>
-              <SectionTitle>Odometer Photos</SectionTitle>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
-                {(odoStartUrl || !odoEndUrl) && (
-                  <ReceiptUploader
-                    label="📷 Start Reading"
-                    purpose="ODOMETER"
-                    storagePath={odoStartUrl}
-                    onUploaded={path => handlePhotoUploaded('odometer_start_url', path)}
-
-                  />
-                )}
-                {(odoEndUrl || odoStartUrl) && (
-                  <ReceiptUploader
-                    label="📷 End Reading"
-                    purpose="ODOMETER"
-                    storagePath={odoEndUrl}
-                    onUploaded={path => handlePhotoUploaded('odometer_end_url', path)}
-
-                  />
-                )}
-              </div>
+        // Odometer Trip: always show both photo slots — user can add/replace after creation
+        <SectionCard>
+          <div style={{ padding: '14px 18px' }}>
+            <SectionTitle>Odometer Photos</SectionTitle>
+            <p style={{ margin: '0 0 12px', fontSize: 13, color: '#64748b', lineHeight: 1.5 }}>
+              Attach start and end odometer readings as audit evidence.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <ReceiptUploader
+                label="📷 Start Reading"
+                purpose="ODOMETER"
+                storagePath={odoStartUrl}
+                onUploaded={path => handlePhotoUploaded('odometer_start_url', path)}
+                enableScan={true}
+              />
+              <ReceiptUploader
+                label="📷 End Reading"
+                purpose="ODOMETER"
+                storagePath={odoEndUrl}
+                onUploaded={path => handlePhotoUploaded('odometer_end_url', path)}
+                enableScan={true}
+              />
             </div>
-          </SectionCard>
-        )
+          </div>
+        </SectionCard>
       ) : (
         // GPS / Route Trip: full odometer evidence editor
         <SectionCard>
@@ -417,14 +414,14 @@ export default function TripDetailPage() {
                   purpose="ODOMETER"
                   storagePath={odoStartUrl}
                   onUploaded={path => handlePhotoUploaded('odometer_start_url', path)}
-
+                  enableScan={true}
                 />
                 <ReceiptUploader
                   label="📷 End Reading"
                   purpose="ODOMETER"
                   storagePath={odoEndUrl}
                   onUploaded={path => handlePhotoUploaded('odometer_end_url', path)}
-
+                  enableScan={true}
                 />
               </div>
             )}
