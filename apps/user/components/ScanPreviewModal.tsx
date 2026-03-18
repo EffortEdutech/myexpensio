@@ -352,7 +352,7 @@ export function ScanPreviewModal({
 
 
       // Decode result base64 → Blob
-      const binary  = atob(json.result)
+      const binary  = atob(json.result as string)
       const bytes   = new Uint8Array(binary.length)
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
       const rBlob   = new Blob([bytes], { type: 'image/jpeg' })
@@ -362,7 +362,7 @@ export function ScanPreviewModal({
       enhUrlRef.current = url
       setEnhancedUrl(url)
       setEnhancedBlob(rBlob)
-      setAppliedOps(json.applied ?? [])
+      setAppliedOps((json.applied as string[]) ?? [])
       setEnhState('DONE')
       setViewMode('ENHANCED')
     } catch (e: unknown) {
