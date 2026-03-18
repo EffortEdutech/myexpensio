@@ -154,14 +154,62 @@ def enhance_receipt(img: np.ndarray, corners: list[list[float]] | None) -> tuple
     return out, applied
 
 def enhance_odometer(img: np.ndarray) -> tuple[np.ndarray, list[str]]:
+    """
+    Odometer image enhancement pipeline v2.
+ 
+    Problem with v1:
+      CLAHE clipLimit=3.0 amplifies local contrast *including* sensor noise.
+      The direct sharpening kernel [[-1,-1,-1],[-1,9,-1],[-1,-1,-1]] then
+      multiplies that amplified noise by ~8x relative strength → white dots.
+ 
+    v2 approach — denoise FIRST, then enhance:
+ 
+    1. Bilateral filter (color)
+       Edge-preserving denoiser: weights nearby pixels by both spatial
+       distance AND color similarity. Smooths uniform areas (background,
+       digit faces) while keeping hard edges (digit outlines) sharp.
+       Applied on the color image before any grayscale conversion so it
+       has full color channel information to judge similarity.
+ 
+    2. Gentle CLAHE (clipLimit 2.0, not 3.0)
+       After bilateral the noise floor is low, so we can safely enhance
+       local contrast. Lower clipLimit means less redistribution of the
+       histogram → less chance of amplifying residual noise.
+ 
+    3. Unsharp mask via Gaussian subtraction
+       result = original + amount * (original - blurred)
+       = 1.3 * original - 0.3 * blurred
+       Adds 30% of high-frequency detail (digit edges).
+       This is mathematically bounded — it cannot create values outside
+       the existing dynamic range in the way the direct kernel can.
+       No white dot artifacts.
+    """
     applied = []
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    gray = clahe.apply(gray)
+ 
+    # Step 1: Bilateral denoise on the color image
+    # d=9      — neighbourhood diameter (pixels)
+    # sigmaColor=75 — colour distance tolerance (0–255); 75 accepts pixels
+    #                  within ~30% brightness difference as "same region"
+    # sigmaSpace=75 — spatial distance tolerance; similar to Gaussian sigma
+    denoised = cv2.bilateralFilter(img, d=9, sigmaColor=75, sigmaSpace=75)
+    applied.append("denoise")
+ 
+    # Step 2: Grayscale
+    gray = cv2.cvtColor(denoised, cv2.COLOR_BGR2GRAY)
+ 
+    # Step 3: Gentle CLAHE
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray  = clahe.apply(gray)
     applied.append("clahe")
-    kernel = np.array([[-1,-1,-1], [-1, 9,-1], [-1,-1,-1]])
-    gray = cv2.filter2D(gray, -1, kernel)
-    applied.append("strong_sharpen")
+ 
+    # Step 4: Unsharp mask
+    # gaussian captures the low-frequency (blurry) content.
+    # Subtracting it from the original isolates the high-frequency detail.
+    # Adding 30% of that detail back sharpens edges without amplifying noise.
+    gaussian = cv2.GaussianBlur(gray, (0, 0), sigmaX=2.0)
+    gray     = cv2.addWeighted(gray, 1.3, gaussian, -0.3, 0)
+    applied.append("unsharp_mask")
+ 
     out = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
     return out, applied
 
