@@ -26,6 +26,40 @@ type Props = {
 const HANDLE_R     = 24            // handle touch radius on canvas (px)
 const CORNER_LABEL = ['TL','TR','BR','BL']
 
+// Compress image before sending to scan service.
+// Raw camera photos (3–8 MB) exceed the Next.js body size limit when
+// base64-encoded. Resize to max 1600px long edge, 80% JPEG quality.
+async function compressForEnhance(blob: Blob): Promise<Blob> {
+  const MAX_LONG_EDGE = 1600
+  const QUALITY       = 0.80
+  return new Promise((resolve) => {
+    const img = new Image()
+    const url = URL.createObjectURL(blob)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      let { width, height } = img
+      if (width > MAX_LONG_EDGE || height > MAX_LONG_EDGE) {
+        if (width >= height) { height = Math.round(height * MAX_LONG_EDGE / width);  width  = MAX_LONG_EDGE }
+        else                 { width  = Math.round(width  * MAX_LONG_EDGE / height); height = MAX_LONG_EDGE }
+      }
+      const canvas      = document.createElement('canvas')
+      canvas.width      = width
+      canvas.height     = height
+      const ctx         = canvas.getContext('2d')
+      if (!ctx) { resolve(blob); return }   // fallback: send original
+      ctx.drawImage(img, 0, 0, width, height)
+      canvas.toBlob(
+        result => resolve(result ?? blob),
+        'image/jpeg',
+        QUALITY,
+      )
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(blob) }  // fallback
+    img.src = url
+  })
+}
+
+
 export function ScanPreviewModal({
   blob,
   purpose = 'RECEIPT',
@@ -293,18 +327,22 @@ export function ScanPreviewModal({
 
   // ── Enhance — send image + corners to Python API ──────────────────────────
   const handleEnhance = useCallback(async () => {
-    setEnhState('PROCESSING')
-    setEnhError(null)
+      setEnhState('PROCESSING')
+      setEnhError(null)
 
-    try {
-      // Read blob as base64
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader   = new FileReader()
-        reader.onload  = () => resolve((reader.result as string).split(',')[1] ?? '')
-        reader.onerror = () => reject(new Error('Could not read image.'))
-        reader.readAsDataURL(blob)
-      })
+      try {
+        // Compress before base64 — raw camera photos are 3–8 MB which exceeds
+        // the Next.js body size limit when base64-encoded (~4.5 MB cap).
+        // Resize to max 1600px long edge at 80% JPEG quality → typically 150–400 KB.
+        const compressed = await compressForEnhance(blob)
 
+        // Read compressed blob as base64
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader   = new FileReader()
+          reader.onload  = () => resolve((reader.result as string).split(',')[1] ?? '')
+          reader.onerror = () => reject(new Error('Could not read image.'))
+          reader.readAsDataURL(compressed)
+        })
       const payload: Record<string, unknown> = { image: base64, mode }
 
       // Send user-defined corners for RECEIPT
