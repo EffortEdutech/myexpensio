@@ -315,14 +315,41 @@ export function ScanPreviewModal({
         )
       }
 
+
       const res  = await fetch('/api/scan/process', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(payload),
       })
+ 
+      // Always read as text first — if any layer (Next.js, Render.com, nginx)
+      // returns a non-JSON response (e.g. "Request Entity Too Large", cold-start
+      // HTML page, 502 Bad Gateway), res.json() would throw the raw JS parse
+      // error ("unexpected token 'R'") which is unintelligible to the user.
+      const rawText = await res.text()
+      let json: Record<string, unknown>
+      try {
+        json = JSON.parse(rawText) as Record<string, unknown>
+      } catch {
+        if (res.status === 413) {
+          throw new Error('Image is too large. Try a smaller photo and tap Retry.')
+        }
+        if (res.status === 503 || res.status === 502) {
+          throw new Error('Scan service is starting up. Please wait a moment and tap Retry.')
+        }
+        if (res.status === 504) {
+          throw new Error('Scan service timed out. Please tap Retry in a moment.')
+        }
+        throw new Error(`Scan service error (HTTP ${res.status}). Please tap Retry.`)
+      }
+      if (!res.ok) {
+        throw new Error(
+          (json?.error as { message?: string } | undefined)?.message
+          ?? (json?.detail as string | undefined)
+          ?? `Scan service error (HTTP ${res.status}).`
+        )
+      }
 
-      const json = await res.json()
-      if (!res.ok) throw new Error(json?.error?.message ?? `Error ${res.status}`)
 
       // Decode result base64 → Blob
       const binary  = atob(json.result)

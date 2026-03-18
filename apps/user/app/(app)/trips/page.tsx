@@ -252,7 +252,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   fabPrimary: {
     padding: '12px 20px',
-    backgroundColor: 'rgba(15,23,42,0.25)',
+    backgroundColor: 'rgba(15,23,42,0.5)',
     backdropFilter: 'blur(8px)',
     color: '#fff',
     borderRadius: 24, textDecoration: 'none',
@@ -262,7 +262,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   fabSecondary: {
     padding: '12px 20px',
-    backgroundColor: 'rgba(202,138,4,0.25)',
+    backgroundColor: 'rgba(202,138,4,0.5)',
     backdropFilter: 'blur(8px)',
     color: '#fff',
     borderRadius: 24, textDecoration: 'none',
@@ -272,7 +272,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   fabTertiary: {
     padding: '12px 20px',
-    backgroundColor: 'rgba(37,99,235,0.25)',
+    backgroundColor: 'rgba(37,99,235,0.5)',
     backdropFilter: 'blur(8px)',
     color: '#fff',
     borderRadius: 24, textDecoration: 'none',

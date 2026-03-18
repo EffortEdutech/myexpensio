@@ -375,7 +375,7 @@ export default function TripDetailPage() {
                 <label key={m} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
                   <input type="radio" name="odo_mode" value={m}
                     checked={odoMode === m}
-                    onChange={() => { setOdoMode(m); if (m !== 'OVERRIDE') setOdoDistKm(''); setOdoStartUrl(null); setOdoEndUrl(null) }}
+                    onChange={() => { setOdoMode(m); if (m !== 'OVERRIDE') setOdoDistKm('') }}
                     style={{ marginTop: 2, accentColor: '#0f172a' }}
                   />
                   <div>
