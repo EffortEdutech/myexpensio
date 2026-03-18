@@ -1,5 +1,5 @@
 # scan_service/main.py
-# Version: 5.3.0
+# Version: 5.2.0
 #
 # Endpoints:
 #   POST /process        — Receipt/Odometer image enhancement (OpenCV)
@@ -11,8 +11,8 @@
 #   corners provided by user → warpPerspective → CLAHE → sharpen
 #   no corners              → CLAHE → sharpen (no warp)
 #
-# ODOMETER pipeline (v5.3):
-#   detect ROI → crop → scene classify → branch enhancement → digit boost
+# ODOMETER pipeline:
+#   CLAHE → strong sharpen
 #
 # TNG PARSE pipeline:
 #   Accept base64-encoded PDF bytes → pdfplumber table extraction
@@ -60,7 +60,7 @@ MYT = timezone(timedelta(hours=8))  # Malaysia Time (UTC+8)
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="myexpensio-scan", version="5.3.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="myexpensio-scan", version="5.2.0", docs_url=None, redoc_url=None)
 
 app.add_middleware(
     CORSMiddleware,
@@ -81,10 +81,10 @@ def verify_secret(x_scan_secret: str = Header(default="")) -> None:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "myexpensio-scan", "version": "5.3.0"}
+    return {"status": "ok", "service": "myexpensio-scan", "version": "5.2.0"}
 
 # ═════════════════════════════════════════════════════════════════════════════
-# IMAGE PROCESSING (v5.3 — odometer ROI + scene-aware enhancement)
+# IMAGE PROCESSING (unchanged from v5.1)
 # ═════════════════════════════════════════════════════════════════════════════
 
 class ProcessRequest(BaseModel):
@@ -98,7 +98,6 @@ class ProcessResponse(BaseModel):
     width:   int
     height:  int
 
-
 def b64_to_cv(b64: str) -> np.ndarray:
     if "," in b64:
         b64 = b64.split(",", 1)[1]
@@ -109,13 +108,11 @@ def b64_to_cv(b64: str) -> np.ndarray:
         raise ValueError("Could not decode image.")
     return img
 
-
 def cv_to_b64(img: np.ndarray, quality: int = 92) -> str:
     ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, quality])
     if not ok:
         raise ValueError("Could not encode image.")
     return base64.b64encode(buf.tobytes()).decode("utf-8")
-
 
 def order_corners(pts: np.ndarray) -> np.ndarray:
     rect = np.zeros((4, 2), dtype="float32")
@@ -127,7 +124,6 @@ def order_corners(pts: np.ndarray) -> np.ndarray:
     rect[3] = pts[np.argmax(diff)]
     return rect
 
-
 def four_point_transform(img: np.ndarray, pts: np.ndarray) -> np.ndarray:
     rect = order_corners(pts)
     (tl, tr, br, bl) = rect
@@ -137,368 +133,9 @@ def four_point_transform(img: np.ndarray, pts: np.ndarray) -> np.ndarray:
     hA   = np.sqrt(((tr[0]-br[0])**2) + ((tr[1]-br[1])**2))
     hB   = np.sqrt(((tl[0]-bl[0])**2) + ((tl[1]-bl[1])**2))
     maxH = max(int(hA), int(hB))
-    maxW = max(maxW, 1)
-    maxH = max(maxH, 1)
     dst  = np.array([[0,0],[maxW-1,0],[maxW-1,maxH-1],[0,maxH-1]], dtype="float32")
     M    = cv2.getPerspectiveTransform(rect, dst)
     return cv2.warpPerspective(img, M, (maxW, maxH))
-
-
-def gray_to_bgr(gray: np.ndarray) -> np.ndarray:
-    return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
-
-
-def clip_u8(img: np.ndarray) -> np.ndarray:
-    return np.clip(img, 0, 255).astype(np.uint8)
-
-
-def ensure_min_width(img: np.ndarray, min_width: int = 900) -> tuple[np.ndarray, bool]:
-    h, w = img.shape[:2]
-    if w >= min_width:
-        return img, False
-    scale = min_width / max(w, 1)
-    out = cv2.resize(img, (int(round(w * scale)), int(round(h * scale))), interpolation=cv2.INTER_CUBIC)
-    return out, True
-
-
-def gamma_adjust(gray: np.ndarray, gamma: float) -> np.ndarray:
-    gamma = max(gamma, 0.1)
-    table = np.array([((i / 255.0) ** gamma) * 255 for i in range(256)], dtype=np.uint8)
-    return cv2.LUT(gray, table)
-
-
-def unsharp_mask(gray: np.ndarray, sigma: float = 1.6, amount: float = 0.35) -> np.ndarray:
-    blur = cv2.GaussianBlur(gray, (0, 0), sigmaX=sigma)
-    return cv2.addWeighted(gray, 1.0 + amount, blur, -amount, 0)
-
-
-def expand_rect(x: int, y: int, w: int, h: int, shape: tuple[int, int, int], pad_x: float = 0.10, pad_y: float = 0.18) -> tuple[int, int, int, int]:
-    ih, iw = shape[:2]
-    dx = int(round(w * pad_x))
-    dy = int(round(h * pad_y))
-    x0 = max(0, x - dx)
-    y0 = max(0, y - dy)
-    x1 = min(iw, x + w + dx)
-    y1 = min(ih, y + h + dy)
-    return x0, y0, x1, y1
-
-
-def resize_for_detection(img: np.ndarray, max_dim: int = 1600) -> tuple[np.ndarray, float]:
-    h, w = img.shape[:2]
-    long_edge = max(h, w)
-    if long_edge <= max_dim:
-        return img.copy(), 1.0
-    scale = max_dim / float(long_edge)
-    out = cv2.resize(img, (int(round(w * scale)), int(round(h * scale))), interpolation=cv2.INTER_AREA)
-    return out, scale
-
-
-def contour_to_quad(cnt: np.ndarray) -> np.ndarray | None:
-    peri = cv2.arcLength(cnt, True)
-    approx = cv2.approxPolyDP(cnt, 0.03 * peri, True)
-    if len(approx) == 4 and cv2.isContourConvex(approx):
-        return approx.reshape(4, 2).astype(np.float32)
-    return None
-
-
-def score_text_candidate(gray: np.ndarray, bbox: tuple[int, int, int, int], img_shape: tuple[int, int, int]) -> float:
-    x, y, w, h = bbox
-    ih, iw = img_shape[:2]
-    roi = gray[y:y+h, x:x+w]
-    if roi.size == 0:
-        return -1.0
-
-    gx = cv2.Sobel(roi, cv2.CV_32F, 1, 0, ksize=3)
-    gy = cv2.Sobel(roi, cv2.CV_32F, 0, 1, ksize=3)
-    edge_x = float(np.mean(np.abs(gx)))
-    edge_y = float(np.mean(np.abs(gy)))
-    contrast = float(np.std(roi))
-    dynamic = float(np.percentile(roi, 95) - np.percentile(roi, 5))
-
-    rect_area = float(w * h)
-    img_area = float(iw * ih)
-    area_ratio = rect_area / max(img_area, 1.0)
-    aspect = w / max(h, 1)
-    cx = x + w / 2.0
-    cy = y + h / 2.0
-
-    center_bias = 1.0 - min(abs(cx - iw / 2.0) / max(iw / 2.0, 1.0), 1.0)
-    target_y = 0.84 if ih >= 500 else 0.56
-    lower_bias = 1.0 - min(abs(cy - ih * target_y) / max(ih * target_y, 1.0), 1.0)
-    aspect_score = 1.0 - min(abs(aspect - 4.5) / 6.0, 1.0)
-    area_score = 1.0 - min(abs(area_ratio - 0.02) / 0.06, 1.0)
-
-    return (
-        edge_x * 0.60
-        + contrast * 0.45
-        + dynamic * 0.30
-        - edge_y * 0.20
-        + aspect_score * 18.0
-        + area_score * 12.0
-        + center_bias * 6.0
-        + lower_bias * 26.0
-    )
-
-
-def score_window_candidate(gray: np.ndarray, bbox: tuple[int, int, int, int], fill_ratio: float, img_shape: tuple[int, int, int]) -> float:
-    x, y, w, h = bbox
-    ih, iw = img_shape[:2]
-    roi = gray[y:y+h, x:x+w]
-    if roi.size == 0:
-        return -1.0
-
-    contrast = float(np.std(roi))
-    dynamic = float(np.percentile(roi, 95) - np.percentile(roi, 5))
-    aspect = w / max(h, 1)
-    area_ratio = (w * h) / max(float(iw * ih), 1.0)
-    cx = x + w / 2.0
-    cy = y + h / 2.0
-
-    center_bias = 1.0 - min(abs(cx - iw / 2.0) / max(iw / 2.0, 1.0), 1.0)
-    target_y = 0.86 if ih >= 500 else 0.56
-    lower_bias = 1.0 - min(abs(cy - ih * target_y) / max(ih * target_y, 1.0), 1.0)
-    aspect_score = 1.0 - min(abs(aspect - 4.0) / 5.0, 1.0)
-    fill_score = min(max((fill_ratio - 0.45) / 0.45, 0.0), 1.0)
-    area_target = 0.02 if ih >= 500 else 0.04
-    area_score = 1.0 - min(abs(area_ratio - area_target) / max(area_target * 2.5, 1e-6), 1.0)
-
-    return (
-        fill_score * 70.0
-        + contrast * 0.25
-        + dynamic * 0.25
-        + aspect_score * 12.0
-        + area_score * 22.0
-        + center_bias * 6.0
-        + lower_bias * 50.0
-    )
-
-
-def find_odometer_roi(img: np.ndarray) -> tuple[np.ndarray, list[str]]:
-    applied: list[str] = []
-    work, scale = resize_for_detection(img, max_dim=1600)
-    gray = cv2.cvtColor(work, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (5, 5), 0)
-
-    work_h, work_w = work.shape[:2]
-    best_rect: tuple[int, int, int, int] | None = None
-    best_score = -1.0
-
-    # Pass 1 — look for an actual rectangular display window.
-    edges = cv2.Canny(gray, 50, 150)
-    edges = cv2.morphologyEx(
-        edges,
-        cv2.MORPH_CLOSE,
-        cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)),
-        iterations=2,
-    )
-    contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-
-    for cnt in contours:
-        x, y, w, h = cv2.boundingRect(cnt)
-        area = w * h
-        if area < max(400.0, work_h * work_w * 0.001) or area > work_h * work_w * 0.12:
-            continue
-        if work_h >= 500 and w < work_w * 0.16:
-            continue
-        aspect = w / max(h, 1)
-        if aspect < 1.8 or aspect > 10.0:
-            continue
-        fill_ratio = cv2.contourArea(cnt) / max(float(area), 1.0)
-        if fill_ratio < 0.45:
-            continue
-        cy = y + h / 2.0
-        if work_h >= 500 and cy < work_h * 0.42:
-            continue
-
-        score = score_window_candidate(gray, (x, y, w, h), fill_ratio, work.shape)
-        if score > best_score:
-            best_score = score
-            best_rect = (x, y, w, h)
-
-    # Pass 2 — fallback to text-cluster search when the display border is weak.
-    if best_rect is None or best_score < 95.0:
-        kernels = [
-            cv2.getStructuringElement(cv2.MORPH_RECT, (31, 9)),
-            cv2.getStructuringElement(cv2.MORPH_RECT, (41, 11)),
-            cv2.getStructuringElement(cv2.MORPH_RECT, (51, 13)),
-        ]
-        candidate_contours: list[np.ndarray] = []
-        for kernel in kernels:
-            for op in (cv2.MORPH_BLACKHAT, cv2.MORPH_TOPHAT):
-                morph = cv2.morphologyEx(gray, op, kernel)
-                morph = cv2.normalize(morph, None, 0, 255, cv2.NORM_MINMAX)
-                _, thresh = cv2.threshold(morph, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=1)
-                dilate_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(7, kernel.shape[1] // 3), 3))
-                closed = cv2.dilate(closed, dilate_kernel, iterations=1)
-                contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                candidate_contours.extend(contours)
-
-        for cnt in candidate_contours:
-            x, y, w, h = cv2.boundingRect(cnt)
-            area = w * h
-            if area < max(800.0, work_h * work_w * 0.002) or area > work_h * work_w * 0.25:
-                continue
-            aspect = w / max(h, 1)
-            if aspect < 1.8 or aspect > 12.0:
-                continue
-            cy = y + h / 2.0
-            if work_h >= 500 and cy < work_h * 0.50:
-                continue
-
-            score = score_text_candidate(gray, (x, y, w, h), work.shape)
-            if score > best_score:
-                best_score = score
-                best_rect = (x, y, w, h)
-
-    if best_rect is None or best_score < 55.0:
-        applied.append("odometer_roi_not_found")
-        return img, applied
-
-    x, y, w, h = best_rect
-    inv_scale = 1.0 / max(scale, 1e-9)
-    ox = int(round(x * inv_scale))
-    oy = int(round(y * inv_scale))
-    ow = int(round(w * inv_scale))
-    oh = int(round(h * inv_scale))
-    x0, y0, x1, y1 = expand_rect(ox, oy, ow, oh, img.shape, pad_x=0.10, pad_y=0.18)
-
-    crop = img[y0:y1, x0:x1].copy()
-    applied.append("odometer_roi_crop")
-    crop, upscaled = ensure_min_width(crop, min_width=900)
-    if upscaled:
-        applied.append("upscale_cubic")
-    return crop, applied
-
-
-def classify_odometer_scene(roi: np.ndarray) -> tuple[str, list[str]]:
-    applied: list[str] = []
-    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-
-    mean_v = float(np.mean(hsv[:, :, 2]))
-    mean_s = float(np.mean(hsv[:, :, 1]))
-    contrast = float(np.std(gray))
-    blur_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
-
-    h = hsv[:, :, 0]
-    s = hsv[:, :, 1]
-    v = hsv[:, :, 2]
-    warm_ratio = float(np.mean(((h >= 5) & (h <= 35) & (s >= 50) & (v >= 50)).astype(np.uint8)))
-
-    if warm_ratio >= 0.14 or (warm_ratio >= 0.08 and mean_s >= 55):
-        scene = "lcd_backlit"
-    elif mean_v >= 120 and contrast <= 62 and mean_s < 55:
-        scene = "lcd_light_bg"
-    else:
-        scene = "mechanical"
-
-    applied.append(f"scene_{scene}")
-
-    if blur_var < 90.0:
-        applied.append("flag_blurry")
-    if contrast < 35.0:
-        applied.append("flag_low_contrast")
-    if mean_v < 80.0:
-        applied.append("flag_dark")
-
-    return scene, applied
-
-
-def select_best_text_channel(img: np.ndarray) -> np.ndarray:
-    b, g, r = cv2.split(img)
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    channels = [gray, g, r, hsv[:, :, 2], lab[:, :, 0]]
-    best = gray
-    best_score = -1.0
-    for ch in channels:
-        bh = cv2.morphologyEx(ch, cv2.MORPH_BLACKHAT, cv2.getStructuringElement(cv2.MORPH_RECT, (25, 7)))
-        score = float(np.mean(bh) + np.std(ch) * 0.7)
-        if score > best_score:
-            best_score = score
-            best = ch
-    return best
-
-
-def threshold_digits(gray: np.ndarray, block_size: int = 31, c: int = 8) -> np.ndarray:
-    block_size = max(3, block_size | 1)
-    norm = cv2.GaussianBlur(gray, (3, 3), 0)
-    bin_img = cv2.adaptiveThreshold(
-        norm,
-        255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        block_size,
-        c,
-    )
-    if float(np.mean(bin_img)) < 110.0:
-        bin_img = cv2.bitwise_not(bin_img)
-    return bin_img
-
-
-def enhance_odometer_mechanical(img: np.ndarray) -> tuple[np.ndarray, list[str]]:
-    applied: list[str] = []
-    denoised = cv2.bilateralFilter(img, d=9, sigmaColor=75, sigmaSpace=75)
-    applied.append("denoise")
-    gray = cv2.cvtColor(denoised, cv2.COLOR_BGR2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    gray = clahe.apply(gray)
-    applied.append("clahe")
-    if float(np.mean(gray)) < 95:
-        gray = gamma_adjust(gray, 0.85)
-        applied.append("gamma_lift")
-    gray = unsharp_mask(gray, sigma=1.7, amount=0.35)
-    applied.append("unsharp_mask")
-    return gray_to_bgr(gray), applied
-
-
-def enhance_odometer_lcd_light(img: np.ndarray) -> tuple[np.ndarray, list[str]]:
-    applied: list[str] = []
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.fastNlMeansDenoising(gray, None, 10, 7, 21)
-    applied.append("denoise")
-    clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(8, 8))
-    gray = clahe.apply(gray)
-    applied.append("clahe")
-    gray = unsharp_mask(gray, sigma=1.2, amount=0.28)
-    applied.append("unsharp_mask")
-    if float(np.mean(gray)) < 120:
-        gray = gamma_adjust(gray, 0.90)
-        applied.append("gamma_lift")
-    return gray_to_bgr(gray), applied
-
-
-def enhance_odometer_lcd_backlit(img: np.ndarray) -> tuple[np.ndarray, list[str]]:
-    applied: list[str] = []
-    best = select_best_text_channel(img)
-    best = cv2.bilateralFilter(best, d=7, sigmaColor=55, sigmaSpace=55)
-    applied.append("best_channel")
-    applied.append("denoise")
-    clahe = cv2.createCLAHE(clipLimit=2.4, tileGridSize=(8, 8))
-    best = clahe.apply(best)
-    applied.append("clahe")
-    best = gamma_adjust(best, 0.92)
-    applied.append("gamma_lift")
-    best = unsharp_mask(best, sigma=1.2, amount=0.30)
-    applied.append("unsharp_mask")
-    return gray_to_bgr(best), applied
-
-
-def finalize_odometer_output(display: np.ndarray) -> tuple[np.ndarray, list[str]]:
-    applied: list[str] = []
-    gray = cv2.cvtColor(display, cv2.COLOR_BGR2GRAY)
-    ocr_preview = threshold_digits(gray, block_size=31, c=8)
-    applied.append("ocr_threshold_preview")
-
-    digit_mask = cv2.GaussianBlur(cv2.bitwise_not(ocr_preview), (0, 0), sigmaX=1.0)
-    digit_mask = cv2.normalize(digit_mask.astype(np.float32), None, 0.0, 1.0, cv2.NORM_MINMAX)
-    boost = gray.astype(np.float32) - digit_mask * 18.0
-    applied.append("digit_local_boost")
-    return gray_to_bgr(clip_u8(boost)), applied
-
 
 def enhance_receipt(img: np.ndarray, corners: list[list[float]] | None) -> tuple[np.ndarray, list[str]]:
     applied = []
@@ -516,41 +153,65 @@ def enhance_receipt(img: np.ndarray, corners: list[list[float]] | None) -> tuple
     out = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
     return out, applied
 
-
 def enhance_odometer(img: np.ndarray) -> tuple[np.ndarray, list[str]]:
     """
-    Universal odometer enhancer v5.3.
-
-    Strategy:
-      1. Detect the odometer display / roller window first.
-      2. Crop the readout region and upscale it when small.
-      3. Classify the scene: mechanical, light LCD, or backlit LCD.
-      4. Run the branch-specific enhancement recipe.
-      5. Build an OCR-oriented threshold preview internally and blend only a
-         small amount of digit emphasis back into the returned display image.
-
-    The endpoint still returns one image only, preserving API compatibility.
+    Odometer image enhancement pipeline v2.
+ 
+    Problem with v1:
+      CLAHE clipLimit=3.0 amplifies local contrast *including* sensor noise.
+      The direct sharpening kernel [[-1,-1,-1],[-1,9,-1],[-1,-1,-1]] then
+      multiplies that amplified noise by ~8x relative strength → white dots.
+ 
+    v2 approach — denoise FIRST, then enhance:
+ 
+    1. Bilateral filter (color)
+       Edge-preserving denoiser: weights nearby pixels by both spatial
+       distance AND color similarity. Smooths uniform areas (background,
+       digit faces) while keeping hard edges (digit outlines) sharp.
+       Applied on the color image before any grayscale conversion so it
+       has full color channel information to judge similarity.
+ 
+    2. Gentle CLAHE (clipLimit 2.0, not 3.0)
+       After bilateral the noise floor is low, so we can safely enhance
+       local contrast. Lower clipLimit means less redistribution of the
+       histogram → less chance of amplifying residual noise.
+ 
+    3. Unsharp mask via Gaussian subtraction
+       result = original + amount * (original - blurred)
+       = 1.3 * original - 0.3 * blurred
+       Adds 30% of high-frequency detail (digit edges).
+       This is mathematically bounded — it cannot create values outside
+       the existing dynamic range in the way the direct kernel can.
+       No white dot artifacts.
     """
-    applied: list[str] = []
-
-    roi, roi_steps = find_odometer_roi(img)
-    applied.extend(roi_steps)
-
-    scene, scene_steps = classify_odometer_scene(roi)
-    applied.extend(scene_steps)
-
-    if scene == "lcd_light_bg":
-        display, branch_steps = enhance_odometer_lcd_light(roi)
-    elif scene == "lcd_backlit":
-        display, branch_steps = enhance_odometer_lcd_backlit(roi)
-    else:
-        display, branch_steps = enhance_odometer_mechanical(roi)
-    applied.extend(branch_steps)
-
-    display, final_steps = finalize_odometer_output(display)
-    applied.extend(final_steps)
-    return display, applied
-
+    applied = []
+ 
+    # Step 1: Bilateral denoise on the color image
+    # d=9      — neighbourhood diameter (pixels)
+    # sigmaColor=75 — colour distance tolerance (0–255); 75 accepts pixels
+    #                  within ~30% brightness difference as "same region"
+    # sigmaSpace=75 — spatial distance tolerance; similar to Gaussian sigma
+    denoised = cv2.bilateralFilter(img, d=9, sigmaColor=75, sigmaSpace=75)
+    applied.append("denoise")
+ 
+    # Step 2: Grayscale
+    gray = cv2.cvtColor(denoised, cv2.COLOR_BGR2GRAY)
+ 
+    # Step 3: Gentle CLAHE
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray  = clahe.apply(gray)
+    applied.append("clahe")
+ 
+    # Step 4: Unsharp mask
+    # gaussian captures the low-frequency (blurry) content.
+    # Subtracting it from the original isolates the high-frequency detail.
+    # Adding 30% of that detail back sharpens edges without amplifying noise.
+    gaussian = cv2.GaussianBlur(gray, (0, 0), sigmaX=2.0)
+    gray     = cv2.addWeighted(gray, 1.3, gaussian, -0.3, 0)
+    applied.append("unsharp_mask")
+ 
+    out = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+    return out, applied
 
 @app.post("/process", response_model=ProcessResponse)
 def process_image(req: ProcessRequest, x_scan_secret: str = Header(default="")):
