@@ -1,5 +1,5 @@
 # scan_service/main.py
-# Version: 5.3.1
+# Version: 5.3.0
 #
 # Endpoints:
 #   POST /process        — Receipt/Odometer image enhancement (OpenCV)
@@ -60,7 +60,7 @@ MYT = timezone(timedelta(hours=8))  # Malaysia Time (UTC+8)
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="myexpensio-scan", version="5.3.1", docs_url=None, redoc_url=None)
+app = FastAPI(title="myexpensio-scan", version="5.3.0", docs_url=None, redoc_url=None)
 
 app.add_middleware(
     CORSMiddleware,
@@ -81,7 +81,7 @@ def verify_secret(x_scan_secret: str = Header(default="")) -> None:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "myexpensio-scan", "version": "5.3.1"}
+    return {"status": "ok", "service": "myexpensio-scan", "version": "5.3.0"}
 
 # ═════════════════════════════════════════════════════════════════════════════
 # IMAGE PROCESSING (v5.3 — odometer ROI + scene-aware enhancement)
@@ -273,180 +273,15 @@ def score_window_candidate(gray: np.ndarray, bbox: tuple[int, int, int, int], fi
     )
 
 
-def score_backlit_candidate(
-    gray: np.ndarray,
-    bbox: tuple[int, int, int, int],
-    fill_ratio: float,
-    img_shape: tuple[int, int, int],
-    target_y: float | None = None,
-) -> float:
-    x, y, w, h = bbox
-    ih, iw = img_shape[:2]
-    roi = gray[y:y+h, x:x+w]
-    if roi.size == 0:
-        return -1.0
-
-    contrast = float(np.std(roi))
-    dynamic = float(np.percentile(roi, 95) - np.percentile(roi, 5))
-    area_ratio = (w * h) / max(float(iw * ih), 1.0)
-    aspect = w / max(h, 1)
-    cx = x + w / 2.0
-    cy = y + h / 2.0
-
-    center_bias = 1.0 - min(abs(cx - iw / 2.0) / max(iw / 2.0, 1.0), 1.0)
-    target_y = target_y if target_y is not None else (0.72 if ih >= 500 else 0.62)
-    y_bias = 1.0 - min(abs(cy - ih * target_y) / max(ih * target_y, 1.0), 1.0)
-
-    if aspect < 1.0:
-        aspect_score = max(aspect, 0.0)
-    else:
-        aspect_score = 1.0 - min(abs(aspect - 1.8) / 3.5, 1.0)
-
-    area_target = 0.045 if ih >= 500 else 0.11
-    area_score = 1.0 - min(abs(area_ratio - area_target) / max(area_target * 3.0, 1e-6), 1.0)
-
-    return (
-        fill_ratio * 38.0
-        + contrast * 0.18
-        + dynamic * 0.14
-        + center_bias * 18.0
-        + y_bias * 26.0
-        + aspect_score * 13.0
-        + area_score * 20.0
-    )
-
-
-def detect_backlit_display_candidates(work: np.ndarray) -> list[tuple[tuple[int, int, int, int], float, str]]:
-    """
-    Extra detector for backlit / amber digital dashboards.
-
-    Why this pass exists:
-    - Some digital clusters do not have a clean rectangular odometer window.
-    - Some dashboards place the odometer inside a circular central display.
-    - The earlier text/window detector can then lock onto a tiny local blob instead
-      of the real illuminated readout area.
-
-    This pass intentionally looks for illuminated warm clusters, then scores them
-    with a stronger center / mid-lower bias.
-    """
-    candidates: list[tuple[tuple[int, int, int, int], float, str]] = []
-
-    hsv = cv2.cvtColor(work, cv2.COLOR_BGR2HSV)
-    gray = cv2.cvtColor(work, cv2.COLOR_BGR2GRAY)
-    h, s, v = cv2.split(hsv)
-
-    warm_mask = (((h >= 5) & (h <= 40) & (s >= 35) & (v >= 35)).astype(np.uint8) * 255)
-
-    # Pass A — global warm connected-components. Good for rectangular amber LCDs.
-    for kernel_size in [(7, 7), (11, 11), (15, 15), (21, 11), (25, 15), (31, 17)]:
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, kernel_size)
-        mask = cv2.morphologyEx(warm_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
-        mask = cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)), iterations=1)
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        for cnt in contours:
-            x, y, w, h = cv2.boundingRect(cnt)
-            area = w * h
-            ih, iw = work.shape[:2]
-            if area < max(300.0, ih * iw * 0.001) or area > ih * iw * 0.40:
-                continue
-            aspect = w / max(h, 1)
-            if aspect < 0.7 or aspect > 8.5:
-                continue
-
-            fill_ratio = cv2.contourArea(cnt) / max(float(area), 1.0)
-            if fill_ratio < 0.10:
-                continue
-
-            score = score_backlit_candidate(gray, (x, y, w, h), fill_ratio, work.shape, target_y=0.68 if ih >= 500 else 0.62)
-            candidates.append(((x, y, w, h), score, "backlit_global"))
-
-    # Pass B — center-cluster detector. Good for round / center-console displays.
-    ih, iw = work.shape[:2]
-    rx0 = int(round(iw * 0.08))
-    rx1 = int(round(iw * 0.92))
-    ry0 = int(round(ih * 0.24))
-    ry1 = int(round(ih * 0.92))
-    center_roi = work[ry0:ry1, rx0:rx1]
-
-    if center_roi.size > 0:
-        hsv_roi = cv2.cvtColor(center_roi, cv2.COLOR_BGR2HSV)
-        gray_roi = cv2.cvtColor(center_roi, cv2.COLOR_BGR2GRAY)
-        hr, sr, vr = cv2.split(hsv_roi)
-
-        warm_roi = (((hr >= 5) & (hr <= 40) & (sr >= 18) & (vr >= 65)).astype(np.uint8) * 255)
-        red = center_roi[:, :, 2]
-        top_hat = cv2.morphologyEx(red, cv2.MORPH_TOPHAT, cv2.getStructuringElement(cv2.MORPH_RECT, (31, 9)))
-        mix = cv2.max(warm_roi, cv2.normalize(top_hat, None, 0, 255, cv2.NORM_MINMAX))
-        _, mix_bin = cv2.threshold(mix, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        mix_bin = cv2.morphologyEx(
-            mix_bin,
-            cv2.MORPH_CLOSE,
-            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31)),
-            iterations=1,
-        )
-        mix_bin = cv2.dilate(
-            mix_bin,
-            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)),
-            iterations=1,
-        )
-
-        contours, _ = cv2.findContours(mix_bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        for cnt in contours:
-            x, y, w, h = cv2.boundingRect(cnt)
-            area = w * h
-            if area < max(1000.0, center_roi.shape[0] * center_roi.shape[1] * 0.008):
-                continue
-            if area > center_roi.shape[0] * center_roi.shape[1] * 0.45:
-                continue
-
-            aspect = w / max(h, 1)
-            if aspect < 0.6 or aspect > 6.0:
-                continue
-
-            fill_ratio = cv2.contourArea(cnt) / max(float(area), 1.0)
-            if fill_ratio < 0.18:
-                continue
-
-            score = score_backlit_candidate(gray_roi, (x, y, w, h), fill_ratio, center_roi.shape, target_y=0.55)
-            candidates.append(((rx0 + x, ry0 + y, w, h), score, "backlit_center_cluster"))
-
-    return candidates
-
-
-def is_suspicious_roi(rect: tuple[int, int, int, int] | None, img_shape: tuple[int, int, int], source: str | None = None, warm_ratio: float = 0.0) -> bool:
-    if rect is None:
-        return True
-
-    x, y, w, h = rect
-    ih, iw = img_shape[:2]
-    area_ratio = (w * h) / max(float(iw * ih), 1.0)
-    width_ratio = w / max(float(iw), 1.0)
-    cy = y + h / 2.0
-
-    if source == "text" and area_ratio < 0.015:
-        return True
-    if warm_ratio >= 0.10 and width_ratio < 0.22:
-        return True
-    if cy > ih * 0.82 and area_ratio < 0.015:
-        return True
-    return False
-
-
 def find_odometer_roi(img: np.ndarray) -> tuple[np.ndarray, list[str]]:
     applied: list[str] = []
     work, scale = resize_for_detection(img, max_dim=1600)
     gray = cv2.cvtColor(work, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (5, 5), 0)
 
-    hsv = cv2.cvtColor(work, cv2.COLOR_BGR2HSV)
-    h_chan, s_chan, v_chan = cv2.split(hsv)
-    warm_ratio = float(np.mean(((h_chan >= 5) & (h_chan <= 35) & (s_chan >= 35) & (v_chan >= 35)).astype(np.uint8)))
-
     work_h, work_w = work.shape[:2]
     best_rect: tuple[int, int, int, int] | None = None
     best_score = -1.0
-    best_source = "none"
 
     # Pass 1 — look for an actual rectangular display window.
     edges = cv2.Canny(gray, 50, 150)
@@ -479,7 +314,6 @@ def find_odometer_roi(img: np.ndarray) -> tuple[np.ndarray, list[str]]:
         if score > best_score:
             best_score = score
             best_rect = (x, y, w, h)
-            best_source = "window"
 
     # Pass 2 — fallback to text-cluster search when the display border is weak.
     if best_rect is None or best_score < 95.0:
@@ -516,17 +350,6 @@ def find_odometer_roi(img: np.ndarray) -> tuple[np.ndarray, list[str]]:
             if score > best_score:
                 best_score = score
                 best_rect = (x, y, w, h)
-                best_source = "text"
-
-    # Pass 3 — special handling for backlit digital dashboards.
-    backlit_candidates = detect_backlit_display_candidates(work)
-    if backlit_candidates:
-        back_rect, back_score, back_source = max(backlit_candidates, key=lambda item: item[1])
-        if is_suspicious_roi(best_rect, work.shape, best_source, warm_ratio) and back_score >= 85.0:
-            best_rect = back_rect
-            best_score = back_score
-            best_source = back_source
-            applied.append(best_source)
 
     if best_rect is None or best_score < 55.0:
         applied.append("odometer_roi_not_found")
@@ -538,14 +361,7 @@ def find_odometer_roi(img: np.ndarray) -> tuple[np.ndarray, list[str]]:
     oy = int(round(y * inv_scale))
     ow = int(round(w * inv_scale))
     oh = int(round(h * inv_scale))
-    if best_source == "backlit_center_cluster":
-        pad_x, pad_y = 0.12, 0.12
-    elif best_source == "backlit_global":
-        pad_x, pad_y = 0.08, 0.10
-    else:
-        pad_x, pad_y = 0.10, 0.18
-
-    x0, y0, x1, y1 = expand_rect(ox, oy, ow, oh, img.shape, pad_x=pad_x, pad_y=pad_y)
+    x0, y0, x1, y1 = expand_rect(ox, oy, ow, oh, img.shape, pad_x=0.10, pad_y=0.18)
 
     crop = img[y0:y1, x0:x1].copy()
     applied.append("odometer_roi_crop")
@@ -703,7 +519,7 @@ def enhance_receipt(img: np.ndarray, corners: list[list[float]] | None) -> tuple
 
 def enhance_odometer(img: np.ndarray) -> tuple[np.ndarray, list[str]]:
     """
-    Universal odometer enhancer v5.3.1.
+    Universal odometer enhancer v5.3.
 
     Strategy:
       1. Detect the odometer display / roller window first.
