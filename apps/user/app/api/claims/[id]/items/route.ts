@@ -2,7 +2,7 @@
 // POST /api/claims/[id]/items   — add item to DRAFT claim
 // DELETE (handled in /api/claims/[id]/items/[item_id]/route.ts)
 //
-// Supported types (all 11):
+// Supported types (all 12):
 //   MILEAGE   — trip_id required
 //   MEAL      — mode: FIXED_RATE | RECEIPT
 //   LODGING   — mode: FIXED_RATE | RECEIPT
@@ -30,6 +30,7 @@ const ALL_TYPES = [
   'TOLL', 'PARKING',
   'TAXI', 'GRAB', 'TRAIN', 'FLIGHT', 'BUS',
   'PER_DIEM',
+  'MISC',
 ] as const
 
 const POST_ACCEPTED_TYPES = [...ALL_TYPES, 'RETAIL'] as const
@@ -857,6 +858,48 @@ export async function POST(request: NextRequest, { params }: Params) {
     return NextResponse.json({ item, claim_total: { currency: 'MYR', amount: claim_total } }, { status: 201 })
   }
 
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // MISC — miscellaneous work purchases (hardware, stationery, tools, etc.)
+  // Fields: amount (required), claim_date (required), merchant (item name /
+  //         vendor), receipt_url (strongly recommended), notes
+  // ══════════════════════════════════════════════════════════════════════════
+  if (itemType === 'MISC') {
+    const { amount, claim_date, merchant, receipt_url, notes } = body
+
+    if (!amount || amount <= 0) {
+      return err('VALIDATION_ERROR', 'amount is required for MISC items.', 400)
+    }
+    if (!claim_date) {
+      return err('VALIDATION_ERROR', 'claim_date (YYYY-MM-DD) is required for MISC items.', 400)
+    }
+
+    const { data: item, error: insertErr } = await supabase
+      .from('claim_items')
+      .insert({
+        org_id:      org.org_id,
+        claim_id,
+        type:        'MISC',
+        amount:      Number(Number(amount).toFixed(2)),
+        currency:    'MYR',
+        claim_date,
+        merchant:    merchant?.trim() ?? null,
+        receipt_url: receipt_url ?? null,
+        notes:       notes?.trim() ?? null,
+      })
+      .select()
+      .single()
+
+    if (insertErr) {
+      console.error('[POST items] MISC insert:', insertErr.message)
+      return err('SERVER_ERROR', 'Failed to add misc item.', 500)
+    }
+
+    const claim_total = await recalcTotal(supabase, claim_id, amount)
+    return NextResponse.json({ item, claim_total: { currency: 'MYR', amount: claim_total } }, { status: 201 })
+  }
+
   // Guard — should never reach here
   return err('VALIDATION_ERROR', 'Unsupported item type.', 400)
 }
+

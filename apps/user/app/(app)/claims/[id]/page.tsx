@@ -74,6 +74,7 @@ type ModalType =
   | "PARKING"
   | "TRANSPORT"
   | "PER_DIEM"
+  | "MISC"
   | null;
 
 type TransportType = "TAXI" | "GRAB" | "TRAIN" | "FLIGHT" | "BUS";
@@ -124,6 +125,7 @@ const TYPE_ICON: Record<string, string> = {
   TRAIN: "🚆",
   FLIGHT: "✈️",
   BUS: "🚌",
+  MISC: "📦",
 };
 
 const SESSION_LABEL: Record<string, string> = {
@@ -218,6 +220,9 @@ function ItemCard({
     if (item.mode === "FIXED_RATE" && item.rate)
       parts.push(`MYR ${Number(item.rate).toFixed(2)} fixed`);
     if (item.merchant) parts.push(item.merchant);
+    if (item.type === "MISC") {
+      return item.merchant || "Miscellaneous";
+    }
     return (
       parts.join(" · ") || (item.mode === "RECEIPT" ? "Receipt" : "Fixed rate")
     );
@@ -259,7 +264,7 @@ function ItemCard({
         >
           <span style={{ fontSize: 13 }}>{TYPE_ICON[item.type] ?? "📄"}</span>
           <span style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>
-            {item.type === "PER_DIEM" ? "Per Diem" : item.type}
+            {item.type === "PER_DIEM" ? "Per Diem" : item.type === "MISC" ? "Misc" : item.type}
           </span>
           {isTngPending && (
             <span
@@ -2033,6 +2038,7 @@ export default function ClaimDetailPage() {
     TRAIN: 8,
     BUS: 9,
     FLIGHT: 10,
+    MISC: 11,
   };
 
   // TNG items: mode='TNG' means created from TNG statement.
@@ -2229,7 +2235,7 @@ export default function ClaimDetailPage() {
             }}
           >
             No items yet. Add mileage, meal, lodging, per diem, toll, parking,
-            or transport.
+            transport, or misc.
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column" }}>
@@ -2338,6 +2344,9 @@ export default function ClaimDetailPage() {
           </button>
           <button onClick={() => setModal("PER_DIEM")} style={S.btnAdd}>
             🧾 Per Diem
+          </button>
+          <button onClick={() => setModal("MISC")} style={S.btnAdd}>
+            📦 Misc
           </button>
         </div>
       )}
@@ -2517,7 +2526,165 @@ export default function ClaimDetailPage() {
           onClose={() => setModal(null)}
         />
       )}
+      {modal === "MISC" && (
+        <MiscModal
+          onAdd={async (d) => {
+            const res = await fetch(`/api/claims/${id}/items`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ type: "MISC", ...d }),
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error?.message ?? "Failed to add item.");
+            await load();
+            setModal(null);
+          }}
+          onClose={() => setModal(null)}
+        />
+      )}
     </div>
+  );
+}
+
+// ── Misc Modal ───────────────────────────────────────────────────────────────
+// Miscellaneous work purchases: hardware tools, stationery, etc.
+// Fields: date, description (what was purchased), amount, receipt, notes.
+
+function MiscModal({
+  onAdd,
+  onClose,
+}: {
+  onAdd: (data: Record<string, unknown>) => Promise<void>;
+  onClose: () => void;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [claimDate, setClaimDate] = useState(today);
+  const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState("");
+  const [receiptPath, setReceiptPath] = useState<string>("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleAdd() {
+    setError(null);
+    if (!claimDate) { setError("Date is required."); return; }
+    if (!description.trim()) { setError("Description is required."); return; }
+    if (!amount || parseFloat(amount) <= 0) { setError("Amount is required."); return; }
+
+    setSaving(true);
+    try {
+      await onAdd({
+        claim_date:  claimDate,
+        merchant:    description.trim(),
+        amount:      parseFloat(amount),
+        receipt_url: receiptPath || undefined,
+        notes:       notes.trim() || undefined,
+      });
+    } catch (e: unknown) {
+      setError((e as Error).message);
+      setSaving(false);
+    }
+  }
+
+  const amtNum = parseFloat(amount);
+  const btnDisabled = saving || !description.trim() || !amount || parseFloat(amount) <= 0;
+  const btnLabel = saving
+    ? "Adding…"
+    : !isNaN(amtNum) && amtNum > 0
+      ? `Add Misc · MYR ${amtNum.toFixed(2)}`
+      : "Add Misc";
+
+  return (
+    <Modal
+      title="Add Misc Expense"
+      onClose={onClose}
+      footer={
+        <button
+          onClick={handleAdd}
+          disabled={btnDisabled}
+          style={{ ...S.btnModalAdd, opacity: btnDisabled ? 0.45 : 1 }}
+        >
+          {btnLabel}
+        </button>
+      }
+    >
+      <div style={S.field}>
+        <label style={S.label}>
+          Date <span style={{ color: "#dc2626" }}>*</span>
+        </label>
+        <input
+          type="date"
+          value={claimDate}
+          max={today}
+          onChange={(e) => setClaimDate(e.target.value)}
+          style={S.input}
+        />
+      </div>
+
+      <div style={S.field}>
+        <label style={S.label}>
+          Description <span style={{ color: "#dc2626" }}>*</span>
+        </label>
+        <input
+          type="text"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="e.g. Drill bit set, Extension cable, Stationery"
+          style={S.input}
+        />
+        <span style={{ fontSize: 11, color: "#94a3b8" }}>
+          What was purchased and for what purpose
+        </span>
+      </div>
+
+      <div style={S.field}>
+        <label style={S.label}>
+          Amount (MYR) <span style={{ color: "#dc2626" }}>*</span>
+        </label>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="0.00"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          style={S.input}
+        />
+      </div>
+
+      <div style={S.field}>
+        <label style={S.label}>
+          Receipt{" "}
+          <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 400 }}>
+            (recommended)
+          </span>
+        </label>
+        <ReceiptUploader
+          storagePath={receiptPath || null}
+          onUploaded={(path) => setReceiptPath(path)}
+          enableScan={true}
+        />
+      </div>
+
+      <div style={S.field}>
+        <label style={S.label}>
+          Notes{" "}
+          <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 400 }}>
+            (optional)
+          </span>
+        </label>
+        <input
+          type="text"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="e.g. For site maintenance at Jalan Ampang"
+          style={S.input}
+        />
+      </div>
+
+      {error && <div style={S.errorBox}>{error}</div>}
+    </Modal>
   );
 }
 
