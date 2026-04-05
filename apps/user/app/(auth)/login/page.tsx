@@ -4,27 +4,28 @@
 // Login screen for returning users.
 // Invite-only note is shown — no self-registration link.
 // Handles URL error params forwarded from auth/callback.
+// Added: password show/hide toggle.
 
 import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
-// Map URL error codes → user-friendly messages
 const URL_ERRORS: Record<string, string> = {
   invalid_link: 'Your invitation link is invalid or has expired. Please request a new one from your admin.',
   invalid_code: 'This confirmation link is no longer valid. Please try logging in directly.',
 }
 
 function LoginContent() {
-  const router      = useRouter()
+  const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo  = searchParams.get('redirectTo') ?? '/home'
+  const redirectTo = searchParams.get('redirectTo') ?? '/home'
   const urlErrorKey = searchParams.get('error')
 
-  const [email,     setEmail]     = useState('')
-  const [password,  setPassword]  = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [error,     setError]     = useState<string | null>(
+  const [error, setError] = useState<string | null>(
     urlErrorKey ? (URL_ERRORS[urlErrorKey] ?? 'Something went wrong. Please try again.') : null
   )
 
@@ -36,14 +37,13 @@ function LoginContent() {
     const supabase = createClient()
 
     const { error: signInError } = await supabase.auth.signInWithPassword({
-      email:    email.trim().toLowerCase(),
+      email: email.trim().toLowerCase(),
       password,
     })
 
     setIsLoading(false)
 
     if (signInError) {
-      // Surface a clean message; the raw Supabase error is fine for most cases
       setError(
         signInError.message.toLowerCase().includes('invalid login credentials')
           ? 'Incorrect email or password. Please try again.'
@@ -52,7 +52,6 @@ function LoginContent() {
       return
     }
 
-    // Force a full navigation so server components re-render with the session
     router.push(redirectTo)
     router.refresh()
   }
@@ -65,7 +64,7 @@ function LoginContent() {
         <h1 style={S.title}>Sign in</h1>
         <p style={S.subtitle}>
           This is an invite-only platform.{' '}
-          If you don't have an account, check your email for an invitation.
+          If you don&apos;t have an account, check your email for an invitation.
         </p>
 
         {error && <div style={S.errorBanner}>{error}</div>}
@@ -93,17 +92,31 @@ function LoginContent() {
                 Forgot password?
               </a>
             </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="Your password"
-              style={S.input}
-              required
-              autoComplete="current-password"
-              disabled={isLoading}
-            />
+
+            <div style={S.passwordWrap}>
+              <input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="Your password"
+                style={S.passwordInput}
+                required
+                autoComplete="current-password"
+                disabled={isLoading}
+              />
+
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                style={S.eyeBtn}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                title={showPassword ? 'Hide password' : 'Show password'}
+                disabled={isLoading}
+              >
+                {showPassword ? '🙈' : '👁'}
+              </button>
+            </div>
           </div>
 
           <button
@@ -124,124 +137,148 @@ function LoginContent() {
   )
 }
 
-// ── Styles ─────────────────────────────────────────────────────────────────
-
 const S: Record<string, React.CSSProperties> = {
   page: {
-    minHeight:       '100vh',
-    display:         'flex',
-    alignItems:      'center',
-    justifyContent:  'center',
+    minHeight: '100vh',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#f8fafc',
-    padding:         24,
-    fontFamily:      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    padding: 24,
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
   },
   card: {
     backgroundColor: '#ffffff',
-    borderRadius:    16,
-    border:          '1px solid #e2e8f0',
-    padding:         '40px 36px',
-    width:           '100%',
-    maxWidth:        400,
-    boxShadow:       '0 4px 24px rgba(0,0,0,0.06)',
+    borderRadius: 16,
+    border: '1px solid #e2e8f0',
+    padding: '40px 36px',
+    width: '100%',
+    maxWidth: 400,
+    boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
   },
   logo: {
-    fontSize:      18,
-    fontWeight:    800,
-    color:         '#0f172a',
-    marginBottom:  28,
+    fontSize: 18,
+    fontWeight: 800,
+    color: '#0f172a',
+    marginBottom: 28,
     letterSpacing: '-0.5px',
   },
   title: {
-    fontSize:   24,
+    fontSize: 24,
     fontWeight: 700,
-    color:      '#0f172a',
-    margin:     '0 0 8px',
+    color: '#0f172a',
+    margin: '0 0 8px',
   },
   subtitle: {
-    fontSize:   13,
-    color:      '#64748b',
-    margin:     '0 0 24px',
+    fontSize: 13,
+    color: '#64748b',
+    margin: '0 0 24px',
     lineHeight: 1.65,
   },
   errorBanner: {
-    padding:         '10px 14px',
+    padding: '10px 14px',
     backgroundColor: '#fef2f2',
-    border:          '1px solid #fecaca',
-    borderRadius:    8,
-    color:           '#dc2626',
-    fontSize:        13,
-    marginBottom:    16,
-    lineHeight:      1.5,
+    border: '1px solid #fecaca',
+    borderRadius: 8,
+    color: '#dc2626',
+    fontSize: 13,
+    marginBottom: 16,
+    lineHeight: 1.5,
   },
   form: {
-    display:       'flex',
+    display: 'flex',
     flexDirection: 'column',
-    gap:           16,
+    gap: 16,
   },
   field: {
-    display:       'flex',
+    display: 'flex',
     flexDirection: 'column',
-    gap:           6,
+    gap: 6,
   },
   label: {
-    fontSize:   13,
+    fontSize: 13,
     fontWeight: 600,
-    color:      '#374151',
+    color: '#374151',
   },
   labelRow: {
-    fontSize:        13,
-    fontWeight:      600,
-    color:           '#374151',
-    display:         'flex',
-    justifyContent:  'space-between',
-    alignItems:      'center',
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#374151',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   forgotLink: {
-    fontSize:       12,
-    color:          '#64748b',
+    fontSize: 12,
+    color: '#64748b',
     textDecoration: 'none',
-    fontWeight:     400,
+    fontWeight: 400,
   },
   input: {
-    padding:         '10px 14px',
-    border:          '1px solid #d1d5db',
-    borderRadius:    8,
-    fontSize:        14,
-    color:           '#0f172a',
-    outline:         'none',
+    padding: '10px 14px',
+    border: '1px solid #d1d5db',
+    borderRadius: 8,
+    fontSize: 14,
+    color: '#0f172a',
+    outline: 'none',
     backgroundColor: '#fff',
-    width:           '100%',
-    boxSizing:       'border-box',
+    width: '100%',
+    boxSizing: 'border-box',
+  },
+  passwordWrap: {
+    position: 'relative',
+    width: '100%',
+  },
+  passwordInput: {
+    padding: '10px 44px 10px 14px',
+    border: '1px solid #d1d5db',
+    borderRadius: 8,
+    fontSize: 14,
+    color: '#0f172a',
+    outline: 'none',
+    backgroundColor: '#fff',
+    width: '100%',
+    boxSizing: 'border-box',
+  },
+  eyeBtn: {
+    position: 'absolute',
+    right: 10,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    border: 'none',
+    background: 'none',
+    cursor: 'pointer',
+    fontSize: 16,
+    color: '#64748b',
+    padding: 0,
+    lineHeight: 1,
   },
   primaryBtn: {
-    marginTop:       8,
-    padding:         '12px 20px',
+    marginTop: 8,
+    padding: '12px 20px',
     backgroundColor: '#0f172a',
-    color:           '#ffffff',
-    border:          'none',
-    borderRadius:    8,
-    fontSize:        15,
-    fontWeight:      600,
-    cursor:          'pointer',
-    width:           '100%',
-    transition:      'background-color 0.15s',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: 8,
+    fontSize: 15,
+    fontWeight: 600,
+    cursor: 'pointer',
+    width: '100%',
+    transition: 'background-color 0.15s',
   },
   footer: {
-    fontSize:     13,
-    color:        '#94a3b8',
-    textAlign:    'center',
-    marginTop:    24,
+    fontSize: 13,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginTop: 24,
     marginBottom: 0,
   },
   inlineLink: {
-    color:          '#0f172a',
-    fontWeight:     600,
+    color: '#0f172a',
+    fontWeight: 600,
     textDecoration: 'none',
   },
 }
-
-// ── Export (wrapped in Suspense for useSearchParams) ─────────────────────
 
 export default function LoginPage() {
   return (
