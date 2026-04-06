@@ -4,7 +4,7 @@
 // Login screen for returning users.
 // Invite-only note is shown — no self-registration link.
 // Handles URL error params forwarded from auth/callback.
-// Added: password show/hide toggle.
+// Shows success banner after first-login password reset.
 
 import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -20,13 +20,14 @@ function LoginContent() {
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get('redirectTo') ?? '/home'
   const urlErrorKey = searchParams.get('error')
+  const passwordChanged = searchParams.get('passwordChanged') === '1'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(
-    urlErrorKey ? (URL_ERRORS[urlErrorKey] ?? 'Something went wrong. Please try again.') : null
+    urlErrorKey ? (URL_ERRORS[urlErrorKey] ?? 'Something went wrong. Please try again.') : null,
   )
 
   async function handleLogin(e: React.FormEvent) {
@@ -47,7 +48,7 @@ function LoginContent() {
       setError(
         signInError.message.toLowerCase().includes('invalid login credentials')
           ? 'Incorrect email or password. Please try again.'
-          : signInError.message
+          : signInError.message,
       )
       return
     }
@@ -63,9 +64,14 @@ function LoginContent() {
 
         <h1 style={S.title}>Sign in</h1>
         <p style={S.subtitle}>
-          This is an invite-only platform.{' '}
-          If you don&apos;t have an account, check your email for an invitation.
+          This is an invite-only platform. If you don&apos;t have an account, check your email for an invitation.
         </p>
+
+        {passwordChanged && (
+          <div style={S.successBanner}>
+            Password changed successfully. Please sign in again using your new password.
+          </div>
+        )}
 
         {error && <div style={S.errorBanner}>{error}</div>}
 
@@ -76,7 +82,7 @@ function LoginContent() {
               id="email"
               type="email"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value)}
               placeholder="you@company.com"
               style={S.input}
               required
@@ -98,7 +104,7 @@ function LoginContent() {
                 id="password"
                 type={showPassword ? 'text' : 'password'}
                 value={password}
-                onChange={e => setPassword(e.target.value)}
+                onChange={(e) => setPassword(e.target.value)}
                 placeholder="Your password"
                 style={S.passwordInput}
                 required
@@ -108,7 +114,7 @@ function LoginContent() {
 
               <button
                 type="button"
-                onClick={() => setShowPassword(v => !v)}
+                onClick={() => setShowPassword((v) => !v)}
                 style={S.eyeBtn}
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
                 title={showPassword ? 'Hide password' : 'Show password'}
@@ -129,8 +135,7 @@ function LoginContent() {
         </form>
 
         <p style={S.footer}>
-          Have an invite?{' '}
-          <a href="/accept-invite" style={S.inlineLink}>Accept your invitation</a>
+          Have an invite? <a href="/accept-invite" style={S.inlineLink}>Accept your invitation</a>
         </p>
       </div>
     </div>
@@ -181,6 +186,16 @@ const S: Record<string, React.CSSProperties> = {
     border: '1px solid #fecaca',
     borderRadius: 8,
     color: '#dc2626',
+    fontSize: 13,
+    marginBottom: 16,
+    lineHeight: 1.5,
+  },
+  successBanner: {
+    padding: '10px 14px',
+    backgroundColor: '#f0fdf4',
+    border: '1px solid #bbf7d0',
+    borderRadius: 8,
+    color: '#15803d',
     fontSize: 13,
     marginBottom: 16,
     lineHeight: 1.5,
@@ -264,7 +279,6 @@ const S: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     cursor: 'pointer',
     width: '100%',
-    transition: 'background-color 0.15s',
   },
   footer: {
     fontSize: 13,
