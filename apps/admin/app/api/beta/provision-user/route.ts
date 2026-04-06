@@ -70,50 +70,25 @@ async function resolveActor() {
   }
 }
 
-async function resolveBetaOrganisation(service: ReturnType<typeof createServiceRoleClient>) {
-  const envOrgId = process.env.BETA_ORG_ID?.trim()
-  const betaOrgName = process.env.BETA_ORG_NAME?.trim() || 'Beta Organisation'
-
-  if (envOrgId) {
-    const { data: byId, error: byIdError } = await service
-      .from('organizations')
-      .select('id, name')
-      .eq('id', envOrgId)
-      .single()
-
-    if (byIdError || !byId) {
-      throw new Error(`BETA_ORG_ID is set but organization was not found: ${envOrgId}`)
-    }
-
-    return byId
-  }
-
-  const { data: existing, error: existingError } = await service
+async function resolveOrganisation(
+  service: ReturnType<typeof createServiceRoleClient>,
+  orgId: string,
+) {
+  const { data, error } = await service
     .from('organizations')
-    .select('id, name')
-    .eq('name', betaOrgName)
-    .limit(1)
-    .maybeSingle()
-
-  if (existingError) {
-    throw new Error(`Failed to look up Beta Organisation: ${existingError.message}`)
-  }
-
-  if (existing) return existing
-
-  const { data: created, error: createError } = await service
-    .from('organizations')
-    .insert({ name: betaOrgName })
-    .select('id, name')
+    .select('id, name, status')
+    .eq('id', orgId)
     .single()
 
-  if (createError || !created) {
-    throw new Error(
-      `Failed to create Beta Organisation. ${createError?.message ?? 'Unknown error.'}`,
-    )
+  if (error || !data) {
+    throw new Error('Selected organisation was not found.')
   }
 
-  return created
+  if (data.status && data.status !== 'ACTIVE') {
+    throw new Error('Selected organisation is not active.')
+  }
+
+  return data
 }
 
 async function findExistingProfileByEmail(
@@ -233,7 +208,7 @@ async function writeAuditLog(params: {
     actor_user_id: actorUserId,
     entity_type: 'PROFILE',
     entity_id: entityId,
-    action: 'BETA_USER_PROVISIONED',
+    action: 'USER_PROVISIONED',
     metadata,
   })
 
@@ -250,6 +225,7 @@ export async function POST(request: NextRequest) {
   const service = createServiceRoleClient()
 
   const body = (await request.json().catch(() => ({}))) as {
+    org_id?: string
     email?: string
     org_role?: string
     display_name?: string
@@ -258,6 +234,7 @@ export async function POST(request: NextRequest) {
     login_url?: string
   }
 
+  const orgId = String(body.org_id ?? '').trim()
   const email = normalizeEmail(body.email ?? '')
   const resetIfExists = body.reset_if_exists === true
   const sendEmail = body.send_email !== false
@@ -265,6 +242,10 @@ export async function POST(request: NextRequest) {
     body.login_url?.trim() ||
     process.env.USER_APP_LOGIN_URL?.trim() ||
     'http://localhost:3100/login'
+
+  if (!orgId) {
+    return err('VALIDATION_ERROR', 'org_id is required.', 400)
+  }
 
   if (!email) {
     return err('VALIDATION_ERROR', 'email is required.', 400)
@@ -284,7 +265,7 @@ export async function POST(request: NextRequest) {
   const displayName = body.display_name?.trim() || email
 
   try {
-    const betaOrg = await resolveBetaOrganisation(service)
+    const org = await resolveOrganisation(service, orgId)
     const tempPassword = makeTempPassword(email)
 
     const existingProfile = await findExistingProfileByEmail(service, email)
@@ -303,7 +284,6 @@ export async function POST(request: NextRequest) {
             display_name: displayName,
           },
           app_metadata: {
-            beta_user: true,
             must_change_password: true,
           },
         })
@@ -329,7 +309,6 @@ export async function POST(request: NextRequest) {
           display_name: displayName,
         },
         app_metadata: {
-          beta_user: true,
           must_change_password: true,
         },
       })
@@ -355,12 +334,12 @@ export async function POST(request: NextRequest) {
 
     await upsertOrgMember({
       service,
-      orgId: betaOrg.id,
+      orgId: org.id,
       userId,
       orgRole,
     })
 
-    await ensureFreeSubscription(service, betaOrg.id)
+    await ensureFreeSubscription(service, org.id)
 
     let emailDelivery: {
       attempted: boolean
@@ -378,7 +357,7 @@ export async function POST(request: NextRequest) {
       try {
         const mail = await sendOnboardingEmail({
           to: email,
-          orgName: betaOrg.name,
+          orgName: org.name,
           tempPassword,
           loginUrl,
           displayName,
@@ -404,16 +383,16 @@ export async function POST(request: NextRequest) {
 
     await writeAuditLog({
       service,
-      orgId: betaOrg.id,
+      orgId: org.id,
       actorUserId: actor.id,
       entityId: userId,
       metadata: {
         email,
+        org_id: org.id,
+        org_name: org.name,
         org_role: orgRole,
-        provision_mode: 'DIRECT_ACCESS',
         result: mode,
         reset_if_exists: resetIfExists,
-        org_name: betaOrg.name,
         email_delivery: emailDelivery,
       },
     })
@@ -427,8 +406,8 @@ export async function POST(request: NextRequest) {
         display_name: displayName,
       },
       org: {
-        id: betaOrg.id,
-        name: betaOrg.name,
+        id: org.id,
+        name: org.name,
         org_role: orgRole,
       },
       credentials:
@@ -436,7 +415,7 @@ export async function POST(request: NextRequest) {
           ? {
               email,
               temp_password: null,
-              note: 'User already existed. No password reset was performed.',
+              note: 'User already existed. Membership was ensured, but no password reset was performed.',
             }
           : {
               email,
@@ -447,7 +426,7 @@ export async function POST(request: NextRequest) {
     })
   } catch (e) {
     const message =
-      e instanceof Error ? e.message : 'Unexpected error while provisioning beta user.'
+      e instanceof Error ? e.message : 'Unexpected error while provisioning user.'
     console.error('[beta/provision-user]', message)
     return err('SERVER_ERROR', message, 500)
   }
