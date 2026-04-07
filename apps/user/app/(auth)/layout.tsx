@@ -17,7 +17,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
         </div>
 
         <div style={{ marginTop: 12, fontSize: 12, opacity: 0.7 }}>
-          Local Supabase Studio: http://127.0.0.1:54323 • Mailpit: http://127.0.0.1:54324
+          Your Trusted Assistant
         </div>
       </div>
     </div>
