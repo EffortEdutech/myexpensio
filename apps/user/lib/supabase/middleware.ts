@@ -1,11 +1,4 @@
 // apps/user/lib/supabase/middleware.ts
-// Called from apps/user/middleware.ts on every request.
-// Responsibilities:
-//   1. Refresh the Supabase session
-//   2. Redirect unauthenticated users away from protected routes
-//   3. Redirect authenticated users away from auth-only routes
-//   4. Force first-login password change when must_change_password=true
-//   5. Never redirect API requests — let API routes return JSON themselves
 
 import { createServerClient } from '@supabase/ssr'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -37,6 +30,13 @@ function isChangePasswordPath(pathname: string): boolean {
 
 function isApiPath(pathname: string): boolean {
   return pathname === '/api' || pathname.startsWith('/api/')
+}
+
+function isForgotPasswordResetPath(request: NextRequest): boolean {
+  return (
+    request.nextUrl.pathname === '/forgot-password' &&
+    request.nextUrl.searchParams.get('step') === 'reset'
+  )
 }
 
 function getAnonKey(): string {
@@ -75,8 +75,6 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  // IMPORTANT:
-  // Do not redirect API requests. Let API routes handle auth/errors themselves.
   if (isApiPath(pathname)) {
     return supabaseResponse
   }
@@ -89,6 +87,7 @@ export async function updateSession(request: NextRequest) {
 
   if (user) {
     const mustChangePassword = user.app_metadata?.must_change_password === true
+    const forgotPasswordResetPath = isForgotPasswordResetPath(request)
 
     if (mustChangePassword && !isChangePasswordPath(pathname)) {
       return NextResponse.redirect(new URL('/change-password', request.url))
@@ -98,11 +97,11 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(new URL('/home', request.url))
     }
 
-    if (!mustChangePassword && isAuthOnlyPath(pathname)) {
+    if (!mustChangePassword && isAuthOnlyPath(pathname) && !forgotPasswordResetPath) {
       return NextResponse.redirect(new URL('/home', request.url))
     }
 
-    if (mustChangePassword && isAuthOnlyPath(pathname)) {
+    if (mustChangePassword && isAuthOnlyPath(pathname) && !forgotPasswordResetPath) {
       return NextResponse.redirect(new URL('/change-password', request.url))
     }
   }
