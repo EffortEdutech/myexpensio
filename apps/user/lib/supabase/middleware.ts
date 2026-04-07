@@ -5,6 +5,7 @@
 //   2. Redirect unauthenticated users away from protected routes
 //   3. Redirect authenticated users away from auth-only routes
 //   4. Force first-login password change when must_change_password=true
+//   5. Never redirect API requests — let API routes return JSON themselves
 
 import { createServerClient } from '@supabase/ssr'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -32,6 +33,10 @@ function isAuthOnlyPath(pathname: string): boolean {
 
 function isChangePasswordPath(pathname: string): boolean {
   return pathname === '/change-password' || pathname.startsWith('/change-password?')
+}
+
+function isApiPath(pathname: string): boolean {
+  return pathname === '/api' || pathname.startsWith('/api/')
 }
 
 function getAnonKey(): string {
@@ -69,6 +74,12 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const { pathname } = request.nextUrl
+
+  // IMPORTANT:
+  // Do not redirect API requests. Let API routes handle auth/errors themselves.
+  if (isApiPath(pathname)) {
+    return supabaseResponse
+  }
 
   if (!user && !isPublicPath(pathname)) {
     const loginUrl = new URL('/login', request.url)
