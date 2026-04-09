@@ -12,6 +12,11 @@
 //   5b. "Discard"         → nothing saved → back to trips list
 //
 // Gating: FREE=2/month | ADMIN=unlimited | PRO=unlimited
+//
+// NEW:
+//   - Origin and Destination each support “Use Current Position”
+//   - Checks browser geolocation permission where available
+//   - If location is disabled/denied, shows a clear message asking user to enable location first
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
@@ -51,6 +56,7 @@ type LocationValue = {
 }
 
 type Step = 'input' | 'alternatives' | 'confirming' | 'limit_reached'
+type LocationTarget = 'origin' | 'dest'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -64,15 +70,39 @@ const fmtMonthEnd = (iso: string) =>
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 
+function geolocationErrorMessage(error: GeolocationPositionError | { code?: number; message?: string }) {
+  if (error?.code === 1) {
+    return 'Location is not enabled. Please enable location permission in your browser or device settings first.'
+  }
+  if (error?.code === 2) {
+    return 'Current position is unavailable right now. Please try again in an open area.'
+  }
+  if (error?.code === 3) {
+    return 'Getting current position timed out. Please try again.'
+  }
+  return error?.message || 'Unable to get current position right now.'
+}
+
 // ── AddressInput ───────────────────────────────────────────────────────────
 
-function AddressInput({ label, pinEmoji, value, disabled, onSelect, onClear }: {
-  label:    string
-  pinEmoji: string
-  value:    LocationValue | null
-  disabled: boolean
-  onSelect: (loc: LocationValue) => void
-  onClear:  () => void
+function AddressInput({
+  label,
+  pinEmoji,
+  value,
+  disabled,
+  isLocating,
+  onUseCurrentLocation,
+  onSelect,
+  onClear,
+}: {
+  label:                string
+  pinEmoji:             string
+  value:                LocationValue | null
+  disabled:             boolean
+  isLocating:           boolean
+  onUseCurrentLocation: () => void
+  onSelect:             (loc: LocationValue) => void
+  onClear:              () => void
 }) {
   const [query,       setQuery]       = useState(value?.text ?? '')
   const [suggestions, setSuggestions] = useState<GeocodeSuggestion[]>([])
@@ -89,14 +119,22 @@ function AddressInput({ label, pinEmoji, value, disabled, onSelect, onClear }: {
       const res  = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`)
       const json = await res.json()
       if (res.ok) { setSuggestions(json.results ?? []); setOpen(true) }
-    } catch { /* ignore */ }
-    finally { setSearching(false) }
+    } catch {
+      // ignore search failure here
+    } finally {
+      setSearching(false)
+    }
   }, [])
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const q = e.target.value
     setQuery(q)
-    if (!q) { onClear(); setSuggestions([]); setOpen(false); return }
+    if (!q) {
+      onClear()
+      setSuggestions([])
+      setOpen(false)
+      return
+    }
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => search(q), 400)
   }
@@ -105,29 +143,49 @@ function AddressInput({ label, pinEmoji, value, disabled, onSelect, onClear }: {
 
   return (
     <div style={{ position: 'relative' }}>
-      <label style={S.label}><span style={{ marginRight: 5 }}>{pinEmoji}</span>{label}</label>
+      <div style={S.inputLabelRow}>
+        <label style={{ ...S.label, marginBottom: 0 }}><span style={{ marginRight: 5 }}>{pinEmoji}</span>{label}</label>
+        <button
+          type="button"
+          onClick={onUseCurrentLocation}
+          disabled={disabled || isLocating}
+          style={{ ...S.btnUseCurrent, opacity: disabled || isLocating ? 0.55 : 1 }}
+        >
+          {isLocating ? '⏳ Getting location…' : '📍 Use Current Position'}
+        </button>
+      </div>
+
       <div style={{ position: 'relative' }}>
         <input
-          type="text" value={query} onChange={handleChange}
+          type="text"
+          value={query}
+          onChange={handleChange}
           onFocus={() => suggestions.length > 0 && setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 180)}
-          placeholder={`Search or tap map…`}
+          placeholder="Search or tap map…"
           disabled={disabled}
           style={{ ...S.input, borderColor: value ? '#16a34a' : '#d1d5db' }}
           autoComplete="off"
         />
-        {searching && <span style={S.inputRight}>⏳</span>}
-        {value && !searching && (
+        {(searching || isLocating) && <span style={S.inputRight}>⏳</span>}
+        {value && !searching && !isLocating && (
           <button onClick={e => { e.preventDefault(); onClear(); setQuery('') }} style={S.clearBtn} tabIndex={-1}>✕</button>
         )}
       </div>
+
       {open && suggestions.length > 0 && (
         <div style={S.dropdown}>
           {suggestions.map(s => (
-            <button key={s.place_id} onMouseDown={() => {
-              setSuggestions([]); setOpen(false)
-              onSelect({ text: s.display_name, lat: s.lat, lng: s.lon })
-            }} style={S.dropdownItem}>
+            <button
+              key={s.place_id}
+              type="button"
+              onMouseDown={() => {
+                setSuggestions([])
+                setOpen(false)
+                onSelect({ text: s.display_name, lat: s.lat, lng: s.lon })
+              }}
+              style={S.dropdownItem}
+            >
               <span style={S.dropdownMain}>{shortName(s.display_name)}</span>
               <span style={S.dropdownSub}>{s.display_name}</span>
             </button>
@@ -206,18 +264,19 @@ function LimitReachedPanel({ periodEnd, onUseGps, onBack }: {
 export default function MileageCalculatorPage() {
   const router = useRouter()
 
-  const [step,          setStep]          = useState<Step>('input')
-  const [tripDate,      setTripDate]      = useState(todayISO())
-  const [tripTime,      setTripTime]      = useState('08:00')
-  const [origin,        setOrigin]        = useState<LocationValue | null>(null)
-  const [destination,   setDestination]   = useState<LocationValue | null>(null)
-  const [alts,          setAlts]          = useState<RouteAlt[]>([])
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
-  const [usage,         setUsage]         = useState<UsageInfo | null>(null)
-  const [loading,       setLoading]       = useState(false)
-  const [usageLoading,  setUsageLoading]  = useState(true)
-  const [error,         setError]         = useState<string | null>(null)
-  const [geocoding,     setGeocoding]     = useState<'origin' | 'dest' | null>(null)
+  const [step,            setStep]          = useState<Step>('input')
+  const [tripDate,        setTripDate]      = useState(todayISO())
+  const [tripTime,        setTripTime]      = useState('08:00')
+  const [origin,          setOrigin]        = useState<LocationValue | null>(null)
+  const [destination,     setDestination]   = useState<LocationValue | null>(null)
+  const [alts,            setAlts]          = useState<RouteAlt[]>([])
+  const [selectedIndex,   setSelectedIndex] = useState<number | null>(null)
+  const [usage,           setUsage]         = useState<UsageInfo | null>(null)
+  const [loading,         setLoading]       = useState(false)
+  const [usageLoading,    setUsageLoading]  = useState(true)
+  const [error,           setError]         = useState<string | null>(null)
+  const [geocoding,       setGeocoding]     = useState<LocationTarget | null>(null)
+  const [locatingTarget,  setLocatingTarget]= useState<LocationTarget | null>(null)
 
   useEffect(() => {
     fetch('/api/usage').then(r => r.json())
@@ -242,23 +301,89 @@ export default function MileageCalculatorPage() {
     }
   }
 
+  async function getCurrentPositionFor(target: LocationTarget) {
+    setError(null)
+
+    if (typeof window === 'undefined' || !('geolocation' in navigator)) {
+      setError('Location is not supported in this browser or device.')
+      return
+    }
+
+    setLocatingTarget(target)
+
+    try {
+      const navWithPermissions = navigator as Navigator & {
+        permissions?: {
+          query: (descriptor: { name: 'geolocation' }) => Promise<{ state: PermissionState }>
+        }
+      }
+
+      if (navWithPermissions.permissions?.query) {
+        try {
+          const status = await navWithPermissions.permissions.query({ name: 'geolocation' })
+          if (status.state === 'denied') {
+            setError('Location is not enabled. Please enable location permission in your browser or device settings first.')
+            setLocatingTarget(null)
+            return
+          }
+        } catch {
+          // Some browsers do not fully support this query. Fall through to getCurrentPosition.
+        }
+      }
+
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 30000,
+        })
+      })
+
+      const lat = position.coords.latitude
+      const lng = position.coords.longitude
+
+      setGeocoding(target)
+      const text = await reverseGeocode(lat, lng)
+      const nextValue = { text, lat, lng }
+
+      if (target === 'origin') {
+        setOrigin(nextValue)
+      } else {
+        setDestination(nextValue)
+      }
+
+      setAlts([])
+      setSelectedIndex(null)
+      if (step === 'alternatives') setStep('input')
+    } catch (e: unknown) {
+      setError(geolocationErrorMessage(e as GeolocationPositionError))
+    } finally {
+      setLocatingTarget(null)
+      setGeocoding(null)
+    }
+  }
+
   // ── Map pin handlers ───────────────────────────────────────────────────────
 
   const handleOriginSet = useCallback(async (ll: LatLng) => {
+    setError(null)
     setGeocoding('origin')
     const text = await reverseGeocode(ll[0], ll[1])
     setOrigin({ text, lat: ll[0], lng: ll[1] })
-    setAlts([]); setSelectedIndex(null)
+    setAlts([])
+    setSelectedIndex(null)
     if (step === 'alternatives') setStep('input')
     setGeocoding(null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step])
 
   const handleDestSet = useCallback(async (ll: LatLng) => {
+    setError(null)
     setGeocoding('dest')
     const text = await reverseGeocode(ll[0], ll[1])
     setDestination({ text, lat: ll[0], lng: ll[1] })
-    setAlts([]); setSelectedIndex(null)
+    setAlts([])
+    setSelectedIndex(null)
     if (step === 'alternatives') setStep('input')
     setGeocoding(null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -269,10 +394,11 @@ export default function MileageCalculatorPage() {
   async function handleCalculate(e: React.FormEvent) {
     e.preventDefault()
     if (!origin || !destination) {
-      setError('Set both origin and destination — tap the map or use the search fields.')
+      setError('Set both origin and destination — tap the map, search, or use current position.')
       return
     }
-    setError(null); setLoading(true)
+    setError(null)
+    setLoading(true)
 
     const res  = await fetch('/api/routes/alternatives', {
       method:  'POST',
@@ -300,15 +426,14 @@ export default function MileageCalculatorPage() {
   async function handleAddToTrips() {
     if (selectedIndex === null || !origin || !destination) return
     const alt = alts[selectedIndex]
-    setLoading(true); setError(null); setStep('confirming')
+    setLoading(true)
+    setError(null)
+    setStep('confirming')
 
     try {
-      // Build ISO timestamp from user-selected date + time
-      // Use a format that avoids timezone drift: parse as local time
       const localDateTimeStr = `${tripDate}T${tripTime}:00`
       const startedAt = new Date(localDateTimeStr).toISOString()
 
-      // ── Step 1: Create trip ──────────────────────────────────────────────
       const cr = await fetch('/api/trips', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -323,16 +448,18 @@ export default function MileageCalculatorPage() {
 
       if (!cr.ok) {
         setError(cj.error?.message ?? 'Failed to create trip. Please try again.')
-        setStep('alternatives'); setLoading(false); return
+        setStep('alternatives')
+        setLoading(false)
+        return
       }
 
-      // Guard: ensure we got a trip back with an id
       if (!cj.trip?.id) {
         setError('Trip was created but returned no ID. Please check My Trips.')
-        setStep('alternatives'); setLoading(false); return
+        setStep('alternatives')
+        setLoading(false)
+        return
       }
 
-      // ── Step 2: Save selected route + finalise trip ──────────────────────
       const sr = await fetch('/api/routes/select', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -340,7 +467,7 @@ export default function MileageCalculatorPage() {
           trip_id:    cj.trip.id,
           route_id:   alt.route_id,
           distance_m: alt.distance_m,
-          duration_s: alt.duration_s,   // used to estimate ended_at
+          duration_s: alt.duration_s,
           summary:    alt.summary,
         }),
       })
@@ -348,12 +475,12 @@ export default function MileageCalculatorPage() {
 
       if (!sr.ok) {
         setError(sj.error?.message ?? 'Route saved but finalisation failed. Trip is in My Trips as Draft.')
-        setStep('alternatives'); setLoading(false); return
+        setStep('alternatives')
+        setLoading(false)
+        return
       }
 
-      // ── Success: go to trip detail ───────────────────────────────────────
       router.push(`/trips/${cj.trip.id}`)
-
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Unexpected error. Please try again.'
       setError(msg)
@@ -362,44 +489,34 @@ export default function MileageCalculatorPage() {
     }
   }
 
-  // ── Discard ────────────────────────────────────────────────────────────────
-
   function handleDiscard() {
     router.push('/trips')
   }
 
-  // ── Computed ───────────────────────────────────────────────────────────────
-
   const originLatLng: LatLng | null = origin      ? [origin.lat,      origin.lng]      : null
-  const destLatLng:   LatLng | null = destination  ? [destination.lat,  destination.lng] : null
+  const destLatLng:   LatLng | null = destination ? [destination.lat, destination.lng] : null
   const mapMode     = step === 'alternatives' || step === 'confirming' ? 'routing' : 'pinning'
-  const canCalculate = !!origin && !!destination && !isAtLimit && !loading && !geocoding
-
-  // ── Render ─────────────────────────────────────────────────────────────────
+  const canCalculate = !!origin && !!destination && !isAtLimit && !loading && !geocoding && !locatingTarget
 
   return (
     <div style={S.page}>
-
-      {/* Header */}
       <div style={S.titleRow}>
         <Link href="/trips" style={S.backLink}>← My Trips</Link>
         <h1 style={S.title}>Mileage Calculator</h1>
         <p style={S.subtitle}>Calculate route distance and save it as a trip record.</p>
       </div>
 
-      {/* Usage widget */}
       <UsageWidget usage={usage} loading={usageLoading}
         isUnlimited={isUnlimited} isAtLimit={isAtLimit} isNearLimit={isNearLimit} />
 
-      {/* Limit reached */}
       {step === 'limit_reached' && (
         <LimitReachedPanel
           periodEnd={usage?.period_end}
           onUseGps={() => router.push('/trips/start')}
-          onBack={() => setStep('input')} />
+          onBack={() => setStep('input')}
+        />
       )}
 
-      {/* Trip date + time */}
       <div>
         <label style={S.label}>📅 Trip Date &amp; Time</label>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -421,8 +538,6 @@ export default function MileageCalculatorPage() {
         </div>
       </div>
 
-
-      {/* Map — always visible */}
       {step !== 'limit_reached' && (
         <RouteMap
           mode={mapMode}
@@ -436,23 +551,51 @@ export default function MileageCalculatorPage() {
         />
       )}
 
-      {/* Form */}
       {step !== 'limit_reached' && (
         <form onSubmit={handleCalculate} style={S.form}>
-
-          {/* Origin */}
           <AddressInput
-            label="Origin" pinEmoji="🟢" value={origin} disabled={loading}
-            onSelect={loc => { setOrigin(loc); setAlts([]); setSelectedIndex(null); if (step === 'alternatives') setStep('input') }}
-            onClear={() => { setOrigin(null); setAlts([]); setSelectedIndex(null); setStep('input') }}
+            label="Origin"
+            pinEmoji="🟢"
+            value={origin}
+            disabled={loading}
+            isLocating={locatingTarget === 'origin'}
+            onUseCurrentLocation={() => getCurrentPositionFor('origin')}
+            onSelect={loc => {
+              setError(null)
+              setOrigin(loc)
+              setAlts([])
+              setSelectedIndex(null)
+              if (step === 'alternatives') setStep('input')
+            }}
+            onClear={() => {
+              setOrigin(null)
+              setAlts([])
+              setSelectedIndex(null)
+              setStep('input')
+            }}
           />
           {geocoding === 'origin' && <p style={S.geocodingHint}>📍 Resolving address…</p>}
 
-          {/* Destination */}
           <AddressInput
-            label="Destination" pinEmoji="🔴" value={destination} disabled={loading}
-            onSelect={loc => { setDestination(loc); setAlts([]); setSelectedIndex(null); if (step === 'alternatives') setStep('input') }}
-            onClear={() => { setDestination(null); setAlts([]); setSelectedIndex(null); setStep('input') }}
+            label="Destination"
+            pinEmoji="🔴"
+            value={destination}
+            disabled={loading}
+            isLocating={locatingTarget === 'dest'}
+            onUseCurrentLocation={() => getCurrentPositionFor('dest')}
+            onSelect={loc => {
+              setError(null)
+              setDestination(loc)
+              setAlts([])
+              setSelectedIndex(null)
+              if (step === 'alternatives') setStep('input')
+            }}
+            onClear={() => {
+              setDestination(null)
+              setAlts([])
+              setSelectedIndex(null)
+              setStep('input')
+            }}
           />
           {geocoding === 'dest' && <p style={S.geocodingHint}>📍 Resolving address…</p>}
 
@@ -468,19 +611,21 @@ export default function MileageCalculatorPage() {
         </form>
       )}
 
-      {/* Route results */}
       {(step === 'alternatives' || step === 'confirming') && alts.length > 0 && (
         <div style={S.resultsSection}>
-
           <p style={S.resultsTitle}>Route Options</p>
           <p style={S.resultsHint}>Select a route — tap a card or tap the line on the map</p>
 
           {alts.map((alt, i) => {
             const isSel = i === selectedIndex
             return (
-              <button key={alt.route_id} onClick={() => setSelectedIndex(i)}
+              <button
+                key={alt.route_id}
+                type="button"
+                onClick={() => setSelectedIndex(i)}
                 disabled={loading}
-                style={{ ...S.altCard, borderColor: isSel ? '#2563eb' : '#e2e8f0', backgroundColor: isSel ? '#eff6ff' : '#fff' }}>
+                style={{ ...S.altCard, borderColor: isSel ? '#2563eb' : '#e2e8f0', backgroundColor: isSel ? '#eff6ff' : '#fff' }}
+              >
                 {isSel && <span style={S.altBadge}>✓ Selected</span>}
                 <span style={S.altSummary}>{alt.summary}</span>
                 <div style={S.altStats}>
@@ -492,10 +637,10 @@ export default function MileageCalculatorPage() {
             )
           })}
 
-          {/* Add to Trips / Discard */}
           {selectedIndex !== null && (
             <div style={S.actionRow}>
               <button
+                type="button"
                 onClick={handleAddToTrips}
                 disabled={loading}
                 style={{ ...S.btnAdd, opacity: loading ? 0.55 : 1 }}
@@ -503,6 +648,7 @@ export default function MileageCalculatorPage() {
                 {step === 'confirming' ? '⏳ Saving…' : `✅ Add to My Trips — ${fmtKm(alts[selectedIndex].distance_m)}`}
               </button>
               <button
+                type="button"
                 onClick={handleDiscard}
                 disabled={loading}
                 style={S.btnDiscard}
@@ -511,15 +657,11 @@ export default function MileageCalculatorPage() {
               </button>
             </div>
           )}
-
         </div>
       )}
-
     </div>
   )
 }
-
-// ── Styles ─────────────────────────────────────────────────────────────────
 
 const S: Record<string, React.CSSProperties> = {
   page:         { display: 'flex', flexDirection: 'column', gap: 14, paddingBottom: 60 },
@@ -538,8 +680,10 @@ const S: Record<string, React.CSSProperties> = {
   mapPlaceholder:{ height: 360, backgroundColor: '#f1f5f9', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#94a3b8', border: '1.5px solid #e2e8f0' },
 
   form:         { display: 'flex', flexDirection: 'column', gap: 12 },
+  inputLabelRow:{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 5, flexWrap: 'wrap' },
   label:        { fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 5 },
   input:        { width: '100%', paddingTop: 11, paddingBottom: 11, paddingLeft: 14, paddingRight: 38, border: '1.5px solid #d1d5db', borderRadius: 8, fontSize: 14, color: '#0f172a', WebkitTextFillColor: '#0f172a', outline: 'none', backgroundColor: '#fff', boxSizing: 'border-box' },
+  btnUseCurrent:{ padding: '7px 10px', backgroundColor: '#fff', color: '#0f172a', border: '1px solid #cbd5e1', borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' },
   inputRight:   { position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 14, pointerEvents: 'none' },
   clearBtn:     { position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#94a3b8', padding: '2px 4px', lineHeight: 1 },
   geocodingHint:{ margin: '-6px 0 0', fontSize: 12, color: '#64748b' },

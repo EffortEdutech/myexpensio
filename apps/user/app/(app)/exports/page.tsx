@@ -1,10 +1,11 @@
 'use client'
 // apps/user/app/(app)/exports/page.tsx
 //
-// CHANGES (15 Mar 2026):
-//   - DRAFT claims now exportable (warning badge on draft selection)
-//   - Step 4 PDF Options: removed LayoutToggle (grouping is set in template, Step 3 shows it)
-//   - Step 4 is now purely the signature pad
+// CHANGES (09 Apr 2026):
+//   - Restore manual PDF grouping toggle.
+//   - Template still provides the default PDF layout.
+//   - User can override grouping to By Date / By Category before generating PDF.
+//   - Signature step remains available for PDF.
 
 import { useState, useEffect, useCallback } from 'react'
 import { SignaturePad } from '@/components/SignaturePad'
@@ -33,6 +34,8 @@ type ExportJob = {
   filter_status:    string
   created_at:       string
 }
+
+type PdfGrouping = 'BY_DATE' | 'BY_CATEGORY'
 
 type Template = {
   id:          string
@@ -104,6 +107,14 @@ function histPeriodLabel(job: ExportJob): string {
   return from ? `From ${fmtDateShort(from)}` : `To ${fmtDateShort(to)}`
 }
 
+function normalizeGrouping(value: string | undefined | null): PdfGrouping {
+  return value === 'BY_CATEGORY' ? 'BY_CATEGORY' : 'BY_DATE'
+}
+
+function groupingLabel(value: PdfGrouping) {
+  return value === 'BY_CATEGORY' ? 'By category' : 'By date'
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ExportsPage() {
@@ -124,6 +135,8 @@ export default function ExportsPage() {
   const [genSuccess,   setGenSuccess]   = useState<string | null>(null)
   const [history,      setHistory]      = useState<ExportJob[]>([])
   const [loadingH,     setLoadingH]     = useState(true)
+  const [pdfGrouping,  setPdfGrouping]  = useState<PdfGrouping>('BY_DATE')
+  const [groupingTouched, setGroupingTouched] = useState(false)
 
   // ── Loaders ──────────────────────────────────────────────────────────────
 
@@ -149,6 +162,8 @@ export default function ExportsPage() {
       if (list.length > 0) {
         const def = list.find(t => t.is_default) ?? list[0]
         setTemplateId(def.id)
+        setPdfGrouping(normalizeGrouping(def.schema?.pdf_layout?.grouping))
+        setGroupingTouched(false)
       }
     } catch { /* non-critical */ }
     finally { setLoadingT(false) }
@@ -166,6 +181,15 @@ export default function ExportsPage() {
 
   useEffect(() => { loadClaims(); loadTemplates(); loadHistory() }, [loadClaims, loadTemplates, loadHistory])
 
+  const activeTpl = templates.find(t => t.id === templateId) ?? null
+  const templateGrouping = normalizeGrouping(activeTpl?.schema?.pdf_layout?.grouping)
+
+  useEffect(() => {
+    if (format !== 'PDF') return
+    if (groupingTouched) return
+    setPdfGrouping(templateGrouping)
+  }, [format, templateGrouping, groupingTouched])
+
   // ── Filtering ────────────────────────────────────────────────────────────
 
   const filteredClaims = claims.filter(c => {
@@ -179,13 +203,22 @@ export default function ExportsPage() {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
 
-  const allSelected    = filteredClaims.length > 0 && filteredClaims.every(c => selected.has(c.id))
+  function handleTemplateSelect(id: string) {
+    const nextTemplate = templates.find(t => t.id === id) ?? null
+    setTemplateId(id)
+    setGroupingTouched(false)
+    setPdfGrouping(normalizeGrouping(nextTemplate?.schema?.pdf_layout?.grouping))
+  }
+
+  function handleGroupingPick(value: PdfGrouping) {
+    setPdfGrouping(value)
+    setGroupingTouched(true)
+  }
+
   const selectedClaims = claims.filter(c => selected.has(c.id))
   const selectedTotal  = selectedClaims.reduce((s, c) => s + Number(c.total_amount), 0)
   const draftSelected  = selectedClaims.filter(c => c.status === 'DRAFT').length
-
-  const activeTpl = templates.find(t => t.id === templateId) ?? null
-  const colCount  = activeTpl?.schema?.columns?.length ?? 0
+  const colCount       = activeTpl?.schema?.columns?.length ?? 0
 
   // ── Generate ─────────────────────────────────────────────────────────────
 
@@ -201,9 +234,7 @@ export default function ExportsPage() {
     if (templateId) body.template_id = templateId
 
     if (format === 'PDF') {
-      // Use grouping from template if available, else default BY_DATE
-      const tplGrouping = activeTpl?.schema?.pdf_layout?.grouping
-      body.pdf_layout = tplGrouping ?? 'BY_DATE'
+      body.pdf_layout = pdfGrouping
       if (signature) body.signature_data_url = signature
     }
 
@@ -231,8 +262,9 @@ export default function ExportsPage() {
       document.body.removeChild(a); URL.revokeObjectURL(url)
 
       const tplName = activeTpl ? ` · ${activeTpl.name}` : ''
+      const groupingText = format === 'PDF' ? ` · ${groupingLabel(pdfGrouping)}` : ''
       setGenSuccess(
-        `✓ ${format} downloaded — ${rowCount} item${rowCount !== 1 ? 's' : ''} from ${selected.size} claim${selected.size !== 1 ? 's' : ''}${tplName}`
+        `✓ ${format} downloaded — ${rowCount} item${rowCount !== 1 ? 's' : ''} from ${selected.size} claim${selected.size !== 1 ? 's' : ''}${tplName}${groupingText}`
       )
       loadHistory()
     } catch {
@@ -377,7 +409,7 @@ export default function ExportsPage() {
           <span style={S.cardIcon}>🗂</span>
           <div>
             <div style={S.cardTitle}>Step 3 — Report Template</div>
-            <div style={S.cardSub}>Controls columns, order, and PDF layout</div>
+            <div style={S.cardSub}>Controls columns, order, and PDF layout defaults</div>
           </div>
         </div>
 
@@ -396,7 +428,7 @@ export default function ExportsPage() {
               <div style={{ fontSize: 10, color: '#7dd3fc', marginTop: 3 }}>
                 {templates[0].schema?.columns?.length ?? 0} columns · {templates[0].schema?.preset ?? 'Standard'}
                 {templates[0].is_default && ' · Default'}
-                {format === 'PDF' && templates[0].schema?.pdf_layout?.grouping && ` · PDF: ${templates[0].schema.pdf_layout.grouping === 'BY_CATEGORY' ? 'By category' : 'By date'}`}
+                {format === 'PDF' && templates[0].schema?.pdf_layout?.grouping && ` · Template PDF: ${templates[0].schema.pdf_layout.grouping === 'BY_CATEGORY' ? 'By category' : 'By date'}`}
               </div>
             </div>
           </div>
@@ -409,7 +441,7 @@ export default function ExportsPage() {
               const pdfCfg   = t.schema?.pdf_layout
 
               return (
-                <button key={t.id} onClick={() => setTemplateId(t.id)}
+                <button key={t.id} onClick={() => handleTemplateSelect(t.id)}
                   style={{
                     display: 'flex', alignItems: 'flex-start', gap: 12,
                     padding: '12px 14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
@@ -443,7 +475,7 @@ export default function ExportsPage() {
                       </span>
                       {format === 'PDF' && pdfCfg?.grouping && (
                         <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, fontWeight: 600, backgroundColor: isActive ? '#ede9fe' : '#f5f3ff', color: isActive ? '#7c3aed' : '#6d28d9' }}>
-                          PDF: {pdfCfg.grouping === 'BY_CATEGORY' ? 'By category' : 'By date'} · {pdfCfg.orientation ?? 'portrait'}
+                          Template PDF: {pdfCfg.grouping === 'BY_CATEGORY' ? 'By category' : 'By date'} · {pdfCfg.orientation ?? 'portrait'}
                         </span>
                       )}
                     </div>
@@ -463,30 +495,60 @@ export default function ExportsPage() {
               <strong style={{ color: '#0f172a' }}>{activeTpl.name}</strong>
               {' '}will export{' '}
               <strong>{colCount > 0 ? `${colCount} columns` : 'standard columns'}</strong>
-              {format === 'PDF' && activeTpl.schema?.pdf_layout?.grouping && (
-                <> — grouped <strong>{activeTpl.schema.pdf_layout.grouping === 'BY_CATEGORY' ? 'by category' : 'by date'}</strong>, {activeTpl.schema.pdf_layout.orientation ?? 'portrait'}</>
+              {format === 'PDF' && (
+                <> — template default <strong>{groupingLabel(templateGrouping)}</strong>, {activeTpl.schema?.pdf_layout?.orientation ?? 'portrait'}</>
               )}
             </div>
           </div>
         )}
       </div>
 
-      {/* ── Step 4: Signature (PDF only) ─────────────────────────────── */}
-      {/* Grouping toggle REMOVED — it is set in the template (Step 3 shows it) */}
+      {/* ── Step 4: PDF Options ──────────────────────────────────────── */}
       {format === 'PDF' && (
         <div style={{ ...S.card, border: '1px solid #e9d5ff' }}>
           <div style={S.cardHead}>
-            <span style={S.cardIcon}>✍</span>
+            <span style={S.cardIcon}>🧩</span>
             <div>
-              <div style={S.cardTitle}>Step 4 — Signature</div>
-              <div style={S.cardSub}>Appears on the Declaration page of the PDF</div>
+              <div style={S.cardTitle}>Step 4 — PDF Options</div>
+              <div style={S.cardSub}>Choose grouping and optional signature</div>
             </div>
           </div>
-          <SignaturePad onCapture={dataUrl => setSignature(dataUrl)} width={420} height={130} />
-          {signature
-            ? <div style={{ fontSize: 11, color: '#15803d', fontWeight: 600, marginTop: 6 }}>✓ Signature ready</div>
-            : <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>Optional — leave blank for an unsigned line</div>
-          }
+
+          <div style={S.optionBlock}>
+            <div style={S.optionLabel}>Grouping</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => handleGroupingPick('BY_DATE')}
+                style={{ ...S.filterBtn, ...(pdfGrouping === 'BY_DATE' ? S.filterActivePdf : {}) }}
+              >
+                📅 By Date
+              </button>
+              <button
+                onClick={() => handleGroupingPick('BY_CATEGORY')}
+                style={{ ...S.filterBtn, ...(pdfGrouping === 'BY_CATEGORY' ? S.filterActivePdf : {}) }}
+              >
+                🏷️ By Category
+              </button>
+            </div>
+            <div style={S.optionHint}>
+              Template default: <strong>{groupingLabel(templateGrouping)}</strong>
+              {groupingTouched && pdfGrouping !== templateGrouping && (
+                <> · manual override active</>
+              )}
+            </div>
+          </div>
+
+          <div style={S.optionDivider} />
+
+          <div style={S.optionBlock}>
+            <div style={S.optionLabel}>Signature</div>
+            <div style={S.optionHint}>Appears on the Declaration page of the PDF</div>
+            <SignaturePad onCapture={dataUrl => setSignature(dataUrl)} width={420} height={130} />
+            {signature
+              ? <div style={{ fontSize: 11, color: '#15803d', fontWeight: 600, marginTop: 6 }}>✓ Signature ready</div>
+              : <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>Optional — leave blank for an unsigned line</div>
+            }
+          </div>
         </div>
       )}
 
@@ -509,6 +571,7 @@ export default function ExportsPage() {
           <div style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', marginTop: 8 }}>
             Using template: <strong style={{ color: '#64748b' }}>{activeTpl.name}</strong>
             {colCount > 0 && ` · ${colCount} columns`}
+            {format === 'PDF' && ` · ${groupingLabel(pdfGrouping)}`}
           </div>
         )}
       </div>
@@ -576,4 +639,8 @@ const S: Record<string, React.CSSProperties> = {
   btnGenerate:     { width: '100%', paddingTop: 14, paddingBottom: 14, backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer' },
   btnGeneratePdf:  { backgroundColor: '#7c3aed' },
   histRow:         { display: 'flex', alignItems: 'center', gap: 12, paddingTop: 12, paddingBottom: 12 },
+  optionBlock:     { display: 'flex', flexDirection: 'column', gap: 8 },
+  optionLabel:     { fontSize: 13, fontWeight: 700, color: '#0f172a' },
+  optionHint:      { fontSize: 11, color: '#64748b', lineHeight: 1.6 },
+  optionDivider:   { height: 1, backgroundColor: '#ede9fe', marginTop: 14, marginBottom: 14 },
 }

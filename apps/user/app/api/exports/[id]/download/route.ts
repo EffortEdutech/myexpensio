@@ -2,8 +2,7 @@
 //
 // GET /api/exports/[id]/download — rebuilds and re-streams a past CSV/XLSX export.
 //
-// FIX (15 Mar): tng_transactions FK hint
-// FIX (15 Mar): removed .eq('status','SUBMITTED') — DRAFT claims exportable
+// Uses stored line-item values only. No current rate lookup.
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
@@ -24,7 +23,7 @@ function err(code: string, message: string, status: number) {
 }
 
 export async function GET(_req: NextRequest, { params }: Params) {
-  const { id }   = await params
+  const { id } = await params
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
@@ -47,24 +46,23 @@ export async function GET(_req: NextRequest, { params }: Params) {
     return err('NOT_SUPPORTED', 'PDF re-download is not available. Please regenerate.', 400)
   }
 
-  const f        = (job.filters ?? {}) as { claim_ids?: string[] }
-  const claimIds = f.claim_ids ?? []
-
+  const filters = (job.filters ?? {}) as { claim_ids?: string[] }
+  const claimIds = filters.claim_ids ?? []
   if (claimIds.length === 0) {
     return err('VALIDATION_ERROR', 'No claim IDs stored for this export job.', 400)
   }
 
-  // FIX: no status filter — DRAFT and SUBMITTED both downloadable
-  // FIX: tng_transactions FK hint
   const { data: claims, error: claimsError } = await supabase
     .from('claims')
     .select(`
       id, title, status, period_start, period_end,
       submitted_at, total_amount, currency,
+      rate_version_id, user_rate_version_id,
       profiles ( display_name, email ),
       claim_items (
         id, type, amount, currency, claim_date,
         merchant, notes, receipt_url,
+        rate,
         paid_via_tng, tng_transaction_id,
         perdiem_days, perdiem_rate_myr, perdiem_destination,
         meal_session, lodging_check_in, lodging_check_out,
@@ -90,63 +88,52 @@ export async function GET(_req: NextRequest, { params }: Params) {
     return err('NOT_FOUND', 'No claims found for this export job.', 404)
   }
 
-  const { data: rateRow } = await supabase
-    .from('rate_versions')
-    .select('mileage_rate_per_km')
-    .eq('org_id', job.org_id)
-    .order('effective_from', { ascending: false })
-    .limit(1)
-    .single()
-
-  const mileageRatePerKm = rateRow?.mileage_rate_per_km ?? undefined
-
-  const shaped: ClaimForExport[] = claims.map(c => {
-    const profile = Array.isArray(c.profiles) ? c.profiles[0] : c.profiles
-    const items   = (Array.isArray(c.claim_items) ? c.claim_items : [c.claim_items]).filter(Boolean)
+  const shaped: ClaimForExport[] = claims.map((claim) => {
+    const profile = Array.isArray(claim.profiles) ? claim.profiles[0] : claim.profiles
+    const items = (Array.isArray(claim.claim_items) ? claim.claim_items : [claim.claim_items]).filter(Boolean)
 
     return {
-      id:           c.id,
-      title:        c.title,
-      status:       c.status,
-      period_start: c.period_start,
-      period_end:   c.period_end,
-      submitted_at: c.submitted_at,
-      total_amount: c.total_amount,
-      currency:     c.currency,
-      user_name:    profile?.display_name ?? null,
-      user_email:   profile?.email        ?? null,
+      id: claim.id,
+      title: claim.title,
+      status: claim.status,
+      period_start: claim.period_start,
+      period_end: claim.period_end,
+      submitted_at: claim.submitted_at,
+      total_amount: claim.total_amount,
+      currency: claim.currency,
+      user_name: profile?.display_name ?? null,
+      user_email: profile?.email ?? null,
       items: items.map((item: Record<string, unknown>) => {
-        const tngTx = Array.isArray(item.tng_transactions)
-          ? item.tng_transactions[0]
-          : item.tng_transactions
-        const trip  = Array.isArray(item.trips) ? item.trips[0] : item.trips
+        const tngTx = Array.isArray(item.tng_transactions) ? item.tng_transactions[0] : item.tng_transactions
+        const trip = Array.isArray(item.trips) ? item.trips[0] : item.trips
 
         return {
-          id:                  item.id,
-          type:                item.type,
-          amount:              item.amount,
-          currency:            item.currency,
-          claim_date:          item.claim_date,
-          merchant:            item.merchant,
-          notes:               item.notes,
-          receipt_url:         item.receipt_url,
-          paid_via_tng:        item.paid_via_tng,
-          tng_transaction_id:  item.tng_transaction_id,
-          tng_trans_no:        (tngTx as Record<string, unknown> | null)?.trans_no as string ?? null,
-          perdiem_days:        item.perdiem_days,
-          perdiem_rate_myr:    item.perdiem_rate_myr,
+          id: item.id,
+          type: item.type,
+          amount: item.amount,
+          currency: item.currency,
+          claim_date: item.claim_date,
+          merchant: item.merchant,
+          notes: item.notes,
+          receipt_url: item.receipt_url,
+          rate: item.rate,
+          paid_via_tng: item.paid_via_tng,
+          tng_transaction_id: item.tng_transaction_id,
+          tng_trans_no: (tngTx as Record<string, unknown> | null)?.trans_no as string ?? null,
+          perdiem_days: item.perdiem_days,
+          perdiem_rate_myr: item.perdiem_rate_myr,
           perdiem_destination: item.perdiem_destination,
-          meal_session:        item.meal_session,
-          lodging_check_in:    item.lodging_check_in,
-          lodging_check_out:   item.lodging_check_out,
+          meal_session: item.meal_session,
+          lodging_check_in: item.lodging_check_in,
+          lodging_check_out: item.lodging_check_out,
           trip: trip ? {
-            id:               (trip as Record<string, unknown>).id,
-            origin_text:      (trip as Record<string, unknown>).origin_text,
+            id: (trip as Record<string, unknown>).id,
+            origin_text: (trip as Record<string, unknown>).origin_text,
             destination_text: (trip as Record<string, unknown>).destination_text,
             final_distance_m: (trip as Record<string, unknown>).final_distance_m,
-            distance_source:  (trip as Record<string, unknown>).distance_source,
-            transport_type:   (trip as Record<string, unknown>).transport_type,
-            odometer_mode:    (trip as Record<string, unknown>).odometer_mode,
+            distance_source: (trip as Record<string, unknown>).distance_source,
+            transport_type: (trip as Record<string, unknown>).transport_type,
+            odometer_mode: (trip as Record<string, unknown>).odometer_mode,
           } as TripForExport : null,
         } as ItemForExport
       }),
@@ -155,20 +142,19 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
   try {
     const format = job.format as 'CSV' | 'XLSX'
-
-    const { buffer, contentType, extension } = await buildExport(shaped, format, { mileageRatePerKm })
+    const { buffer, contentType, extension } = await buildExport(shaped, format)
 
     const dateStamp = new Date(job.created_at).toISOString().slice(0, 10).replace(/-/g, '')
-    const filename  = `myexpensio_claims_${dateStamp}.${extension}`
+    const filename = `myexpensio_claims_${dateStamp}.${extension}`
 
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
-        'Content-Type':        contentType,
+        'Content-Type': contentType,
         'Content-Disposition': `attachment; filename="${filename}"`,
-        'Content-Length':      String(buffer.length),
-        'Cache-Control':       'no-store',
-        'X-Row-Count':         String(shaped.reduce((n, c) => n + Math.max(c.items.length, 1), 0)),
+        'Content-Length': String(buffer.length),
+        'Cache-Control': 'no-store',
+        'X-Row-Count': String(shaped.reduce((n, c) => n + Math.max(c.items.length, 1), 0)),
       },
     })
   } catch (buildError) {
