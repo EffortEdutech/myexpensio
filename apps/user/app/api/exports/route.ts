@@ -2,46 +2,35 @@
 //
 // POST /api/exports — synchronous export, streams file immediately.
 //
-// CHANGE LOG:
-//   14 Mar FIX 1: formatOverride?.columns narrowed before access
-//   14 Mar FIX 2: NextResponse body uses Uint8Array
-//   15 Mar FIX 3: tng_transactions join uses FK hint (PGRST201 fix)
-//   15 Mar FIX 4: PDF 501 replaced with real buildPdfData + generatePDF
-//   15 Mar FIX 5: PdfLayoutConfig defined inline (import caused module-load failure)
-//   15 Mar FIX 6: Removed .eq('status','SUBMITTED') — DRAFT claims are now exportable
+// Uses stored line-item values only. No current rate lookup.
 
 import { type NextRequest, NextResponse } from 'next/server'
-import { createClient }               from '@/lib/supabase/server'
-import { buildExport }                from '@/lib/export-builder'
-import { buildPdfData, generatePDF }  from '@/lib/pdf-builder'
-import {
-  PRESET_COLUMNS,
-  resolveColumns,
-  type ExportColumnKey,
-} from '@/lib/export-columns'
+import { createClient } from '@/lib/supabase/server'
+import { buildExport } from '@/lib/export-builder'
+import { buildPdfData, generatePDF } from '@/lib/pdf-builder'
+import { PRESET_COLUMNS, resolveColumns, type ExportColumnKey } from '@/lib/export-columns'
 import type { ClaimForExport, ItemForExport, TripForExport } from '@/lib/export-builder'
 
 export const runtime = 'nodejs'
 
-// Defined inline — importing from pdf-builder caused module-load failure
-// when pdf-builder didn't export these names, breaking ALL exports (CSV/XLSX too).
 type PdfLayoutConfig = {
-  orientation:           'portrait' | 'landscape'
-  grouping:              'BY_DATE' | 'BY_CATEGORY'
-  show_summary_table:    boolean
+  orientation: 'portrait' | 'landscape'
+  grouping: 'BY_DATE' | 'BY_CATEGORY'
+  show_summary_table: boolean
   show_receipt_appendix: boolean
-  show_tng_appendix:     boolean
-  show_declaration:      boolean
-  accent_color:          string
+  show_tng_appendix: boolean
+  show_declaration: boolean
+  accent_color: string
 }
+
 const DEFAULT_PDF_LAYOUT: PdfLayoutConfig = {
-  orientation:           'portrait',
-  grouping:              'BY_DATE',
-  show_summary_table:    true,
+  orientation: 'portrait',
+  grouping: 'BY_DATE',
+  show_summary_table: true,
   show_receipt_appendix: true,
-  show_tng_appendix:     true,
-  show_declaration:      true,
-  accent_color:          '#0f172a',
+  show_tng_appendix: true,
+  show_declaration: true,
+  accent_color: '#0f172a',
 }
 
 function err(code: string, message: string, status: number) {
@@ -50,7 +39,6 @@ function err(code: string, message: string, status: number) {
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
-
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return err('UNAUTHORIZED', 'Not authenticated', 401)
 
@@ -68,34 +56,29 @@ export async function POST(request: NextRequest) {
   if (!body) return err('VALIDATION_ERROR', 'Request body required', 400)
 
   const { claim_ids, format, template_id, pdf_layout, signature_data_url } = body
-
-  if (!claim_ids?.length)                       return err('VALIDATION_ERROR', 'claim_ids is required', 400)
+  if (!claim_ids?.length) return err('VALIDATION_ERROR', 'claim_ids is required', 400)
   if (!['CSV', 'XLSX', 'PDF'].includes(format)) return err('VALIDATION_ERROR', 'format must be CSV | XLSX | PDF', 400)
 
-  // ── Resolve template ──────────────────────────────────────────────────────
-  let columns: ExportColumnKey[]                  = PRESET_COLUMNS.STANDARD
+  let columns: ExportColumnKey[] = PRESET_COLUMNS.STANDARD
   let templatePdfLayout: Partial<PdfLayoutConfig> = {}
 
   if (template_id) {
     const { data: templateRow } = await supabase
       .from('report_templates')
-      .select('schema, export_formats ( format_type, columns )')
+      .select('schema, export_formats ( format_type, columns ), is_active')
       .eq('id', template_id)
-      .eq('org_id', membership.org_id)
       .eq('is_active', true)
-      .single()
+      .maybeSingle()
 
     if (templateRow) {
       const exportFormats = Array.isArray(templateRow.export_formats)
         ? templateRow.export_formats
         : [templateRow.export_formats]
-
       const formatOverride = (exportFormats as Array<{ format_type: string; columns?: unknown } | null>)
-        .find(f => f?.format_type === format)
+        .find((row) => row?.format_type === format)
 
-      const overrideCols = formatOverride?.columns
-      if (Array.isArray(overrideCols) && overrideCols.length > 0) {
-        columns = overrideCols as ExportColumnKey[]
+      if (Array.isArray(formatOverride?.columns) && formatOverride.columns.length > 0) {
+        columns = formatOverride.columns as ExportColumnKey[]
       } else {
         columns = resolveColumns(templateRow.schema as Parameters<typeof resolveColumns>[0])
       }
@@ -107,18 +90,17 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // ── Fetch claims — DRAFT and SUBMITTED both allowed ───────────────────────
-  // FIX 6: removed .eq('status', 'SUBMITTED') — users may export draft claims
-  // FIX 3: tng_transactions uses FK hint to fix PGRST201 ambiguous relationship
   const { data: claims, error: claimsError } = await supabase
     .from('claims')
     .select(`
       id, title, status, period_start, period_end,
       submitted_at, total_amount, currency,
+      rate_version_id, user_rate_version_id,
       profiles ( display_name, email ),
       claim_items (
         id, type, amount, currency, claim_date,
         merchant, notes, receipt_url,
+        rate,
         paid_via_tng, tng_transaction_id,
         perdiem_days, perdiem_rate_myr, perdiem_destination,
         meal_session, lodging_check_in, lodging_check_out,
@@ -139,108 +121,83 @@ export async function POST(request: NextRequest) {
     console.error('[/api/exports] claims fetch error:', claimsError)
     return err('DB_ERROR', 'Failed to fetch claims', 500)
   }
+  if (!claims?.length) return err('VALIDATION_ERROR', 'No claims found for the given IDs', 400)
 
-  if (!claims?.length) {
-    return err('VALIDATION_ERROR', 'No claims found for the given IDs', 400)
-  }
-
-  // ── Mileage rate ──────────────────────────────────────────────────────────
-  const { data: rateRow } = await supabase
-    .from('rate_versions')
-    .select('mileage_rate_per_km')
-    .eq('org_id', membership.org_id)
-    .order('effective_from', { ascending: false })
-    .limit(1)
-    .single()
-
-  const mileageRatePerKm = rateRow?.mileage_rate_per_km ?? undefined
-
-  // ── Shape claims ──────────────────────────────────────────────────────────
-  const shaped: ClaimForExport[] = claims.map(c => {
-    const profile = Array.isArray(c.profiles) ? c.profiles[0] : c.profiles
-    const items   = (Array.isArray(c.claim_items) ? c.claim_items : [c.claim_items]).filter(Boolean)
+  const shaped: ClaimForExport[] = claims.map((claim) => {
+    const profile = Array.isArray(claim.profiles) ? claim.profiles[0] : claim.profiles
+    const items = (Array.isArray(claim.claim_items) ? claim.claim_items : [claim.claim_items]).filter(Boolean)
 
     return {
-      id:           c.id,
-      title:        c.title,
-      status:       c.status,
-      period_start: c.period_start,
-      period_end:   c.period_end,
-      submitted_at: c.submitted_at,
-      total_amount: c.total_amount,
-      currency:     c.currency,
-      user_name:    profile?.display_name ?? null,
-      user_email:   profile?.email        ?? null,
+      id: claim.id,
+      title: claim.title,
+      status: claim.status,
+      period_start: claim.period_start,
+      period_end: claim.period_end,
+      submitted_at: claim.submitted_at,
+      total_amount: claim.total_amount,
+      currency: claim.currency,
+      user_name: profile?.display_name ?? null,
+      user_email: profile?.email ?? null,
       items: items.map((item: Record<string, unknown>) => {
-        const tngTx = Array.isArray(item.tng_transactions)
-          ? item.tng_transactions[0]
-          : item.tng_transactions
-        const trip  = Array.isArray(item.trips) ? item.trips[0] : item.trips
-
+        const tngTx = Array.isArray(item.tng_transactions) ? item.tng_transactions[0] : item.tng_transactions
+        const trip = Array.isArray(item.trips) ? item.trips[0] : item.trips
         return {
-          id:                  item.id,
-          type:                item.type,
-          amount:              item.amount,
-          currency:            item.currency,
-          claim_date:          item.claim_date,
-          merchant:            item.merchant,
-          notes:               item.notes,
-          receipt_url:         item.receipt_url,
-          paid_via_tng:        item.paid_via_tng,
-          tng_transaction_id:  item.tng_transaction_id,
-          tng_trans_no:        (tngTx as Record<string, unknown> | null)?.trans_no as string ?? null,
-          perdiem_days:        item.perdiem_days,
-          perdiem_rate_myr:    item.perdiem_rate_myr,
+          id: item.id,
+          type: item.type,
+          amount: item.amount,
+          currency: item.currency,
+          claim_date: item.claim_date,
+          merchant: item.merchant,
+          notes: item.notes,
+          receipt_url: item.receipt_url,
+          rate: item.rate,
+          paid_via_tng: item.paid_via_tng,
+          tng_transaction_id: item.tng_transaction_id,
+          tng_trans_no: (tngTx as Record<string, unknown> | null)?.trans_no as string ?? null,
+          perdiem_days: item.perdiem_days,
+          perdiem_rate_myr: item.perdiem_rate_myr,
           perdiem_destination: item.perdiem_destination,
-          meal_session:        item.meal_session,
-          lodging_check_in:    item.lodging_check_in,
-          lodging_check_out:   item.lodging_check_out,
+          meal_session: item.meal_session,
+          lodging_check_in: item.lodging_check_in,
+          lodging_check_out: item.lodging_check_out,
           trip: trip ? {
-            id:               (trip as Record<string, unknown>).id,
-            origin_text:      (trip as Record<string, unknown>).origin_text,
+            id: (trip as Record<string, unknown>).id,
+            origin_text: (trip as Record<string, unknown>).origin_text,
             destination_text: (trip as Record<string, unknown>).destination_text,
             final_distance_m: (trip as Record<string, unknown>).final_distance_m,
-            distance_source:  (trip as Record<string, unknown>).distance_source,
-            transport_type:   (trip as Record<string, unknown>).transport_type,
-            odometer_mode:    (trip as Record<string, unknown>).odometer_mode,
+            distance_source: (trip as Record<string, unknown>).distance_source,
+            transport_type: (trip as Record<string, unknown>).transport_type,
+            odometer_mode: (trip as Record<string, unknown>).odometer_mode,
           } as TripForExport : null,
         } as ItemForExport
       }),
     }
   })
 
-  const rowCount = shaped.reduce((n, c) => n + Math.max(c.items.length, 1), 0)
-
-  // ── Resolve FULL PDF layout from template → body fallback → defaults ───────
-  // template.schema.pdf_layout overrides EVERYTHING the user set manually.
-  // This is intentional: the admin controls the format for audit consistency.
+  const rowCount = shaped.reduce((sum, claim) => sum + Math.max(claim.items.length, 1), 0)
   const resolvedLayout: PdfLayoutConfig = {
     ...DEFAULT_PDF_LAYOUT,
     ...(pdf_layout ? { grouping: pdf_layout as 'BY_DATE' | 'BY_CATEGORY' } : {}),
-    ...templatePdfLayout,  // template wins last
+    ...templatePdfLayout,
   }
 
   const { data: jobRow } = await supabase
     .from('export_jobs')
     .insert({
-      org_id:      membership.org_id,
-      user_id:     user.id,
-      filters:     { claim_ids },
+      org_id: membership.org_id,
+      user_id: user.id,
+      filters: { claim_ids },
       format,
-      status:      'RUNNING',
+      status: 'RUNNING',
       template_id: template_id ?? null,
-      pdf_layout:  resolvedLayout.grouping,  // store effective grouping (column constraint)
-      row_count:   rowCount,
+      pdf_layout: resolvedLayout.grouping,
+      row_count: rowCount,
     })
     .select('id')
     .single()
 
   try {
-    // ── PDF ─────────────────────────────────────────────────────────────────
     if (format === 'PDF') {
-      // Pass full resolvedLayout — new buildPdfData accepts PdfLayoutConfig.
-      // orientation, accent_color, show_* all flow through to PdfData.layout
-      // so every draw function reads from it. Nothing hardcoded.
       const { data: pdfData, error: pdfErr } = await buildPdfData(
         supabase,
         { org_id: membership.org_id, claim_ids },
@@ -249,55 +206,54 @@ export async function POST(request: NextRequest) {
       )
 
       if (pdfErr || !pdfData) {
-        if (jobRow?.id) await supabase.from('export_jobs')
-          .update({ status: 'FAILED', completed_at: new Date().toISOString() }).eq('id', jobRow.id)
+        if (jobRow?.id) {
+          await supabase.from('export_jobs').update({ status: 'FAILED', completed_at: new Date().toISOString() }).eq('id', jobRow.id)
+        }
         return err('PDF_DATA_ERROR', pdfErr ?? 'No data found', 500)
       }
 
       const pdfBuffer = await generatePDF(supabase, pdfData, signature_data_url ?? null)
-
-      if (jobRow?.id) await supabase.from('export_jobs')
-        .update({ status: 'DONE', completed_at: new Date().toISOString() }).eq('id', jobRow.id)
+      if (jobRow?.id) {
+        await supabase.from('export_jobs').update({ status: 'DONE', completed_at: new Date().toISOString() }).eq('id', jobRow.id)
+      }
 
       const filename = `myexpensio-claim-${new Date().toISOString().slice(0, 10)}.pdf`
       return new NextResponse(new Uint8Array(pdfBuffer), {
         status: 200,
         headers: {
-          'Content-Type':        'application/pdf',
+          'Content-Type': 'application/pdf',
           'Content-Disposition': `attachment; filename="${filename}"`,
-          'Content-Length':      String(pdfBuffer.length),
-          'Cache-Control':       'no-store',
-          'X-Row-Count':         String(rowCount),
+          'Content-Length': String(pdfBuffer.length),
+          'Cache-Control': 'no-store',
+          'X-Row-Count': String(rowCount),
         },
       })
     }
 
-    // ── CSV / XLSX ───────────────────────────────────────────────────────────
-    const { buffer, contentType, extension } = await buildExport(
-      shaped, format as 'CSV' | 'XLSX', { columns, mileageRatePerKm },
-    )
+    const { buffer, contentType, extension } = await buildExport(shaped, format as 'CSV' | 'XLSX', { columns })
+    if (jobRow?.id) {
+      await supabase.from('export_jobs').update({ status: 'DONE', completed_at: new Date().toISOString() }).eq('id', jobRow.id)
+    }
 
     const filename = `myexpensio-export-${new Date().toISOString().slice(0, 10)}.${extension}`
-
-    if (jobRow?.id) await supabase.from('export_jobs')
-      .update({ status: 'DONE', completed_at: new Date().toISOString() }).eq('id', jobRow.id)
-
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
-        'Content-Type':        contentType,
+        'Content-Type': contentType,
         'Content-Disposition': `attachment; filename="${filename}"`,
-        'Content-Length':      String(buffer.length),
-        'Cache-Control':       'no-store',
-        'X-Row-Count':         String(rowCount),
+        'Content-Length': String(buffer.length),
+        'Cache-Control': 'no-store',
+        'X-Row-Count': String(rowCount),
       },
     })
-
   } catch (buildError) {
     console.error('[/api/exports] build error:', buildError)
-    if (jobRow?.id) await supabase.from('export_jobs')
-      .update({ status: 'FAILED', error_message: buildError instanceof Error ? buildError.message : 'Unknown', completed_at: new Date().toISOString() })
-      .eq('id', jobRow.id)
+    if (jobRow?.id) {
+      await supabase
+        .from('export_jobs')
+        .update({ status: 'FAILED', error_message: buildError instanceof Error ? buildError.message : 'Unknown', completed_at: new Date().toISOString() })
+        .eq('id', jobRow.id)
+    }
     return err('BUILD_ERROR', 'Failed to generate export file', 500)
   }
 }

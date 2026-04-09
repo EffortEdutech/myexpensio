@@ -3,11 +3,9 @@
 // PATCH  /api/claims/[id]  — update title/period (DRAFT only)
 // DELETE /api/claims/[id]  — delete claim + all items (DRAFT only)
 //
-// DELETE rules:
-//   - DRAFT claims only — SUBMITTED claims cannot be deleted (audit trail)
-//   - claim_items deleted via ON DELETE CASCADE (FK constraint)
-//   - Unlinks any TNG transactions (sets claim_item_id = NULL, link_status = UNLINKED)
-//     before deletion so those transactions return to the pool for re-use
+// Rates model:
+// - user_rate_version_id = authoritative personal snapshot for calculations
+// - rate_version_id      = legacy compatibility field only
 
 import { createClient } from "@/lib/supabase/server";
 import { getActiveOrg } from "@/lib/org";
@@ -19,14 +17,31 @@ function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status });
 }
 
-// ── GET ────────────────────────────────────────────────────────────────────
+async function resolveUserRateVersionId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  effectiveFrom: string | null | undefined,
+) {
+  let query = supabase
+    .from('user_rate_versions')
+    .select('id')
+    .eq('user_id', userId)
+
+  if (effectiveFrom) query = query.lte('effective_from', effectiveFrom)
+
+  const { data } = await query
+    .order('effective_from', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  return data?.id ?? null
+}
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return err("UNAUTHENTICATED", "Login required.", 401);
 
   const org = await getActiveOrg();
@@ -34,15 +49,13 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
   const { data: claim, error: claimErr } = await supabase
     .from("claims")
-    .select(
-      `
+    .select(`
       id, org_id, user_id, status, title,
       period_start, period_end,
       total_amount, currency,
-      submitted_at, rate_version_id,
+      submitted_at, rate_version_id, user_rate_version_id,
       created_at, updated_at
-    `,
-    )
+    `)
     .eq("id", id)
     .eq("org_id", org.org_id)
     .single();
@@ -51,8 +64,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
   const { data: items, error: itemsErr } = await supabase
     .from("claim_items")
-    .select(
-      `
+    .select(`
       id, claim_id, type, mode,
       trip_id, qty, unit, rate,
       amount, currency,
@@ -62,8 +74,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       tng_transaction_id, paid_via_tng,
       perdiem_rate_myr, perdiem_days, perdiem_destination,
       created_at
-    `,
-    )
+    `)
     .eq("claim_id", id)
     .order("created_at", { ascending: true });
 
@@ -75,14 +86,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
   return NextResponse.json({ claim, items: items ?? [] });
 }
 
-// ── PATCH ──────────────────────────────────────────────────────────────────
-
 export async function PATCH(request: NextRequest, { params }: Params) {
   const { id } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return err("UNAUTHENTICATED", "Login required.", 401);
 
   const org = await getActiveOrg();
@@ -90,16 +97,14 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
   const { data: claim, error: fetchErr } = await supabase
     .from("claims")
-    .select("id, status")
+    .select("id, user_id, status, period_start, period_end")
     .eq("id", id)
     .eq("org_id", org.org_id)
     .single();
 
   if (fetchErr || !claim) return err("NOT_FOUND", "Claim not found.", 404);
-
-  if (claim.status === "SUBMITTED") {
-    return err("CONFLICT", "Submitted claims cannot be edited.", 409);
-  }
+  if (claim.user_id !== user.id) return err("FORBIDDEN", "You can only edit your own claims.", 403);
+  if (claim.status === "SUBMITTED") return err("CONFLICT", "Submitted claims cannot be edited.", 409);
 
   const body = (await request.json().catch(() => ({}))) as {
     title?: string;
@@ -107,19 +112,29 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     period_end?: string;
   };
 
-  const update: Record<string, string> = {};
+  const nextPeriodStart = body.period_start ?? claim.period_start ?? null
+  const nextPeriodEnd = body.period_end ?? claim.period_end ?? null
+
+  if (nextPeriodStart && nextPeriodEnd && nextPeriodStart > nextPeriodEnd) {
+    return err('VALIDATION_ERROR', 'period_start must be on or before period_end.', 400)
+  }
+
+  const update: Record<string, string | null> = {};
   if (body.title !== undefined) update.title = body.title.trim();
   if (body.period_start !== undefined) update.period_start = body.period_start;
   if (body.period_end !== undefined) update.period_end = body.period_end;
 
-  if (Object.keys(update).length === 0) {
-    return err("VALIDATION_ERROR", "No updatable fields provided.", 400);
+  if (Object.keys(update).length === 0) return err("VALIDATION_ERROR", "No updatable fields provided.", 400);
+
+  if (body.period_start !== undefined) {
+    update.user_rate_version_id = await resolveUserRateVersionId(supabase, user.id, nextPeriodStart)
   }
 
   const { data: updated, error: updateErr } = await supabase
     .from("claims")
     .update(update)
     .eq("id", id)
+    .eq("org_id", org.org_id)
     .select()
     .single();
 
@@ -131,28 +146,15 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   return NextResponse.json({ claim: updated });
 }
 
-// ── DELETE ─────────────────────────────────────────────────────────────────
-// DRAFT claims only. SUBMITTED claims are permanently locked — cannot be deleted.
-//
-// Steps:
-//   1. Verify claim exists, belongs to this org+user, and is DRAFT
-//   2. Unlink any TNG transactions linked to items in this claim
-//      (sets tng_transactions.claim_item_id = NULL, link_status = 'UNLINKED')
-//      so those transactions return to the pool and can be claimed again
-//   3. Delete the claim — claim_items removed via FK ON DELETE CASCADE
-
 export async function DELETE(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return err("UNAUTHENTICATED", "Login required.", 401);
 
   const org = await getActiveOrg();
   if (!org) return err("NO_ORG", "No organisation found.", 400);
 
-  // 1. Verify claim
   const { data: claim, error: fetchErr } = await supabase
     .from("claims")
     .select("id, status, user_id")
@@ -161,23 +163,11 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     .single();
 
   if (fetchErr || !claim) return err("NOT_FOUND", "Claim not found.", 404);
-
-  // Only the claim owner can delete it
-  if (claim.user_id !== user.id) {
-    return err("FORBIDDEN", "You can only delete your own claims.", 403);
-  }
-
-  // Hard lock — SUBMITTED claims cannot be deleted
+  if (claim.user_id !== user.id) return err("FORBIDDEN", "You can only delete your own claims.", 403);
   if (claim.status === "SUBMITTED") {
-    return err(
-      "CONFLICT",
-      "Submitted claims cannot be deleted. They are part of the audit trail.",
-      409,
-    );
+    return err("CONFLICT", "Submitted claims cannot be deleted. They are part of the audit trail.", 409);
   }
 
-  // 2. Unlink TNG transactions attached to items in this claim
-  //    Get all item IDs first so we can target the right tng_transactions rows
   const { data: linkedItems } = await supabase
     .from("claim_items")
     .select("id, tng_transaction_id")
@@ -191,25 +181,14 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   if (tngIds.length > 0) {
     const { error: unlinkErr } = await supabase
       .from("tng_transactions")
-      .update({
-        claim_item_id: null,
-        link_status:   "UNLINKED",
-        claimed:       false,
-      })
+      .update({ claim_item_id: null, link_status: "UNLINKED", claimed: false })
       .in("id", tngIds);
 
     if (unlinkErr) {
-      // Non-fatal — log and continue. The claim will still be deleted.
-      // The TNG transactions may remain in a linked state but they can be
-      // manually unlinked from the TNG statement page.
-      console.warn(
-        "[DELETE /api/claims/[id]] TNG unlink failed:",
-        unlinkErr.message,
-      );
+      console.warn("[DELETE /api/claims/[id]] TNG unlink failed:", unlinkErr.message);
     }
   }
 
-  // 3. Delete claim (claim_items deleted via FK ON DELETE CASCADE)
   const { error: deleteErr } = await supabase
     .from("claims")
     .delete()
