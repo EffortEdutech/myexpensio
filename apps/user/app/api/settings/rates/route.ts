@@ -138,10 +138,7 @@ async function loadLatestTemplateOptions(
     }
   }
 
-  return Array.from(latestByTemplate.values()).map((row) => ({
-    id: row.id,
-    ...normalizeRateRow(row),
-  }))
+  return Array.from(latestByTemplate.values()).map((row) => normalizeRateRow(row))
 }
 
 export async function GET() {
