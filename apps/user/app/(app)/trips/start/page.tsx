@@ -1,17 +1,9 @@
 'use client'
 // apps/user/app/(app)/trips/start/page.tsx
 //
-// TWO FLOWS:
-//
-// A) NEW TRIP  (?resume param absent)
-//   1. Request GPS permission → get first fix → show accuracy
-//   2. User taps "Start Trip" → POST /api/trips → begin tracking
-//   3. Trip row is NEVER created unless GPS ready + user confirms
-//
-// B) RESUME  (?resume=<trip_id>)
-//   1. Load existing DRAFT trip from server
-//   2. Request GPS → get first fix → go straight to tracking
-//   3. No new trip row created — uses existing trip_id
+// Polished limit handling for GPS trip creation:
+// - shows dedicated limit reached panel when /api/trips returns 429 LIMIT_REACHED
+// - keeps the rest of the GPS tracking flow unchanged
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -24,13 +16,22 @@ type GpsPoint = {
   recorded_at: string
 }
 
+type TripLimitInfo = {
+  limit: number | null
+  used: number
+  period_end?: string
+  label?: string | null
+  preset?: string | null
+}
+
 type TrackingState =
-  | 'requesting'   // getting GPS permission + first fix
-  | 'ready'        // GPS acquired, awaiting user confirm (NEW flow only)
-  | 'creating'     // POSTing /api/trips (NEW flow only)
-  | 'tracking'     // live recording
-  | 'stopping'     // flushing + calling /stop
-  | 'denied'       // GPS permission refused
+  | 'requesting'
+  | 'ready'
+  | 'creating'
+  | 'tracking'
+  | 'stopping'
+  | 'denied'
+  | 'limit_reached'
   | 'error'
 
 const FLUSH_INTERVAL_MS = 30_000
@@ -52,17 +53,21 @@ function fmtKm(meters: number): string {
   return (meters / 1000).toFixed(2) + ' km'
 }
 
+function fmtMonthEnd(iso: string) {
+  return new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
 function accuracyLabel(acc: number | null): { text: string; color: string; good: boolean } {
-  if (acc === null) return { text: 'Acquiring…',                 color: '#94a3b8', good: false }
-  if (acc <= 10)    return { text: `Good (±${acc.toFixed(0)}m)`, color: '#16a34a', good: true  }
-  if (acc <= 30)    return { text: `Fair (±${acc.toFixed(0)}m)`, color: '#d97706', good: true  }
-  return              { text: `Weak (±${acc.toFixed(0)}m)`, color: '#dc2626', good: false }
+  if (acc === null) return { text: 'Acquiring…', color: '#94a3b8', good: false }
+  if (acc <= 10) return { text: `Good (±${acc.toFixed(0)}m)`, color: '#16a34a', good: true }
+  if (acc <= 30) return { text: `Fair (±${acc.toFixed(0)}m)`, color: '#d97706', good: true }
+  return { text: `Weak (±${acc.toFixed(0)}m)`, color: '#dc2626', good: false }
 }
 
 export default function StartTripPage() {
   const router       = useRouter()
   const searchParams = useSearchParams()
-  const resumeId     = searchParams.get('resume') // null = new trip
+  const resumeId     = searchParams.get('resume')
 
   const [state,          setState]          = useState<TrackingState>('requesting')
   const [tripId,         setTripId]         = useState<string | null>(resumeId)
@@ -72,6 +77,7 @@ export default function StartTripPage() {
   const [approxDistance, setApproxDistance] = useState(0)
   const [statusMsg,      setStatusMsg]      = useState('')
   const [isOnline,       setIsOnline]       = useState(true)
+  const [limitInfo,      setLimitInfo]      = useState<TripLimitInfo | null>(null)
 
   const pointsQueue = useRef<GpsPoint[]>([])
   const seqRef      = useRef(0)
@@ -82,7 +88,6 @@ export default function StartTripPage() {
   const prevPoint   = useRef<{ lat: number; lng: number } | null>(null)
   const distanceRef = useRef(0)
   const firstPosRef = useRef<GeolocationPosition | null>(null)
-  // Resume seeds — loaded from API before tracking starts
   const seedElapsedRef = useRef(0)
   const seedSeqRef     = useRef(0)
 
@@ -97,7 +102,6 @@ export default function StartTripPage() {
     return 2 * R * Math.asin(Math.sqrt(a))
   }
 
-  // ── Flush queue to server ──────────────────────────────────────────────
   const flush = useCallback(async (id: string) => {
     if (pointsQueue.current.length === 0) return
     const batch = [...pointsQueue.current]
@@ -113,7 +117,6 @@ export default function StartTripPage() {
     }
   }, [])
 
-  // ── Stop trip ──────────────────────────────────────────────────────────
   const stopTrip = useCallback(async () => {
     if (!tripId) return
     setState('stopping')
@@ -132,26 +135,22 @@ export default function StartTripPage() {
     router.push(`/trips/${tripId}`)
   }, [tripId, flush, router])
 
-  // ── Begin live tracking (called after trip_id is confirmed) ───────────
   const beginTracking = useCallback((
     id: string,
     firstPos: GeolocationPosition,
-    seedElapsed = 0,  // seconds already elapsed from trip start (resume)
-    seedSeq     = 0,  // existing point count already in DB (resume)
+    seedElapsed = 0,
+    seedSeq = 0,
   ) => {
     setState('tracking')
-
-    // Seed elapsed — resume continues from trip's started_at, not from zero
     setElapsed(seedElapsed)
     tickTimer.current = setInterval(() => setElapsed(e => e + 1), 1000)
 
     const { latitude: lat, longitude: lng, accuracy } = firstPos.coords
-    seqRef.current = seedSeq   // continue seq after existing DB points
+    seqRef.current = seedSeq
     prevPoint.current = { lat, lng }
     setLiveAccuracy(accuracy)
-    setPointCount(seedSeq)     // show existing count; new points add on top
+    setPointCount(seedSeq)
 
-    // Enqueue first fix as the next point
     seqRef.current += 1
     pointsQueue.current.push({
       seq:         seqRef.current,
@@ -191,11 +190,11 @@ export default function StartTripPage() {
     flushTimer.current = setInterval(() => flush(id), FLUSH_INTERVAL_MS)
   }, [flush])
 
-  // ── NEW TRIP: user confirms → create trip row → begin tracking ─────────
   const confirmStart = useCallback(async () => {
     if (!firstPosRef.current) return
     setState('creating')
     setStatusMsg('Starting trip…')
+    setLimitInfo(null)
 
     if (preWatchId.current !== null) {
       navigator.geolocation.clearWatch(preWatchId.current)
@@ -208,6 +207,20 @@ export default function StartTripPage() {
       body:    JSON.stringify({ calculation_mode: 'GPS_TRACKING' }),
     })
 
+    if (res.status === 429) {
+      const json = await res.json().catch(() => ({}))
+      setLimitInfo({
+        limit: json.error?.details?.limit ?? null,
+        used: json.error?.details?.used ?? 0,
+        period_end: json.error?.details?.period_end,
+        label: json.error?.details?.label ?? null,
+        preset: json.error?.details?.preset ?? null,
+      })
+      setState('limit_reached')
+      setStatusMsg('')
+      return
+    }
+
     if (!res.ok) {
       setStatusMsg('Failed to start trip. Please try again.')
       setState('error')
@@ -219,7 +232,6 @@ export default function StartTripPage() {
     beginTracking(trip.id, firstPosRef.current)
   }, [beginTracking])
 
-  // ── Cancel before tracking (no trip row exists yet) ────────────────────
   const cancelBeforeStart = useCallback(() => {
     if (preWatchId.current !== null) {
       navigator.geolocation.clearWatch(preWatchId.current)
@@ -228,12 +240,10 @@ export default function StartTripPage() {
     router.push('/trips')
   }, [router])
 
-  // ── RESUME: go back to trip list (trip still in DB as DRAFT) ──────────
   const leaveResume = useCallback(() => {
     router.push('/trips')
   }, [router])
 
-  // ── Resume: fetch trip data to seed elapsed + point count ────────────
   useEffect(() => {
     if (!resumeId) return
     fetch(`/api/trips/${resumeId}`)
@@ -245,11 +255,9 @@ export default function StartTripPage() {
         seedElapsedRef.current = Math.max(0, elapsedSec)
         seedSeqRef.current     = data.trip.point_count ?? 0
       })
-      .catch(() => { /* non-fatal — seeds stay at 0 */ })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+      .catch(() => {})
+  }, [resumeId])
 
-  // ── Init: request GPS, get first fix ──────────────────────────────────
   useEffect(() => {
     let cancelled = false
 
@@ -266,15 +274,12 @@ export default function StartTripPage() {
         setLiveAccuracy(pos.coords.accuracy)
 
         if (resumeId) {
-          // RESUME: stop pre-watcher, begin tracking with seeded counters
           if (preWatchId.current !== null) {
             navigator.geolocation.clearWatch(preWatchId.current)
             preWatchId.current = null
           }
-          // Use seeds loaded from API (set before GPS fix arrived)
           beginTracking(resumeId, pos, seedElapsedRef.current, seedSeqRef.current)
         } else {
-          // NEW: show ready screen, wait for user confirm
           setState(prev => prev === 'requesting' ? 'ready' : prev)
         }
       },
@@ -300,21 +305,18 @@ export default function StartTripPage() {
       window.removeEventListener('online',  onOnline)
       window.removeEventListener('offline', onOffline)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [beginTracking, resumeId])
 
   const acc = accuracyLabel(liveAccuracy)
 
   return (
     <div style={S.page}>
-
       {!isOnline && (
         <div style={S.offlineBanner}>
           📶 Offline — GPS points queued locally ({pointsQueue.current.length} pending)
         </div>
       )}
 
-      {/* REQUESTING — waiting for GPS fix */}
       {state === 'requesting' && (
         <div style={S.center}>
           <div style={S.spinner} />
@@ -326,7 +328,6 @@ export default function StartTripPage() {
         </div>
       )}
 
-      {/* READY — GPS locked, user must confirm (NEW flow only) */}
       {state === 'ready' && (
         <div style={S.center}>
           <div style={S.bigIcon}>📍</div>
@@ -346,7 +347,6 @@ export default function StartTripPage() {
         </div>
       )}
 
-      {/* CREATING — POSTing trip row */}
       {state === 'creating' && (
         <div style={S.center}>
           <div style={S.spinner} />
@@ -354,7 +354,25 @@ export default function StartTripPage() {
         </div>
       )}
 
-      {/* TRACKING — live recording */}
+      {state === 'limit_reached' && (
+        <div style={S.limitBox}>
+          <div style={S.bigIcon}>🔒</div>
+          <p style={S.msg}>Trip creation limit reached</p>
+          <p style={S.subMsg}>
+            {limitInfo?.limit !== null
+              ? `You've used ${limitInfo?.used ?? 0} of ${limitInfo?.limit ?? 0} trips this month${limitInfo?.label ? ` (${limitInfo.label})` : ''}.`
+              : 'This organisation has reached its current trip creation policy.'}
+            {limitInfo?.period_end ? <> Resets on <strong>{fmtMonthEnd(limitInfo.period_end)}</strong>.</> : null}
+          </p>
+          {limitInfo?.preset && (
+            <div style={S.policyBadge}>Policy: {limitInfo.preset}{limitInfo.label ? ` · ${limitInfo.label}` : ''}</div>
+          )}
+          <div style={S.actions}>
+            <button onClick={() => router.push('/trips')} style={S.btnSecondary}>← Back to Trips</button>
+          </div>
+        </div>
+      )}
+
       {state === 'tracking' && (
         <>
           <div style={S.statusPill}>
@@ -387,7 +405,6 @@ export default function StartTripPage() {
         </>
       )}
 
-      {/* STOPPING */}
       {state === 'stopping' && (
         <div style={S.center}>
           <div style={S.spinner} />
@@ -395,7 +412,6 @@ export default function StartTripPage() {
         </div>
       )}
 
-      {/* DENIED */}
       {state === 'denied' && (
         <div style={S.center}>
           <div style={S.bigIcon}>📍</div>
@@ -405,7 +421,6 @@ export default function StartTripPage() {
         </div>
       )}
 
-      {/* ERROR */}
       {state === 'error' && (
         <div style={S.center}>
           <div style={S.bigIcon}>⚠️</div>
@@ -413,7 +428,6 @@ export default function StartTripPage() {
           <button onClick={() => router.push('/trips')} style={S.btnSecondary}>Back to Trips</button>
         </div>
       )}
-
     </div>
   )
 }
@@ -425,7 +439,7 @@ const S: Record<string, React.CSSProperties> = {
   spinner:       { width:40, height:40, borderRadius:'50%', border:'3px solid #e2e8f0', borderTop:'3px solid #0f172a', animation:'spin 0.8s linear infinite' },
   bigIcon:       { fontSize:48 },
   msg:           { fontSize:18, fontWeight:700, color:'#0f172a', margin:0 },
-  subMsg:        { fontSize:13, color:'#64748b', margin:0, maxWidth:280, lineHeight:1.6 },
+  subMsg:        { fontSize:13, color:'#64748b', margin:0, maxWidth:320, lineHeight:1.6 },
   accuracyBadge: { display:'flex', alignItems:'center', gap:6, border:'1.5px solid', borderRadius:20, padding:'5px 14px', fontSize:13, fontWeight:600 },
   accuracyRow:   { display:'flex', alignItems:'center', gap:6 },
   accuracyDot:   { width:8, height:8, borderRadius:'50%', flexShrink:0, display:'inline-block' },
@@ -446,4 +460,6 @@ const S: Record<string, React.CSSProperties> = {
   btnStop:       { padding:'16px', backgroundColor:'#dc2626', color:'#fff', border:'none', borderRadius:12, fontSize:17, fontWeight:700, cursor:'pointer', letterSpacing:'0.5px' },
   btnCancel:     { padding:'12px', backgroundColor:'transparent', color:'#94a3b8', border:'1px solid #e2e8f0', borderRadius:12, fontSize:14, cursor:'pointer' },
   btnSecondary:  { padding:'12px 24px', backgroundColor:'#f1f5f9', color:'#0f172a', border:'none', borderRadius:10, fontSize:14, fontWeight:600, cursor:'pointer' },
+  limitBox:      { display:'flex', flexDirection:'column', alignItems:'center', gap:14, padding:'40px 20px', backgroundColor:'#fef2f2', border:'1.5px solid #fecaca', borderRadius:16, width:'100%', maxWidth:420 },
+  policyBadge:   { padding:'6px 12px', backgroundColor:'#fdf4ff', border:'1px solid #e9d5ff', borderRadius:999, fontSize:12, fontWeight:700, color:'#7c3aed' },
 }

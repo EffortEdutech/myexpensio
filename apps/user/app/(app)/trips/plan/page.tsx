@@ -1,22 +1,9 @@
 'use client'
 // apps/user/app/(app)/trips/plan/page.tsx
 //
-// Mileage Calculator — utility to calculate route distance for a trip on a specific date.
-//
-// Flow:
-//   1. Set trip date (defaults to today)
-//   2. Tap map or search → set origin + destination pins
-//   3. "Calculate Route" → OSRM returns real alternatives drawn on map
-//   4. Select a route → distance confirmed
-//   5a. "Add to My Trips" → saves FINAL trip with chosen date + distance → trip detail
-//   5b. "Discard"         → nothing saved → back to trips list
-//
-// Gating: FREE=2/month | ADMIN=unlimited | PRO=unlimited
-//
-// NEW:
-//   - Origin and Destination each support “Use Current Position”
-//   - Checks browser geolocation permission where available
-//   - If location is disabled/denied, shows a clear message asking user to enable location first
+// Polished limit handling:
+// - route limit panel stays clean
+// - trip creation limit gets its own clean panel when /api/trips returns 429
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
@@ -28,8 +15,6 @@ const RouteMap = dynamic(() => import('@/components/RouteMap'), {
   ssr:     false,
   loading: () => <div style={S.mapPlaceholder}>🗺 Loading map…</div>,
 })
-
-// ── Types ──────────────────────────────────────────────────────────────────
 
 type GeocodeSuggestion = {
   place_id:     number
@@ -49,6 +34,15 @@ type UsageInfo = {
   routes_limit: number | null
 }
 
+type LimitInfo = {
+  kind: 'ROUTES' | 'TRIPS'
+  limit: number | null
+  used: number
+  period_end?: string
+  label?: string | null
+  preset?: string | null
+}
+
 type LocationValue = {
   text: string
   lat:  number
@@ -57,8 +51,6 @@ type LocationValue = {
 
 type Step = 'input' | 'alternatives' | 'confirming' | 'limit_reached'
 type LocationTarget = 'origin' | 'dest'
-
-// ── Helpers ────────────────────────────────────────────────────────────────
 
 const fmtKm  = (m: number) => (m / 1000).toFixed(2) + ' km'
 const fmtMin = (s: number) => {
@@ -82,8 +74,6 @@ function geolocationErrorMessage(error: GeolocationPositionError | { code?: numb
   }
   return error?.message || 'Unable to get current position right now.'
 }
-
-// ── AddressInput ───────────────────────────────────────────────────────────
 
 function AddressInput({
   label,
@@ -120,7 +110,6 @@ function AddressInput({
       const json = await res.json()
       if (res.ok) { setSuggestions(json.results ?? []); setOpen(true) }
     } catch {
-      // ignore search failure here
     } finally {
       setSearching(false)
     }
@@ -196,8 +185,6 @@ function AddressInput({
   )
 }
 
-// ── UsageWidget ────────────────────────────────────────────────────────────
-
 function UsageWidget({ usage, loading, isUnlimited, isAtLimit, isNearLimit }: {
   usage: UsageInfo | null; loading: boolean
   isUnlimited: boolean; isAtLimit: boolean; isNearLimit: boolean
@@ -228,38 +215,51 @@ function UsageWidget({ usage, loading, isUnlimited, isAtLimit, isNearLimit }: {
         <span style={{ fontSize: 13, fontWeight: 700, color: barColor }}>{used} / {lim} this month</span>
       </div>
       <div style={S.barTrack}><div style={{ ...S.barFill, width: `${pct}%`, backgroundColor: barColor }} /></div>
-      {isAtLimit   && <p style={{ margin: 0, fontSize: 12, color: '#dc2626', fontWeight: 500 }}>Limit reached — use GPS Tracking or upgrade to Pro.</p>}
+      {isAtLimit   && <p style={{ margin: 0, fontSize: 12, color: '#dc2626', fontWeight: 500 }}>Limit reached — use GPS Tracking or ask your admin to change the policy.</p>}
       {isNearLimit && !isAtLimit && <p style={{ margin: 0, fontSize: 12, color: '#d97706' }}>{lim - used} calculation{lim - used !== 1 ? 's' : ''} remaining this month.</p>}
     </div>
   )
 }
 
-// ── LimitReachedPanel ──────────────────────────────────────────────────────
-
-function LimitReachedPanel({ periodEnd, onUseGps, onBack }: {
-  periodEnd?: string; onUseGps: () => void; onBack: () => void
+function LimitReachedPanel({
+  info,
+  onUseGps,
+  onBack,
+}: {
+  info: LimitInfo | null
+  onUseGps: () => void
+  onBack: () => void
 }) {
+  const isRouteLimit = info?.kind !== 'TRIPS'
+  const title = isRouteLimit ? 'Route calculation limit reached' : 'Trip creation limit reached'
+
   return (
     <div style={S.limitBox}>
       <span style={{ fontSize: 44 }}>🔒</span>
-      <p style={S.limitTitle}>Monthly Calculation Limit Reached</p>
+      <p style={S.limitTitle}>{title}</p>
       <p style={S.limitText}>
-        You've used your 2 free route calculations this month.
-        {periodEnd && <> Resets on <strong>{fmtMonthEnd(periodEnd)}</strong>.</>}
+        {info?.limit !== null
+          ? `You've used ${info?.used ?? 0} of ${info?.limit ?? 0} this month${info?.label ? ` (${info.label})` : ''}.`
+          : 'This organisation has reached its current policy.'}
+        {info?.period_end && <> Resets on <strong>{fmtMonthEnd(info.period_end)}</strong>.</>}
       </p>
-      <div style={S.limitActions}>
-        <button onClick={onUseGps} style={S.btnPrimary}>📍 Use GPS Tracking instead</button>
+      {info?.preset && (
         <div style={S.upgradeHint}>
-          <span style={{ fontSize: 12, color: '#64748b' }}>Need unlimited calculations?</span>
-          <span style={{ fontSize: 12, color: '#7c3aed', fontWeight: 600 }}>Upgrade to Pro — coming soon</span>
+          <span style={{ fontSize: 12, color: '#64748b' }}>Current policy</span>
+          <span style={{ fontSize: 12, color: '#7c3aed', fontWeight: 600 }}>
+            {info.preset}{info.label ? ` · ${info.label}` : ''}
+          </span>
         </div>
-        <button onClick={onBack} style={S.btnGhost}>← Back</button>
+      )}
+      <div style={S.limitActions}>
+        {isRouteLimit && <button onClick={onUseGps} style={S.btnPrimary}>📍 Use GPS Tracking instead</button>}
+        <button onClick={onBack} style={isRouteLimit ? S.btnGhost : S.btnPrimary}>
+          {isRouteLimit ? '← Back' : '← Back to planner'}
+        </button>
       </div>
     </div>
   )
 }
-
-// ── Main page ──────────────────────────────────────────────────────────────
 
 export default function MileageCalculatorPage() {
   const router = useRouter()
@@ -277,6 +277,7 @@ export default function MileageCalculatorPage() {
   const [error,           setError]         = useState<string | null>(null)
   const [geocoding,       setGeocoding]     = useState<LocationTarget | null>(null)
   const [locatingTarget,  setLocatingTarget]= useState<LocationTarget | null>(null)
+  const [limitInfo,       setLimitInfo]     = useState<LimitInfo | null>(null)
 
   useEffect(() => {
     fetch('/api/usage').then(r => r.json())
@@ -288,8 +289,6 @@ export default function MileageCalculatorPage() {
   const limit       = usage?.routes_limit ?? 2
   const isAtLimit   = !isUnlimited && (usage?.routes_used ?? 0) >= limit
   const isNearLimit = !isUnlimited && !isAtLimit && (usage?.routes_used ?? 0) >= limit - 1
-
-  // ── Reverse geocode ────────────────────────────────────────────────────────
 
   async function reverseGeocode(lat: number, lng: number): Promise<string> {
     try {
@@ -327,7 +326,6 @@ export default function MileageCalculatorPage() {
             return
           }
         } catch {
-          // Some browsers do not fully support this query. Fall through to getCurrentPosition.
         }
       }
 
@@ -363,8 +361,6 @@ export default function MileageCalculatorPage() {
     }
   }
 
-  // ── Map pin handlers ───────────────────────────────────────────────────────
-
   const handleOriginSet = useCallback(async (ll: LatLng) => {
     setError(null)
     setGeocoding('origin')
@@ -374,7 +370,6 @@ export default function MileageCalculatorPage() {
     setSelectedIndex(null)
     if (step === 'alternatives') setStep('input')
     setGeocoding(null)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step])
 
   const handleDestSet = useCallback(async (ll: LatLng) => {
@@ -386,10 +381,7 @@ export default function MileageCalculatorPage() {
     setSelectedIndex(null)
     if (step === 'alternatives') setStep('input')
     setGeocoding(null)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step])
-
-  // ── Calculate routes ───────────────────────────────────────────────────────
 
   async function handleCalculate(e: React.FormEvent) {
     e.preventDefault()
@@ -412,7 +404,18 @@ export default function MileageCalculatorPage() {
     const json = await res.json()
     setLoading(false)
 
-    if (res.status === 429 && json.error?.code === 'LIMIT_REACHED') { setStep('limit_reached'); return }
+    if (res.status === 429 && json.error?.code === 'LIMIT_REACHED') {
+      setLimitInfo({
+        kind: 'ROUTES',
+        limit: json.error?.details?.limit ?? usage?.routes_limit ?? null,
+        used: json.error?.details?.used ?? usage?.routes_used ?? 0,
+        period_end: json.error?.details?.period_end ?? usage?.period_end,
+        label: json.error?.details?.label ?? null,
+        preset: json.error?.details?.preset ?? null,
+      })
+      setStep('limit_reached')
+      return
+    }
     if (!res.ok) { setError(json.error?.message ?? 'Failed to calculate route.'); return }
 
     setAlts(json.alternatives ?? [])
@@ -420,8 +423,6 @@ export default function MileageCalculatorPage() {
     if (json.usage) setUsage(prev => prev ? { ...prev, ...json.usage } : json.usage)
     setStep('alternatives')
   }
-
-  // ── Add to trips ───────────────────────────────────────────────────────────
 
   async function handleAddToTrips() {
     if (selectedIndex === null || !origin || !destination) return
@@ -445,6 +446,20 @@ export default function MileageCalculatorPage() {
         }),
       })
       const cj = await cr.json()
+
+      if (cr.status === 429 && cj.error?.code === 'LIMIT_REACHED') {
+        setLimitInfo({
+          kind: 'TRIPS',
+          limit: cj.error?.details?.limit ?? null,
+          used: cj.error?.details?.used ?? 0,
+          period_end: cj.error?.details?.period_end,
+          label: cj.error?.details?.label ?? null,
+          preset: cj.error?.details?.preset ?? null,
+        })
+        setStep('limit_reached')
+        setLoading(false)
+        return
+      }
 
       if (!cr.ok) {
         setError(cj.error?.message ?? 'Failed to create trip. Please try again.')
@@ -511,9 +526,12 @@ export default function MileageCalculatorPage() {
 
       {step === 'limit_reached' && (
         <LimitReachedPanel
-          periodEnd={usage?.period_end}
+          info={limitInfo}
           onUseGps={() => router.push('/trips/start')}
-          onBack={() => setStep('input')}
+          onBack={() => {
+            setStep('input')
+            setLimitInfo(null)
+          }}
         />
       )}
 
@@ -710,7 +728,7 @@ const S: Record<string, React.CSSProperties> = {
 
   limitBox:     { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '32px 20px', textAlign: 'center', backgroundColor: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: 16 },
   limitTitle:   { fontSize: 18, fontWeight: 700, color: '#0f172a', margin: 0 },
-  limitText:    { fontSize: 13, color: '#64748b', margin: 0, lineHeight: 1.7, maxWidth: 300 },
+  limitText:    { fontSize: 13, color: '#64748b', margin: 0, lineHeight: 1.7, maxWidth: 320 },
   limitActions: { display: 'flex', flexDirection: 'column', gap: 10, width: '100%', alignItems: 'center' },
   upgradeHint:  { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '10px 16px', backgroundColor: '#fdf4ff', border: '1px solid #e9d5ff', borderRadius: 10, width: '100%' },
   btnPrimary:   { padding: '13px 20px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', width: '100%' },

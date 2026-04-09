@@ -1,15 +1,16 @@
-// apps/user/app/api/exports/route.ts
-//
-// POST /api/exports — synchronous export, streams file immediately.
-//
-// Uses stored line-item values only. No current rate lookup.
-
 import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { buildExport } from '@/lib/export-builder'
 import { buildPdfData, generatePDF } from '@/lib/pdf-builder'
 import { PRESET_COLUMNS, resolveColumns, type ExportColumnKey } from '@/lib/export-columns'
 import type { ClaimForExport, ItemForExport, TripForExport } from '@/lib/export-builder'
+import {
+  incrementUsageCounter,
+  limitForCounter,
+  loadTierAndEntitlements,
+  periodKeyForCurrentMonth,
+  readUsageCounters,
+} from '@/lib/usage-limits'
 
 export const runtime = 'nodejs'
 
@@ -33,8 +34,8 @@ const DEFAULT_PDF_LAYOUT: PdfLayoutConfig = {
   accent_color: '#0f172a',
 }
 
-function err(code: string, message: string, status: number) {
-  return NextResponse.json({ error: { code, message } }, { status })
+function err(code: string, message: string, status: number, details?: object) {
+  return NextResponse.json({ error: { code, message, ...(details ? { details } : {}) } }, { status })
 }
 
 export async function POST(request: NextRequest) {
@@ -51,6 +52,36 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (!membership) return err('NOT_MEMBER', 'No active org membership', 403)
+
+  const { data: callerProfile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  const isAdmin = callerProfile?.role === 'ADMIN'
+  const { entitlements } = await loadTierAndEntitlements(supabase, membership.org_id, isAdmin)
+  const exportsLimit = limitForCounter(entitlements, 'exports_created')
+  const periodKey = periodKeyForCurrentMonth()
+  const counters = await readUsageCounters(supabase, membership.org_id, periodKey)
+  const currentExportsUsed = counters.exports_created
+
+  if (exportsLimit !== null && currentExportsUsed >= exportsLimit) {
+    const periodEnd = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().slice(0, 10)
+
+    return err(
+      'LIMIT_REACHED',
+      `You've reached your export generation limit${entitlements.limit_label ? ` (${entitlements.limit_label})` : ''}.`,
+      429,
+      {
+        limit: exportsLimit,
+        used: currentExportsUsed,
+        period_end: periodEnd,
+        label: entitlements.limit_label,
+        preset: entitlements.limit_preset,
+      },
+    )
+  }
 
   const body = await request.json().catch(() => null)
   if (!body) return err('VALIDATION_ERROR', 'Request body required', 400)
@@ -71,11 +102,8 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     if (templateRow) {
-      const exportFormats = Array.isArray(templateRow.export_formats)
-        ? templateRow.export_formats
-        : [templateRow.export_formats]
-      const formatOverride = (exportFormats as Array<{ format_type: string; columns?: unknown } | null>)
-        .find((row) => row?.format_type === format)
+      const exportFormats = Array.isArray(templateRow.export_formats) ? templateRow.export_formats : [templateRow.export_formats]
+      const formatOverride = (exportFormats as Array<{ format_type: string; columns?: unknown } | null>).find((row) => row?.format_type === format)
 
       if (Array.isArray(formatOverride?.columns) && formatOverride.columns.length > 0) {
         columns = formatOverride.columns as ExportColumnKey[]
@@ -198,12 +226,7 @@ export async function POST(request: NextRequest) {
 
   try {
     if (format === 'PDF') {
-      const { data: pdfData, error: pdfErr } = await buildPdfData(
-        supabase,
-        { org_id: membership.org_id, claim_ids },
-        user.id,
-        resolvedLayout,
-      )
+      const { data: pdfData, error: pdfErr } = await buildPdfData(supabase, { org_id: membership.org_id, claim_ids }, user.id, resolvedLayout)
 
       if (pdfErr || !pdfData) {
         if (jobRow?.id) {
@@ -215,6 +238,12 @@ export async function POST(request: NextRequest) {
       const pdfBuffer = await generatePDF(supabase, pdfData, signature_data_url ?? null)
       if (jobRow?.id) {
         await supabase.from('export_jobs').update({ status: 'DONE', completed_at: new Date().toISOString() }).eq('id', jobRow.id)
+      }
+
+      try {
+        await incrementUsageCounter(supabase, membership.org_id, 'exports_created', periodKey)
+      } catch (e: unknown) {
+        console.warn('[/api/exports] exports_created usage update failed after PDF generation:', e)
       }
 
       const filename = `myexpensio-claim-${new Date().toISOString().slice(0, 10)}.pdf`
@@ -233,6 +262,12 @@ export async function POST(request: NextRequest) {
     const { buffer, contentType, extension } = await buildExport(shaped, format as 'CSV' | 'XLSX', { columns })
     if (jobRow?.id) {
       await supabase.from('export_jobs').update({ status: 'DONE', completed_at: new Date().toISOString() }).eq('id', jobRow.id)
+    }
+
+    try {
+      await incrementUsageCounter(supabase, membership.org_id, 'exports_created', periodKey)
+    } catch (e: unknown) {
+      console.warn('[/api/exports] exports_created usage update failed after export generation:', e)
     }
 
     const filename = `myexpensio-export-${new Date().toISOString().slice(0, 10)}.${extension}`
