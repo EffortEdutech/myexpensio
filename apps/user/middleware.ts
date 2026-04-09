@@ -11,16 +11,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match every path EXCEPT:
-     *   - _next/static  (static files)
-     *   - _next/image   (image optimisation)
-     *   - favicon.ico
-     *   - Common static asset extensions
-     *
-     * The negative lookahead ensures middleware runs on all app routes
-     * without triggering on Next.js internals.
-     */
-    '/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon\\.ico|sw\\.js|manifest\\.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

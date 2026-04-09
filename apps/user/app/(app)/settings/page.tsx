@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { PwaInstallCard } from '@/components/PwaInstallCard'
 
 type TemplateOption = {
   id: string
@@ -194,6 +195,17 @@ export default function SettingsPage() {
       <form onSubmit={handleSave} style={S.form}>
         <div style={S.card}>
           <div style={S.cardHead}>
+            <span style={S.cardIcon}>📲</span>
+            <div>
+              <div style={S.cardTitle}>App Install</div>
+              <div style={S.cardSub}>Install myexpensio on your device for a faster, more app-like experience.</div>
+            </div>
+          </div>
+          <PwaInstallCard />
+        </div>
+
+        <div style={S.card}>
+          <div style={S.cardHead}>
             <span style={S.cardIcon}>📚</span>
             <div>
               <div style={S.cardTitle}>Rate Template Reference</div>
@@ -292,7 +304,6 @@ export default function SettingsPage() {
           </div>
           <RateRow label="Daily allowance rate" suffix="/day" value={perdiem} onChange={(v) => num(v, setPerdiem)} />
         </div>
-
 
         <div style={S.card}>
           <div style={S.cardHead}>
@@ -465,12 +476,7 @@ function RateRow({
       <span style={S.rateLabel}>{label}</span>
       <div style={S.rateRight}>
         <span style={S.ratePre}>MYR</span>
-        <input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          inputMode="decimal"
-          style={S.rateInput}
-        />
+        <input value={value} onChange={(e) => onChange(e.target.value)} inputMode="decimal" style={S.rateInput} />
         <span style={S.rateSuf}>{suffix}</span>
       </div>
     </div>
@@ -482,82 +488,44 @@ const S: Record<string, CSSProperties> = {
   pageTitle: { fontSize: 22, fontWeight: 800, color: '#0f172a', margin: 0 },
   form: { display: 'flex', flexDirection: 'column', gap: 12 },
   loadingWrap: { display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 },
-  loadingSpinner: {
-    width: 32, height: 32, borderRadius: '50%', border: '3px solid #e2e8f0', borderTop: '3px solid #0f172a',
-  },
-  card: {
-    backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 10,
-  },
+  loadingSpinner: { width: 32, height: 32, borderRadius: '50%', border: '3px solid #e2e8f0', borderTop: '3px solid #0f172a' },
+  card: { backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 },
   cardHead: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 },
   cardIcon: { fontSize: 22 },
   cardTitle: { fontSize: 14, fontWeight: 700, color: '#0f172a' },
   cardSub: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
   field: { display: 'flex', flexDirection: 'column', gap: 6 },
   label: { fontSize: 13, fontWeight: 600, color: '#374151' },
-  input: {
-    width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, color: '#0f172a', boxSizing: 'border-box',
-  },
-  textarea: {
-    width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, color: '#0f172a', boxSizing: 'border-box', resize: 'vertical',
-  },
-  select: {
-    width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, color: '#0f172a', backgroundColor: '#fff',
-  },
+  input: { width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, color: '#0f172a', boxSizing: 'border-box' },
+  textarea: { width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, color: '#0f172a', boxSizing: 'border-box', resize: 'vertical' },
+  select: { width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, color: '#0f172a', backgroundColor: '#fff' },
   rateRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 5, paddingBottom: 5, gap: 12 },
   rateLabel: { fontSize: 13, color: '#374151', flex: 1 },
   rateRight: { display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 },
   ratePre: { fontSize: 12, color: '#64748b', fontWeight: 600 },
-  rateInput: {
-    width: 76, padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 15, fontWeight: 700, color: '#0f172a', backgroundColor: '#fff', textAlign: 'right',
-  },
+  rateInput: { width: 76, padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 15, fontWeight: 700, color: '#0f172a', backgroundColor: '#fff', textAlign: 'right' },
   rateSuf: { fontSize: 12, color: '#94a3b8', minWidth: 56 },
   rowDiv: { height: 1, backgroundColor: '#f8fafc', marginTop: 2, marginBottom: 2 },
   sep: { height: 1, backgroundColor: '#e2e8f0', marginTop: 10, marginBottom: 10 },
-  infoBox: {
-    marginTop: 4, padding: '8px 10px', backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, fontSize: 11, color: '#0369a1', lineHeight: 1.6,
-  },
-  errorBox: {
-    padding: '10px 12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626',
-  },
-  successBox: {
-    padding: '10px 12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, color: '#15803d', fontWeight: 600,
-  },
+  infoBox: { marginTop: 4, padding: '8px 10px', backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, fontSize: 11, color: '#0369a1', lineHeight: 1.6 },
+  errorBox: { padding: '10px 12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' },
+  successBox: { padding: '10px 12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, color: '#15803d', fontWeight: 600 },
   effNote: { fontSize: 12, color: '#94a3b8', margin: 0, lineHeight: 1.6 },
-  btnSave: {
-    padding: '14px 20px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer',
-  },
-
-  passwordBox: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', border: '1px solid #e2e8f0', borderRadius: 10, backgroundColor: '#f8fafc',
-  },
+  btnSave: { padding: '14px 20px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer' },
+  passwordBox: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', border: '1px solid #e2e8f0', borderRadius: 10, backgroundColor: '#f8fafc' },
   passwordTitle: { fontSize: 13, fontWeight: 700, color: '#0f172a' },
   passwordSub: { fontSize: 11, color: '#64748b', marginTop: 3, lineHeight: 1.5 },
-  btnSecondary: {
-    paddingTop: 10, paddingBottom: 10, paddingLeft: 14, paddingRight: 14, borderRadius: 10, border: '1px solid #cbd5e1', backgroundColor: '#fff', color: '#0f172a', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
-  },
-  btnGhost: {
-    paddingTop: 10, paddingBottom: 10, paddingLeft: 14, paddingRight: 14, borderRadius: 10, border: '1px solid #e2e8f0', backgroundColor: '#fff', color: '#475569', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-  },
-  overlay: {
-    position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000, padding: 16,
-  },
-  modal: {
-    width: '100%', maxWidth: 460, backgroundColor: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 10px 30px rgba(0,0,0,0.12)', overflow: 'hidden',
-  },
-  modalHeader: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 16, paddingBottom: 16, paddingLeft: 20, paddingRight: 20, borderBottom: '1px solid #f1f5f9',
-  },
+  btnSecondary: { paddingTop: 10, paddingBottom: 10, paddingLeft: 14, paddingRight: 14, borderRadius: 10, border: '1px solid #cbd5e1', backgroundColor: '#fff', color: '#0f172a', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' },
+  btnGhost: { paddingTop: 10, paddingBottom: 10, paddingLeft: 14, paddingRight: 14, borderRadius: 10, border: '1px solid #e2e8f0', backgroundColor: '#fff', color: '#475569', fontSize: 13, fontWeight: 600, cursor: 'pointer' },
+  overlay: { position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000, padding: 16 },
+  modal: { width: '100%', maxWidth: 460, backgroundColor: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 10px 30px rgba(0,0,0,0.12)', overflow: 'hidden' },
+  modalHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 16, paddingBottom: 16, paddingLeft: 20, paddingRight: 20, borderBottom: '1px solid #f1f5f9' },
   modalTitle: { fontSize: 16, fontWeight: 700, color: '#0f172a' },
   modalCloseBtn: { background: 'none', border: 'none', color: '#94a3b8', fontSize: 16, cursor: 'pointer' },
   modalBody: { display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 16, paddingBottom: 16, paddingLeft: 20, paddingRight: 20 },
   modalNote: { margin: 0, fontSize: 13, color: '#64748b', lineHeight: 1.6 },
   modalFooter: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 },
   passwordWrap: { position: 'relative', width: '100%' },
-  passwordInput: {
-    paddingTop: 10, paddingBottom: 10, paddingLeft: 12, paddingRight: 42, border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 14, color: '#0f172a', backgroundColor: '#fff', outline: 'none', boxSizing: 'border-box', WebkitTextFillColor: '#0f172a', width: '100%',
-  },
-  eyeBtn: {
-    position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: '#64748b', padding: 0, lineHeight: 1,
-  },
+  passwordInput: { paddingTop: 10, paddingBottom: 10, paddingLeft: 12, paddingRight: 42, border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 14, color: '#0f172a', backgroundColor: '#fff', outline: 'none', boxSizing: 'border-box', WebkitTextFillColor: '#0f172a', width: '100%' },
+  eyeBtn: { position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: '#64748b', padding: 0, lineHeight: 1 },
 }
-

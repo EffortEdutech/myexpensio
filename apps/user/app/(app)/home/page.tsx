@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { getActiveOrg } from '@/lib/org'
 import { getHomeStats, type RecentTrip, type RecentClaim } from '@/lib/queries/home'
 import { createClient } from '@/lib/supabase/server'
+import { PwaInstallCard } from '@/components/PwaInstallCard'
 
 // ── Formatters ─────────────────────────────────────────────────────────────
 
@@ -118,11 +119,8 @@ export default async function HomePage() {
   const org   = await getActiveOrg()
   const stats = org ? await getHomeStats(org.org_id) : null
 
-  // Greeting based on time of day
   const hour     = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
-
-  // First name from email or profile
   const firstName = (user?.email ?? '').split('@')[0]
 
   const isNewUser = !stats || (
@@ -135,8 +133,6 @@ export default async function HomePage() {
 
   return (
     <div style={S.page}>
-
-      {/* ── Greeting ───────────────────────────────────────────────── */}
       <div style={S.greeting}>
         <h1 style={S.greetingText}>
           {greeting}, {firstName} 👋
@@ -144,7 +140,8 @@ export default async function HomePage() {
         {org && <p style={S.workspaceName}>{org.org_name}</p>}
       </div>
 
-      {/* ── New user onboarding card ──────────────────────────────── */}
+      <PwaInstallCard compact />
+
       {isNewUser && (
         <div style={S.onboardCard}>
           <div style={S.onboardIcon}>🚀</div>
@@ -158,7 +155,6 @@ export default async function HomePage() {
         </div>
       )}
 
-      {/* ── Quick actions ─────────────────────────────────────────── */}
       <div style={S.quickGrid}>
         <QuickAction href="/trips/start"          icon="▶" label="Start Trip"  color="#16a34a" />
         <QuickAction href="/trips/plan"          icon="🗺" label="Plan Trip"  color="#2563eb" />
@@ -166,39 +162,19 @@ export default async function HomePage() {
         <QuickAction href="/claims?tab=export"  icon="↓" label="Export"      color="#0891b2" />
       </div>
 
-      {/* ── This month stats ──────────────────────────────────────── */}
       <SectionHeader title={month} />
       <div style={S.statGrid}>
-        <StatCard
-          label="Trips"
-          value={stats?.tripsThisMonth ?? 0}
-        />
-        <StatCard
-          label="Draft Claims"
-          value={stats?.draftClaims ?? 0}
-        />
-        <StatCard
-          label="Submitted"
-          value={stats?.submittedClaims ?? 0}
-        />
+        <StatCard label="Trips" value={stats?.tripsThisMonth ?? 0} />
+        <StatCard label="Draft Claims" value={stats?.draftClaims ?? 0} />
+        <StatCard label="Submitted" value={stats?.submittedClaims ?? 0} />
         {org?.tier === 'FREE' && (
-          <StatCard
-            label="Route Calcs"
-            value={`${stats?.routesUsed ?? 0} / 2`}
-            sub="Free plan"
-          />
+          <StatCard label="Route Calcs" value={`${stats?.routesUsed ?? 0} / 2`} sub="Free plan" />
         )}
       </div>
 
-      {/* ── Recent trips ──────────────────────────────────────────── */}
       <SectionHeader title="Recent Trips" href="/trips" />
       {!stats || stats.recentTrips.length === 0 ? (
-        <EmptyCard
-          icon="🗺"
-          message="No trips yet. Start tracking your first trip."
-          cta="Start Trip"
-          href="/trips/start"
-        />
+        <EmptyCard icon="🗺" message="No trips yet. Start tracking your first trip." cta="Start Trip" href="/trips/start" />
       ) : (
         <div style={S.list}>
           {stats.recentTrips.map((trip: RecentTrip) => (
@@ -222,15 +198,9 @@ export default async function HomePage() {
         </div>
       )}
 
-      {/* ── Recent claims ─────────────────────────────────────────── */}
       <SectionHeader title="Recent Claims" href="/claims" />
       {!stats || stats.recentClaims.length === 0 ? (
-        <EmptyCard
-          icon="📋"
-          message="No claims yet. Create your first claim."
-          cta="New Claim"
-          href="/claims?action=new"
-        />
+        <EmptyCard icon="📋" message="No claims yet. Create your first claim." cta="New Claim" href="/claims?action=new" />
       ) : (
         <div style={S.list}>
           {stats.recentClaims.map((claim: RecentClaim) => (
@@ -251,212 +221,40 @@ export default async function HomePage() {
           ))}
         </div>
       )}
-
     </div>
   )
 }
 
-// ── Styles ─────────────────────────────────────────────────────────────────
-
 const S: Record<string, React.CSSProperties> = {
-  page: {
-    display:       'flex',
-    flexDirection: 'column',
-    gap:           20,
-  },
-  greeting: {
-    paddingTop: 4,
-  },
-  greetingText: {
-    fontSize:   22,
-    fontWeight: 700,
-    color:      '#0f172a',
-    margin:     0,
-  },
-  workspaceName: {
-    fontSize:   13,
-    color:      '#64748b',
-    margin:     '4px 0 0',
-  },
-  onboardCard: {
-    backgroundColor: '#f0fdf4',
-    border:          '1px solid #bbf7d0',
-    borderRadius:    12,
-    padding:         16,
-    display:         'flex',
-    flexDirection:   'column',
-    gap:             10,
-  },
-  onboardIcon: {
-    fontSize: 28,
-  },
-  onboardTitle: {
-    fontSize:   15,
-    fontWeight: 700,
-    color:      '#14532d',
-    margin:     0,
-  },
-  onboardSub: {
-    fontSize:   13,
-    color:      '#166534',
-    margin:     '4px 0 0',
-    lineHeight: 1.5,
-  },
-  onboardBtn: {
-    alignSelf:       'flex-start',
-    padding:         '8px 16px',
-    backgroundColor: '#16a34a',
-    color:           '#fff',
-    borderRadius:    8,
-    textDecoration:  'none',
-    fontSize:        13,
-    fontWeight:      600,
-  },
-  quickGrid: {
-    display:             'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
-    gap:                 10,
-  },
-  quickAction: {
-    display:         'flex',
-    flexDirection:   'column',
-    alignItems:      'center',
-    gap:             6,
-    padding:         12,
-    backgroundColor: '#ffffff',
-    border:          '1.5px solid #e2e8f0',
-    borderRadius:    12,
-    textDecoration:  'none',
-  },
-  quickIcon: {
-    width:          40,
-    height:         40,
-    borderRadius:   10,
-    display:        'flex',
-    alignItems:     'center',
-    justifyContent: 'center',
-    fontSize:       18,
-    fontWeight:     700,
-  },
-  quickLabel: {
-    fontSize:   10,
-    fontWeight: 600,
-    color:      '#374151',
-    textAlign:  'center',
-  },
-  sectionHeader: {
-    display:        'flex',
-    alignItems:     'center',
-    justifyContent: 'space-between',
-    marginBottom:   -8,
-  },
-  sectionTitle: {
-    fontSize:   14,
-    fontWeight: 700,
-    color:      '#0f172a',
-  },
-  seeAll: {
-    fontSize:       12,
-    color:          '#64748b',
-    textDecoration: 'none',
-    fontWeight:     500,
-  },
-  statGrid: {
-    display:             'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap:                 10,
-  },
-  statCard: {
-    backgroundColor: '#ffffff',
-    border:          '1px solid #e2e8f0',
-    borderRadius:    12,
-    padding:         16,
-  },
-  statValue: {
-    fontSize:   26,
-    fontWeight: 800,
-    color:      '#0f172a',
-    lineHeight: 1,
-  },
-  statLabel: {
-    fontSize:   12,
-    color:      '#64748b',
-    marginTop:  4,
-    fontWeight: 500,
-  },
-  statSub: {
-    fontSize:  10,
-    color:     '#94a3b8',
-    marginTop: 2,
-  },
-  list: {
-    display:       'flex',
-    flexDirection: 'column',
-    gap:           8,
-  },
-  card: {
-    backgroundColor: '#ffffff',
-    border:          '1px solid #e2e8f0',
-    borderRadius:    12,
-    padding:         14,
-    textDecoration:  'none',
-    display:         'block',
-  },
-  cardRow: {
-    display:        'flex',
-    justifyContent: 'space-between',
-    alignItems:     'flex-start',
-    gap:            12,
-  },
-  cardTitle: {
-    fontSize:   14,
-    fontWeight: 600,
-    color:      '#0f172a',
-    margin:     0,
-  },
-  cardSub: {
-    fontSize:  12,
-    color:     '#94a3b8',
-    margin:    '3px 0 0',
-  },
-  cardRight: {
-    display:       'flex',
-    flexDirection: 'column',
-    alignItems:    'flex-end',
-    gap:           4,
-    flexShrink:    0,
-  },
-  cardDistance: {
-    fontSize:   14,
-    fontWeight: 700,
-    color:      '#0f172a',
-    margin:     0,
-  },
-  emptyCard: {
-    backgroundColor: '#f8fafc',
-    border:          '1.5px dashed #e2e8f0',
-    borderRadius:    12,
-    padding:         24,
-    display:         'flex',
-    flexDirection:   'column',
-    alignItems:      'center',
-    gap:             8,
-    textAlign:       'center',
-  },
-  emptyMsg: {
-    fontSize:   13,
-    color:      '#64748b',
-    margin:     0,
-    lineHeight: 1.5,
-  },
-  emptyBtn: {
-    marginTop:       4,
-    padding:         '8px 16px',
-    backgroundColor: '#0f172a',
-    color:           '#fff',
-    borderRadius:    8,
-    textDecoration:  'none',
-    fontSize:        13,
-    fontWeight:      600,
-  },
+  page: { display: 'flex', flexDirection: 'column', gap: 20 },
+  greeting: { paddingTop: 4 },
+  greetingText: { fontSize: 22, fontWeight: 700, color: '#0f172a', margin: 0 },
+  workspaceName: { fontSize: 13, color: '#64748b', margin: '4px 0 0' },
+  onboardCard: { backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 },
+  onboardIcon: { fontSize: 28 },
+  onboardTitle: { fontSize: 15, fontWeight: 700, color: '#14532d', margin: 0 },
+  onboardSub: { fontSize: 13, color: '#166534', margin: '4px 0 0', lineHeight: 1.5 },
+  onboardBtn: { alignSelf: 'flex-start', padding: '8px 16px', backgroundColor: '#16a34a', color: '#fff', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 600 },
+  quickGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 },
+  quickAction: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: 12, backgroundColor: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: 12, textDecoration: 'none' },
+  quickIcon: { width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700 },
+  quickLabel: { fontSize: 10, fontWeight: 600, color: '#374151', textAlign: 'center' },
+  sectionHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: -8 },
+  sectionTitle: { fontSize: 14, fontWeight: 700, color: '#0f172a' },
+  seeAll: { fontSize: 12, color: '#64748b', textDecoration: 'none', fontWeight: 500 },
+  statGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 },
+  statCard: { backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 16 },
+  statValue: { fontSize: 26, fontWeight: 800, color: '#0f172a', lineHeight: 1 },
+  statLabel: { fontSize: 12, color: '#64748b', marginTop: 4, fontWeight: 500 },
+  statSub: { fontSize: 10, color: '#94a3b8', marginTop: 2 },
+  list: { display: 'flex', flexDirection: 'column', gap: 8 },
+  card: { backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14, textDecoration: 'none', display: 'block' },
+  cardRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
+  cardTitle: { fontSize: 14, fontWeight: 600, color: '#0f172a', margin: 0 },
+  cardSub: { fontSize: 12, color: '#94a3b8', margin: '3px 0 0' },
+  cardRight: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 },
+  cardDistance: { fontSize: 14, fontWeight: 700, color: '#0f172a', margin: 0 },
+  emptyCard: { backgroundColor: '#f8fafc', border: '1.5px dashed #e2e8f0', borderRadius: 12, padding: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center' },
+  emptyMsg: { fontSize: 13, color: '#64748b', margin: 0, lineHeight: 1.5 },
+  emptyBtn: { marginTop: 4, padding: '8px 16px', backgroundColor: '#0f172a', color: '#fff', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 600 },
 }
