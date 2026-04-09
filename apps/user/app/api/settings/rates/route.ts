@@ -1,15 +1,3 @@
-// apps/user/app/api/settings/rates/route.ts
-// GET  /api/settings/rates
-// POST /api/settings/rates
-//
-// Personal rates only:
-// - rate_versions      = global reference templates (admin-managed)
-// - user_rate_versions = personal user-owned rates used for new claims
-//
-// NOTE FOR CURRENT TRANSITION SCHEMA:
-// user_rate_versions still has org_id NOT NULL in the current DB schema,
-// so this route resolves the active org and writes org_id + created_by_user_id.
-
 import { createClient } from '@/lib/supabase/server'
 import { getActiveOrg } from '@/lib/org'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -99,7 +87,7 @@ function numericInput(value: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined
 }
 
-async function loadLatestTemplateOptions(
+async function loadTemplateOptions(
   supabase: Awaited<ReturnType<typeof createClient>>,
 ) {
   const { data, error } = await supabase
@@ -129,16 +117,7 @@ async function loadLatestTemplateOptions(
     return []
   }
 
-  const latestByTemplate = new Map<string, RateRow>()
-  for (const row of (data ?? []) as RateRow[]) {
-    const templateName = row.template_name?.trim()
-    if (!templateName) continue
-    if (!latestByTemplate.has(templateName)) {
-      latestByTemplate.set(templateName, row)
-    }
-  }
-
-  return Array.from(latestByTemplate.values()).map((row) => normalizeRateRow(row))
+  return ((data ?? []) as RateRow[]).map((row) => normalizeRateRow(row))
 }
 
 export async function GET() {
@@ -175,7 +154,7 @@ export async function GET() {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
-    loadLatestTemplateOptions(supabase),
+    loadTemplateOptions(supabase),
   ])
 
   if (personalErr) {
@@ -252,8 +231,8 @@ export async function POST(request: NextRequest) {
   const morning = numericInput(body.meal_rate_morning) ?? template.meal_rate_morning
   const noon = numericInput(body.meal_rate_noon) ?? template.meal_rate_noon
   const evening = numericInput(body.meal_rate_evening) ?? template.meal_rate_evening
-
   const computedPerSession = computeMealAverage(morning, noon, evening)
+
   const mealRatePerSession =
     numericInput(body.meal_rate_per_session)
     ?? template.meal_rate_per_session

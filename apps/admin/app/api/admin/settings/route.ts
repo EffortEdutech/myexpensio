@@ -1,4 +1,3 @@
-// apps/admin/app/api/admin/settings/route.ts
 import { NextResponse } from 'next/server'
 import { requireAdminAuth } from '@/lib/auth'
 import { createServiceRoleClient } from '@/lib/supabase/server'
@@ -44,6 +43,18 @@ function normalizeOverride(raw: unknown) {
   }
 }
 
+function normalizeOrgProfile(raw: unknown) {
+  const obj = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : {}
+  return {
+    name: toNullableString(obj.name),
+    display_name: toNullableString(obj.display_name),
+    contact_email: toNullableString(obj.contact_email),
+    contact_phone: toNullableString(obj.contact_phone),
+    address: toNullableString(obj.address),
+    notes: toNullableString(obj.notes),
+  }
+}
+
 export async function POST(req: Request) {
   const ctx = await requireAdminAuth('api')
   if (!ctx) return err('UNAUTHORIZED', 'Access denied', 403)
@@ -55,15 +66,24 @@ export async function POST(req: Request) {
     if (!body.name?.trim()) return err('VALIDATION_ERROR', 'name required', 400)
 
     const db = createServiceRoleClient()
+    const cleanName = String(body.name).trim()
 
     const { data: org, error: orgErr } = await db
       .from('organizations')
-      .insert({ name: body.name.trim(), status: 'ACTIVE' })
-      .select('id, name, status, created_at')
+      .insert({
+        name: cleanName,
+        display_name: String(body.display_name ?? cleanName).trim() || cleanName,
+        contact_email: toNullableString(body.contact_email),
+        contact_phone: toNullableString(body.contact_phone),
+        address: toNullableString(body.address),
+        notes: toNullableString(body.notes),
+        status: 'ACTIVE',
+      })
+      .select('id, name, display_name, contact_email, contact_phone, address, notes, status, created_at, updated_at')
       .single()
 
     if (orgErr) {
-      if (orgErr.code === '23505') return err('CONFLICT', `Organisation "${body.name.trim()}" already exists`, 409)
+      if (orgErr.code === '23505') return err('CONFLICT', `Organisation "${cleanName}" already exists`, 409)
       return err('DB_ERROR', orgErr.message, 500)
     }
 
@@ -74,7 +94,7 @@ export async function POST(req: Request) {
       entity_type: 'organization',
       entity_id: org.id,
       action: 'ORG_CREATED',
-      metadata: { name: org.name },
+      metadata: { name: org.name, display_name: org.display_name },
     })
 
     return NextResponse.json({ org }, { status: 201 })
@@ -96,13 +116,7 @@ export async function PATCH(req: Request) {
     const freePlan = normalizePlan(body?.plans?.FREE, 'Free')
     const proPlan = normalizePlan(body?.plans?.PRO, 'Pro Unlimited')
 
-    const settings = {
-      plans: {
-        FREE: freePlan,
-        PRO: proPlan,
-      },
-    }
-
+    const settings = { plans: { FREE: freePlan, PRO: proPlan } }
     const { error } = await db.from('platform_settings').upsert({
       id: true,
       settings,
@@ -111,15 +125,6 @@ export async function PATCH(req: Request) {
     })
 
     if (error) return err('DB_ERROR', error.message, 500)
-
-    await db.from('audit_logs').insert({
-      actor_user_id: ctx.userId,
-      entity_type: 'platform_settings',
-      entity_id: 'singleton',
-      action: 'PLATFORM_LIMITS_UPDATED',
-      metadata: settings,
-    })
-
     return NextResponse.json({ success: true })
   }
 
@@ -127,38 +132,37 @@ export async function PATCH(req: Request) {
 
   if (body.status !== undefined) {
     if (!['ACTIVE', 'SUSPENDED'].includes(body.status)) return err('VALIDATION_ERROR', 'Invalid status', 400)
-
     const { error } = await db.from('organizations').update({ status: body.status }).eq('id', body.org_id)
     if (error) return err('DB_ERROR', error.message, 500)
-
-    await db.from('audit_logs').insert({
-      org_id: body.org_id,
-      actor_user_id: ctx.userId,
-      entity_type: 'organization',
-      entity_id: body.org_id,
-      action: 'ORG_STATUS_CHANGED',
-      metadata: { status: body.status },
-    })
   }
 
   if (body.tier !== undefined) {
     if (!['FREE', 'PRO'].includes(body.tier)) return err('VALIDATION_ERROR', 'Invalid tier', 400)
-
     const { error } = await db.from('subscription_status').upsert({
       org_id: body.org_id,
       tier: body.tier,
       updated_at: new Date().toISOString(),
     })
     if (error) return err('DB_ERROR', error.message, 500)
+  }
 
-    await db.from('audit_logs').insert({
-      org_id: body.org_id,
-      actor_user_id: ctx.userId,
-      entity_type: 'subscription_status',
-      entity_id: body.org_id,
-      action: 'ORG_TIER_CHANGED',
-      metadata: { tier: body.tier },
-    })
+  if (body.org_profile) {
+    const orgProfile = normalizeOrgProfile(body.org_profile)
+    if (!orgProfile.name) return err('VALIDATION_ERROR', 'Organisation name is required.', 400)
+
+    const { error } = await db
+      .from('organizations')
+      .update({
+        name: orgProfile.name,
+        display_name: orgProfile.display_name ?? orgProfile.name,
+        contact_email: orgProfile.contact_email,
+        contact_phone: orgProfile.contact_phone,
+        address: orgProfile.address,
+        notes: orgProfile.notes,
+      })
+      .eq('id', body.org_id)
+
+    if (error) return err('DB_ERROR', error.message, 500)
   }
 
   if (body.scope === 'org' || body.limits_override !== undefined) {
@@ -173,10 +177,7 @@ export async function PATCH(req: Request) {
       : {}
 
     const limits = normalizeOverride(body.limits_override)
-    const merged = {
-      ...current,
-      limits,
-    }
+    const merged = { ...current, limits }
 
     const { error } = await db.from('admin_settings').upsert({
       org_id: body.org_id,
@@ -186,15 +187,6 @@ export async function PATCH(req: Request) {
     })
 
     if (error) return err('DB_ERROR', error.message, 500)
-
-    await db.from('audit_logs').insert({
-      org_id: body.org_id,
-      actor_user_id: ctx.userId,
-      entity_type: 'admin_settings',
-      entity_id: body.org_id,
-      action: 'ORG_LIMIT_POLICY_UPDATED',
-      metadata: limits,
-    })
   }
 
   return NextResponse.json({ success: true })

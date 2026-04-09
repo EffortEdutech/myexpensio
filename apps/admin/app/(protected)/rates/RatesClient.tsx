@@ -1,6 +1,5 @@
+
 'use client'
-// apps/admin/app/(protected)/rates/RatesClient.tsx
-// Global template library. No org selection.
 
 import { useMemo, useState } from 'react'
 
@@ -24,6 +23,7 @@ type Rate = {
 }
 
 const EMPTY = {
+  id: '',
   template_name: '',
   effective_from: new Date().toISOString().slice(0, 10),
   mileage_rate_per_km: 0.60,
@@ -53,7 +53,9 @@ export default function RatesClient({
   const [rates, setRates] = useState(initialRates)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ ...EMPTY })
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [toast, setToast] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
   const [templateFilter, setTemplateFilter] = useState('ALL')
 
@@ -87,6 +89,29 @@ export default function RatesClient({
     )
   }
 
+  function openNewForm() {
+    setEditingId(null)
+    setForm({ ...EMPTY })
+    setShowForm(true)
+  }
+
+  function openEditForm(rate: Rate) {
+    setEditingId(rate.id)
+    setForm({
+      id: rate.id,
+      template_name: rate.template_name ?? '',
+      effective_from: rate.effective_from,
+      mileage_rate_per_km: Number(rate.mileage_rate_per_km ?? 0),
+      perdiem_rate_myr: Number(rate.perdiem_rate_myr ?? 0),
+      meal_rate_morning: Number(rate.meal_rate_morning ?? 0),
+      meal_rate_noon: Number(rate.meal_rate_noon ?? 0),
+      meal_rate_evening: Number(rate.meal_rate_evening ?? 0),
+      meal_rate_full_day: Number(rate.meal_rate_full_day ?? 0),
+      lodging_rate_default: Number(rate.lodging_rate_default ?? 0),
+    })
+    setShowForm(true)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.template_name.trim()) {
@@ -96,21 +121,46 @@ export default function RatesClient({
 
     setSaving(true)
     try {
+      const method = editingId ? 'PATCH' : 'POST'
       const res = await fetch('/api/admin/rates', {
-        method: 'POST',
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error?.message ?? 'Failed')
-      setRates((prev) => [json.rate, ...prev])
+
+      if (editingId) {
+        setRates((prev) => prev.map((item) => (item.id === editingId ? json.rate : item)))
+        toast_('ok', 'Rate template updated')
+      } else {
+        setRates((prev) => [json.rate, ...prev])
+        toast_('ok', 'Rate template version created')
+      }
+
       setShowForm(false)
+      setEditingId(null)
       setForm({ ...EMPTY })
-      toast_('ok', 'Rate template version created')
     } catch (e: unknown) {
       toast_('err', e instanceof Error ? e.message : 'Failed')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleDelete(rate: Rate) {
+    if (!confirm(`Delete ${rate.template_name ?? 'template'} on ${rate.effective_from}?`)) return
+    setDeletingId(rate.id)
+    try {
+      const res = await fetch(`/api/admin/rates?id=${encodeURIComponent(rate.id)}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed')
+      setRates((prev) => prev.filter((item) => item.id !== rate.id))
+      toast_('ok', 'Rate template deleted')
+    } catch (e: unknown) {
+      toast_('err', e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -119,12 +169,9 @@ export default function RatesClient({
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Rate Templates</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Global template library used as optional references by users.</p>
+          <p className="text-sm text-gray-500 mt-0.5">Company standard claim-rate templates. Users may copy any template into their own personal rate profile.</p>
         </div>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-        >
+        <button onClick={() => showForm ? setShowForm(false) : openNewForm()} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
           {showForm ? 'Cancel' : '+ New Template Version'}
         </button>
       </div>
@@ -137,45 +184,26 @@ export default function RatesClient({
 
       {showForm && (
         <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h2 className="text-sm font-semibold text-gray-900 mb-4">New Template Version</h2>
+          <h2 className="text-sm font-semibold text-gray-900 mb-4">{editingId ? 'Edit Template Version' : 'New Template Version'}</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             {field('template_name', 'Template Name', 'e.g. TNB')}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Effective From <span className="text-red-500">*</span></label>
-              <input
-                type="date"
-                value={form.effective_from}
-                onChange={(e) => setForm((f) => ({ ...f, effective_from: e.target.value }))}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Effective From</label>
+              <input type="date" value={form.effective_from} onChange={(e) => setForm((f) => ({ ...f, effective_from: e.target.value }))} required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
-            {field('mileage_rate_per_km', 'Mileage Rate (MYR/km)', '0.60')}
-            {field('perdiem_rate_myr', 'Per Diem Rate (MYR/day)', '150.00')}
-            <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">Meal Rates (MYR)</p>
-              <div className="grid grid-cols-2 gap-3">
-                {field('meal_rate_morning', 'Morning')}
-                {field('meal_rate_noon', 'Noon')}
-                {field('meal_rate_evening', 'Evening')}
-                {field('meal_rate_full_day', 'Full Day')}
-              </div>
+            {field('mileage_rate_per_km', 'Mileage Rate (MYR/km)')}
+            {field('perdiem_rate_myr', 'Per Diem Rate (MYR/day)')}
+            <div className="grid grid-cols-2 gap-3">
+              {field('meal_rate_morning', 'Morning')}
+              {field('meal_rate_noon', 'Noon')}
+              {field('meal_rate_evening', 'Evening')}
+              {field('meal_rate_full_day', 'Full Day')}
             </div>
-            {field('lodging_rate_default', 'Lodging Cap (MYR/night)', '200.00')}
+            {field('lodging_rate_default', 'Lodging Cap (MYR/night)')}
             <div className="flex gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowForm(false)}
-                className="flex-1 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-              >
-                {saving ? 'Saving…' : 'Create Template Version'}
+              <button type="button" onClick={() => { setShowForm(false); setEditingId(null); setForm({ ...EMPTY }) }} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button type="submit" disabled={saving} className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Create Template Version'}
               </button>
             </div>
           </form>
@@ -183,15 +211,9 @@ export default function RatesClient({
       )}
 
       <div className="flex gap-3">
-        <select
-          value={templateFilter}
-          onChange={(e) => setTemplateFilter(e.target.value)}
-          className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none"
-        >
+        <select value={templateFilter} onChange={(e) => setTemplateFilter(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none">
           <option value="ALL">All templates</option>
-          {templateNames.map((name) => (
-            <option key={name} value={name}>{name}</option>
-          ))}
+          {templateNames.map((name) => <option key={name} value={name}>{name}</option>)}
         </select>
         <span className="text-sm text-gray-400 self-center">{filtered.length} versions</span>
       </div>
@@ -208,6 +230,7 @@ export default function RatesClient({
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Meal (Full)</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Lodging</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Created by</th>
+                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -222,6 +245,14 @@ export default function RatesClient({
                     <td className="px-4 py-3 text-right text-gray-700">{fmtMoney(r.meal_rate_full_day)}</td>
                     <td className="px-4 py-3 text-right text-gray-700">{fmtMoney(r.lodging_rate_default)}</td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{(p as { display_name?: string | null } | null)?.display_name ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => openEditForm(r)} className="px-3 py-1.5 text-xs font-medium rounded border border-blue-200 text-blue-700 hover:bg-blue-50">Edit</button>
+                        <button onClick={() => handleDelete(r)} disabled={deletingId === r.id} className="px-3 py-1.5 text-xs font-medium rounded border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-50">
+                          {deletingId === r.id ? 'Deleting…' : 'Delete'}
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 )
               })}
