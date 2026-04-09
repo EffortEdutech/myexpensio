@@ -3,11 +3,6 @@
 // POST /api/exports — synchronous export, streams file immediately.
 //
 // Uses stored line-item values only. No current rate lookup.
-//
-// PATCH (09 Apr 2026):
-//   - Restore manual PDF grouping choice from user export screen.
-//   - Template still provides the default PDF layout.
-//   - User-chosen pdf_layout now overrides template grouping only.
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
@@ -18,11 +13,9 @@ import type { ClaimForExport, ItemForExport, TripForExport } from '@/lib/export-
 
 export const runtime = 'nodejs'
 
-type PdfGrouping = 'BY_DATE' | 'BY_CATEGORY'
-
 type PdfLayoutConfig = {
   orientation: 'portrait' | 'landscape'
-  grouping: PdfGrouping
+  grouping: 'BY_DATE' | 'BY_CATEGORY'
   show_summary_table: boolean
   show_receipt_appendix: boolean
   show_tng_appendix: boolean
@@ -42,10 +35,6 @@ const DEFAULT_PDF_LAYOUT: PdfLayoutConfig = {
 
 function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
-}
-
-function normalizePdfGrouping(value: unknown): PdfGrouping | null {
-  return value === 'BY_CATEGORY' || value === 'BY_DATE' ? value : null
 }
 
 export async function POST(request: NextRequest) {
@@ -186,11 +175,10 @@ export async function POST(request: NextRequest) {
   })
 
   const rowCount = shaped.reduce((sum, claim) => sum + Math.max(claim.items.length, 1), 0)
-  const manualGrouping = normalizePdfGrouping(pdf_layout)
   const resolvedLayout: PdfLayoutConfig = {
     ...DEFAULT_PDF_LAYOUT,
+    ...(pdf_layout ? { grouping: pdf_layout as 'BY_DATE' | 'BY_CATEGORY' } : {}),
     ...templatePdfLayout,
-    ...(manualGrouping ? { grouping: manualGrouping } : {}),
   }
 
   const { data: jobRow } = await supabase
