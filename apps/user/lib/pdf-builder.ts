@@ -31,6 +31,9 @@ const BOLD = 'Helvetica-Bold'
 const REGULAR = 'Helvetica'
 const OBLIQUE = 'Helvetica-Oblique'
 const ROW_H = 19
+const CELL_PAD_X = 5
+const CELL_PAD_Y = 5
+const ROW_FONT_SIZE = 8
 
 const C = {
   dark: '#0f172a',
@@ -418,11 +421,19 @@ function drawItemsByDate(doc: PDFKit.PDFDocument, y: number, dim: PageDimensions
     y = drawTblHeader(doc, y, cols, accent)
 
     for (let i = 0; i < claim.items.length; i++) {
-      if (y + ROW_H > dim.PH - MB) { doc.addPage(); y = MT; y = drawTblHeader(doc, y, cols, accent) }
       const item = claim.items[i]
       const desc = item.receipt_path ? `${item.description}  [R]` : item.description
-      drawTblRow(doc, y, cols, [item.date, item.type, desc, item.qty, item.rate, item.amount_myr.toFixed(2)], i % 2 === 0 ? C.white : C.light)
-      y += ROW_H
+      const values = [item.date, item.type, desc, item.qty, item.rate, item.amount_myr.toFixed(2)]
+      const rowHeight = measureTblRowHeight(doc, cols, values)
+
+      if (y + rowHeight > dim.PH - MB) {
+        doc.addPage()
+        y = MT
+        y = drawTblHeader(doc, y, cols, accent)
+      }
+
+      drawTblRow(doc, y, cols, values, i % 2 === 0 ? C.white : C.light)
+      y += rowHeight
     }
 
     doc.rect(ML, y, dim.CW, 18).fill('#f1f5f9')
@@ -450,7 +461,8 @@ function drawItemsByCategory(doc: PDFKit.PDFDocument, y: number, dim: PageDimens
   const knownTypes = new Set(CATEGORY_ORDER.map((c) => c.type))
 
   const renderCat = (label: string, headerBg: string, headerFg: string, items: PdfItem[]) => {
-    doc.addPage(); y = MT
+    doc.addPage()
+    y = MT
     const catTotal = items.reduce((s, i) => s + i.amount_myr, 0)
     doc.rect(ML, y, dim.CW, 30).fill(headerBg)
     doc.font(BOLD).fontSize(12).fillColor(headerFg)
@@ -461,11 +473,19 @@ function drawItemsByCategory(doc: PDFKit.PDFDocument, y: number, dim: PageDimens
     y = drawTblHeader(doc, y, cols, accent)
 
     for (let i = 0; i < items.length; i++) {
-      if (y + ROW_H > dim.PH - MB) { doc.addPage(); y = MT; y = drawTblHeader(doc, y, cols, accent) }
       const item = items[i]
       const desc = item.receipt_path ? `${item.description}  [R]` : item.description
-      drawTblRow(doc, y, cols, [item.date, item.claim_title, desc, item.qty, item.amount_myr.toFixed(2)], i % 2 === 0 ? C.white : C.light)
-      y += ROW_H
+      const values = [item.date, item.claim_title, desc, item.qty, item.amount_myr.toFixed(2)]
+      const rowHeight = measureTblRowHeight(doc, cols, values)
+
+      if (y + rowHeight > dim.PH - MB) {
+        doc.addPage()
+        y = MT
+        y = drawTblHeader(doc, y, cols, accent)
+      }
+
+      drawTblRow(doc, y, cols, values, i % 2 === 0 ? C.white : C.light)
+      y += rowHeight
     }
 
     doc.rect(ML, y, dim.CW, 18).fill('#f1f5f9')
@@ -555,7 +575,8 @@ async function drawReceiptAppendix(doc: PDFKit.PDFDocument, dim: PageDimensions,
   doc.text(`${receiptItems.length} receipt${receiptItems.length !== 1 ? 's' : ''} — original uploads`, ML + 14, y + 29, { lineBreak: false })
 
   for (const { label, path } of receiptItems) {
-    doc.addPage(); y = MT
+    doc.addPage()
+    y = MT
     doc.font(BOLD).fontSize(8).fillColor(C.muted)
     doc.text(label, ML, y, { width: dim.CW, lineBreak: false })
     y += 14
@@ -619,22 +640,78 @@ function drawTblHeader(doc: PDFKit.PDFDocument, y: number, cols: ColDef[], accen
   let x = ML
   for (const col of cols) {
     doc.font(BOLD).fontSize(7.5).fillColor(C.white)
-    doc.text(col.header, x + 5, y + 6, { width: col.w - 10, align: col.align as 'left' | 'right' | 'center', lineBreak: false, ellipsis: true })
+    doc.text(col.header, x + CELL_PAD_X, y + 6, {
+      width: col.w - (CELL_PAD_X * 2),
+      align: col.align as 'left' | 'right' | 'center',
+      lineBreak: false,
+      ellipsis: true,
+    })
     x += col.w
   }
   return y + ROW_H + 2
 }
 
-function drawTblRow(doc: PDFKit.PDFDocument, y: number, cols: ColDef[], values: string[], bg: string, colorMap: Record<string, string> = {}): void {
+function measureTblRowHeight(doc: PDFKit.PDFDocument, cols: ColDef[], values: string[]): number {
+  let maxHeight = ROW_H
+
+  for (let i = 0; i < cols.length; i++) {
+    const col = cols[i]
+    const value = values[i] ?? ''
+
+    if (col.key !== 'desc') continue
+
+    doc.font(REGULAR).fontSize(ROW_FONT_SIZE).fillColor(C.dark)
+    const h = doc.heightOfString(value, {
+      width: Math.max(col.w - (CELL_PAD_X * 2), 10),
+      align: col.align as 'left' | 'right' | 'center',
+      lineGap: 1,
+    })
+    maxHeight = Math.max(maxHeight, Math.ceil(h) + (CELL_PAD_Y * 2))
+  }
+
+  return maxHeight
+}
+
+function drawTblRow(
+  doc: PDFKit.PDFDocument,
+  y: number,
+  cols: ColDef[],
+  values: string[],
+  bg: string,
+  colorMap: Record<string, string> = {},
+): void {
+  const rowHeight = measureTblRowHeight(doc, cols, values)
   const totalW = cols.reduce((s, c) => s + c.w, 0)
-  doc.rect(ML, y, totalW, ROW_H).fill(bg)
-  doc.moveTo(ML, y + ROW_H).lineTo(ML + totalW, y + ROW_H).lineWidth(0.3).stroke(C.border)
+
+  doc.rect(ML, y, totalW, rowHeight).fill(bg)
+  doc.moveTo(ML, y + rowHeight).lineTo(ML + totalW, y + rowHeight).lineWidth(0.3).stroke(C.border)
+
   let x = ML
   for (let i = 0; i < cols.length; i++) {
     const col = cols[i]
+    const value = values[i] ?? ''
     const color = colorMap[col.key] ?? C.dark
-    doc.font(REGULAR).fontSize(8).fillColor(color)
-    doc.text(values[i] ?? '', x + 5, y + 5, { width: col.w - 10, align: col.align as 'left' | 'right' | 'center', lineBreak: false, ellipsis: true })
+    const innerWidth = col.w - (CELL_PAD_X * 2)
+
+    doc.font(REGULAR).fontSize(ROW_FONT_SIZE).fillColor(color)
+
+    if (col.key === 'desc') {
+      doc.text(value, x + CELL_PAD_X, y + CELL_PAD_Y, {
+        width: innerWidth,
+        height: rowHeight - (CELL_PAD_Y * 2),
+        align: col.align as 'left' | 'right' | 'center',
+        lineGap: 1,
+        ellipsis: true,
+      })
+    } else {
+      doc.text(value, x + CELL_PAD_X, y + 5, {
+        width: innerWidth,
+        align: col.align as 'left' | 'right' | 'center',
+        lineBreak: false,
+        ellipsis: true,
+      })
+    }
+
     x += col.w
   }
 }
