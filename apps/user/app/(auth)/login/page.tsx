@@ -9,6 +9,7 @@
 import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { BiometricLoginButton } from '@/components/auth/BiometricLoginButton'
 
 const URL_ERRORS: Record<string, string> = {
   invalid_link: 'Your invitation link is invalid or has expired. Please request a new one from your admin.',
@@ -75,6 +76,8 @@ function LoginContent() {
 
         {error && <div style={S.errorBanner}>{error}</div>}
 
+        <BiometricLoginButton emailHint={email} redirectTo={redirectTo} />
+
         <form onSubmit={handleLogin} style={S.form}>
           <div style={S.field}>
             <label style={S.label} htmlFor="email">Email</label>
@@ -133,6 +136,10 @@ function LoginContent() {
             {isLoading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+
+        <div style={S.helperNote}>
+          Biometric login can be enabled later from Settings on supported devices. Password sign-in always remains available.
+        </div>
 
         <p style={S.footer}>
           Have an invite? <a href="/accept-invite" style={S.inlineLink}>Accept your invitation</a>
@@ -279,6 +286,13 @@ const S: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     cursor: 'pointer',
     width: '100%',
+  },
+  helperNote: {
+    marginTop: 14,
+    fontSize: 12,
+    color: '#64748b',
+    lineHeight: 1.6,
+    textAlign: 'center',
   },
   footer: {
     fontSize: 13,

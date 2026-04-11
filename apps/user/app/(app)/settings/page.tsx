@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { PwaInstallCard } from '@/components/PwaInstallCard'
+import { BiometricLoginCard } from '@/components/settings/BiometricLoginCard'
 
 type TemplateOption = {
   id: string | null
@@ -259,6 +260,8 @@ export default function SettingsPage() {
         <Card icon="📲" title="App Install" sub="Install myexpensio on your device for a faster, more app-like experience.">
           <PwaInstallCard />
         </Card>
+
+        <BiometricLoginCard />
 
         <Card icon="📚" title="Rate Template Reference" sub="Choose any company standard template created by admin. Selecting one only fills the form below. Click Save Personal Rates to make it yours.">
           <Field label="Reference Template">
