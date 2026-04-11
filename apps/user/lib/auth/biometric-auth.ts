@@ -1,335 +1,282 @@
 'use client'
 
 import { createClient } from '@/lib/supabase/client'
-import { getBiometricSupport, type BiometricSupport } from './biometric-capabilities'
-import {
-  clearStoredBiometricDevice,
-  getStoredBiometricDevice,
-  hasBiometricMarkerOnThisDevice,
-  markStoredBiometricDeviceUsed,
-  saveStoredBiometricDevice,
-  type StoredBiometricDevice,
-} from './biometric-device'
 
-export type BiometricFactorSummary = {
-  id: string
-  friendlyName: string | null
-  status: string | null
-  createdAt: string | null
+export type BiometricSupport = {
+  available: boolean
+  enabledByFlag: boolean
+  reason: string | null
+  secureContext: boolean
+  hasPublicKeyCredential: boolean
+  topLevelContext: boolean
 }
 
-export type BiometricStatus = {
-  support: BiometricSupport
-  userEmail: string | null
-  marker: StoredBiometricDevice | null
-  factors: BiometricFactorSummary[]
-  hasServerFactor: boolean | null
-  enabledOnThisDevice: boolean
-  readyForLoginShortcut: boolean
+export type BiometricEnrollResult =
+  | {
+      ok: true
+      message: string
+      factorId?: string
+    }
+  | {
+      ok: false
+      code:
+        | 'disabled'
+        | 'unsupported'
+        | 'not_secure_context'
+        | 'not_top_level'
+        | 'not_authenticated'
+        | 'provider_unavailable'
+        | 'provider_rejected'
+        | 'unknown'
+      message: string
+      details?: string
+    }
+
+function envFlagEnabled() {
+  return process.env.NEXT_PUBLIC_ENABLE_EXPERIMENTAL_BIOMETRIC === 'true'
 }
 
-function normalizeError(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message) return error.message
-  if (typeof error === 'string' && error.trim()) return error
-  return fallback
-}
-
-function unwrapData<T>(result: any): T {
-  if (result && typeof result === 'object' && 'data' in result) return result.data as T
-  return result as T
-}
-
-function getResultError(result: any): Error | null {
-  const value = result && typeof result === 'object' ? result.error : null
-  if (!value) return null
-  if (value instanceof Error) return value
-  if (typeof value?.message === 'string') return new Error(value.message)
-  return new Error('Unknown biometric error.')
-}
-
-function collectArrayValues(input: unknown): any[] {
-  if (!input || typeof input !== 'object') return []
-  const values = Object.values(input as Record<string, unknown>)
-  return values.flatMap((value) => (Array.isArray(value) ? value : []))
-}
-
-function normalizeFactors(rawFactors: any[]): BiometricFactorSummary[] {
-  return rawFactors
-    .filter(Boolean)
-    .filter((factor) => {
-      const factorType = String(
-        factor?.factor_type ??
-          factor?.factorType ??
-          factor?.type ??
-          '',
-      ).toLowerCase()
-      return factorType.includes('webauthn') || factorType.includes('passkey')
-    })
-    .map((factor) => ({
-      id: String(factor?.id ?? factor?.factor_id ?? factor?.factorId ?? ''),
-      friendlyName:
-        factor?.friendly_name ??
-        factor?.friendlyName ??
-        factor?.name ??
-        factor?.factor_name ??
-        null,
-      status:
-        factor?.status ??
-        factor?.state ??
-        null,
-      createdAt:
-        factor?.created_at ??
-        factor?.createdAt ??
-        null,
-    }))
-    .filter((factor) => factor.id.length > 0)
-}
-
-function getWebauthnApi(supabase: any) {
-  const api = supabase?.auth?.mfa?.webauthn
-  if (!api || typeof api !== 'object') {
-    throw new Error(
-      'This Supabase project does not currently expose a browser WebAuthn API in the installed SDK.'
-    )
+function isTopLevelContext() {
+  try {
+    return typeof window !== 'undefined' && window.top === window
+  } catch {
+    return false
   }
-  return api
 }
 
-async function callVariants<T>(fn: (...args: any[]) => Promise<any>, variants: any[][], fallback: string) {
-  let lastError: unknown = null
+function defaultFriendlyName() {
+  if (typeof navigator === 'undefined') return 'This device'
+  const ua = navigator.userAgent || ''
+  if (/iPhone/i.test(ua)) return 'This iPhone'
+  if (/iPad/i.test(ua)) return 'This iPad'
+  if (/Android/i.test(ua)) return 'This Android phone'
+  return 'This device'
+}
 
-  for (const args of variants) {
-    try {
-      const result = await fn(...args)
-      const resultError = getResultError(result)
-      if (resultError) throw resultError
-      return unwrapData<T>(result)
-    } catch (error) {
-      lastError = error
+export function getBiometricSupport(): BiometricSupport {
+  const secureContext =
+    typeof window !== 'undefined' ? window.isSecureContext === true : false
+
+  const hasPublicKeyCredential =
+    typeof window !== 'undefined' && 'PublicKeyCredential' in window
+
+  const topLevelContext = isTopLevelContext()
+  const enabledByFlag = envFlagEnabled()
+
+  if (!secureContext) {
+    return {
+      available: false,
+      enabledByFlag,
+      reason:
+        'Biometric login needs a secure context (HTTPS or supported localhost).',
+      secureContext,
+      hasPublicKeyCredential,
+      topLevelContext,
     }
   }
 
-  throw new Error(normalizeError(lastError, fallback))
-}
-
-function getFriendlyDeviceName(email: string | null) {
-  const platform = typeof navigator !== 'undefined' ? navigator.platform : 'device'
-  const brand = typeof navigator !== 'undefined' ? navigator.userAgent : 'browser'
-  const compactBrand = brand.replace(/\s+/g, ' ').slice(0, 48)
-  return email ? `myexpensio on ${platform} · ${email}` : `myexpensio on ${platform} · ${compactBrand}`
-}
-
-export function isBiometricLoginShortcutEnabled() {
-  return process.env.NEXT_PUBLIC_BIOMETRIC_LOGIN_SHORTCUT === 'true'
-}
-
-export async function listBiometricFactors(): Promise<BiometricFactorSummary[]> {
-  const supabase = createClient() as any
-  const auth = supabase.auth as any
-
-  const buckets: any[] = []
-
-  if (typeof auth?.mfa?.listFactors === 'function') {
-    try {
-      const result = await auth.mfa.listFactors()
-      const error = getResultError(result)
-      if (!error) {
-        const data = unwrapData<any>(result)
-        buckets.push(...collectArrayValues(data))
-      }
-    } catch {
-      // fall through to webauthn-specific listing
+  if (!topLevelContext) {
+    return {
+      available: false,
+      enabledByFlag,
+      reason:
+        'Biometric login must run in the top-level app window, not inside an embedded frame.',
+      secureContext,
+      hasPublicKeyCredential,
+      topLevelContext,
     }
   }
 
-  if (auth?.mfa?.webauthn && typeof auth.mfa.webauthn.list === 'function') {
-    try {
-      const result = await auth.mfa.webauthn.list()
-      const error = getResultError(result)
-      if (!error) {
-        const data = unwrapData<any>(result)
-        if (Array.isArray(data)) buckets.push(...data)
-        else buckets.push(...collectArrayValues(data))
-      }
-    } catch {
-      // ignore and return whatever we already found
+  if (!hasPublicKeyCredential) {
+    return {
+      available: false,
+      enabledByFlag,
+      reason:
+        'This browser or device does not expose WebAuthn / passkey support.',
+      secureContext,
+      hasPublicKeyCredential,
+      topLevelContext,
     }
   }
 
-  return normalizeFactors(buckets)
-}
-
-export async function getBiometricStatusForCurrentUser(): Promise<BiometricStatus> {
-  const support = await getBiometricSupport()
-  const marker = getStoredBiometricDevice()
-  const supabase = createClient() as any
-
-  const userResult = await supabase.auth.getUser()
-  const userError = getResultError(userResult)
-  if (userError) throw userError
-
-  const user = unwrapData<any>(userResult)?.user ?? unwrapData<any>(userResult)
-  const userEmail = (user?.email ?? null) as string | null
-
-  let factors: BiometricFactorSummary[] = []
-  let hasServerFactor: boolean | null = null
-
-  if (userEmail) {
-    try {
-      factors = await listBiometricFactors()
-      if (marker?.factorId) {
-        hasServerFactor = factors.some((factor) => factor.id === marker.factorId)
-      } else {
-        hasServerFactor = factors.length > 0
-      }
-    } catch {
-      hasServerFactor = null
+  if (!enabledByFlag) {
+    return {
+      available: false,
+      enabledByFlag,
+      reason:
+        'Biometric login is not enabled for this project yet. Password login remains available.',
+      secureContext,
+      hasPublicKeyCredential,
+      topLevelContext,
     }
   }
-
-  const enabledOnThisDevice =
-    Boolean(marker?.enabled) &&
-    (!userEmail || marker?.email?.toLowerCase() === userEmail.toLowerCase())
 
   return {
-    support,
-    userEmail,
-    marker,
-    factors,
-    hasServerFactor,
-    enabledOnThisDevice,
-    readyForLoginShortcut: support.supported && enabledOnThisDevice,
+    available: true,
+    enabledByFlag,
+    reason: null,
+    secureContext,
+    hasPublicKeyCredential,
+    topLevelContext,
   }
 }
 
-export async function enrollBiometricOnThisDevice() {
-  const support = await getBiometricSupport()
-  if (!support.supported) {
-    throw new Error(support.reason ?? 'Biometric login is not available in this browser.')
+function normalizeError(error: unknown): BiometricEnrollResult {
+  const message =
+    error instanceof Error ? error.message : 'Unknown biometric enrollment error.'
+
+  const lower = message.toLowerCase()
+
+  if (lower.includes('422') || lower.includes('unprocessable')) {
+    return {
+      ok: false,
+      code: 'provider_rejected',
+      message:
+        'Biometric login is not available on this Supabase project yet.',
+      details: message,
+    }
   }
 
-  const supabase = createClient() as any
-  const userResult = await supabase.auth.getUser()
-  const userError = getResultError(userResult)
-  if (userError) throw userError
-
-  const user = unwrapData<any>(userResult)?.user ?? unwrapData<any>(userResult)
-  const userEmail = (user?.email ?? null) as string | null
-  if (!userEmail) {
-    throw new Error('You must be signed in before enabling biometrics on this device.')
+  if (
+    lower.includes('not authenticated') ||
+    lower.includes('auth session missing') ||
+    lower.includes('jwt')
+  ) {
+    return {
+      ok: false,
+      code: 'not_authenticated',
+      message: 'Please sign in again before enabling biometric login.',
+      details: message,
+    }
   }
-
-  const webauthn = getWebauthnApi(supabase)
-  if (typeof webauthn.register !== 'function') {
-    throw new Error('This SDK does not currently expose webauthn.register().')
-  }
-
-  const friendlyName = getFriendlyDeviceName(userEmail)
-
-  const data = await callVariants<any>(
-    webauthn.register.bind(webauthn),
-    [
-      [{ friendlyName, factorName: friendlyName, nickname: friendlyName, name: userEmail, email: userEmail }],
-      [{ friendlyName }],
-      [{}],
-      [],
-    ],
-    'Unable to register biometrics on this device.'
-  )
-
-  const factorId =
-    data?.id ??
-    data?.factorId ??
-    data?.factor_id ??
-    data?.factor?.id ??
-    data?.credential?.id ??
-    null
-
-  saveStoredBiometricDevice({
-    enabled: true,
-    email: userEmail,
-    factorId: factorId ? String(factorId) : null,
-    enrolledAt: new Date().toISOString(),
-    lastUsedAt: null,
-  })
 
   return {
-    factorId: factorId ? String(factorId) : null,
-    email: userEmail,
+    ok: false,
+    code: 'unknown',
+    message: 'Unable to enable biometric login right now.',
+    details: message,
   }
 }
 
-export async function authenticateBiometricOnThisDevice(emailHint?: string | null) {
-  const support = await getBiometricSupport()
-  if (!support.supported) {
-    throw new Error(support.reason ?? 'Biometric login is not available in this browser.')
+export async function enrollBiometricOnThisDevice(
+  options: { friendlyName?: string } = {},
+): Promise<BiometricEnrollResult> {
+  const friendlyName = options.friendlyName?.trim() || defaultFriendlyName()
+  const support = getBiometricSupport()
+
+  if (!support.enabledByFlag) {
+    return {
+      ok: false,
+      code: 'disabled',
+      message:
+        support.reason ??
+        'Biometric login is disabled for this project at the moment.',
+    }
   }
 
-  const supabase = createClient() as any
-  const webauthn = getWebauthnApi(supabase)
-  if (typeof webauthn.authenticate !== 'function') {
-    throw new Error('This SDK does not currently expose webauthn.authenticate().')
+  if (!support.secureContext) {
+    return {
+      ok: false,
+      code: 'not_secure_context',
+      message:
+        support.reason ??
+        'Biometric login requires HTTPS or a supported secure local environment.',
+    }
   }
 
-  const marker = getStoredBiometricDevice()
-  const normalizedEmail = emailHint?.trim().toLowerCase() || marker?.email || null
-
-  const data = await callVariants<any>(
-    webauthn.authenticate.bind(webauthn),
-    [
-      [marker?.factorId ? { factorId: marker.factorId, factor_id: marker.factorId, email: normalizedEmail } : { email: normalizedEmail }],
-      [marker?.factorId ? { factorId: marker.factorId } : {}],
-      [{}],
-      [],
-    ],
-    'Biometric authentication failed.'
-  )
-
-  if (hasBiometricMarkerOnThisDevice(normalizedEmail)) {
-    markStoredBiometricDeviceUsed()
+  if (!support.topLevelContext) {
+    return {
+      ok: false,
+      code: 'not_top_level',
+      message:
+        support.reason ??
+        'Biometric login must be used from the main app window.',
+    }
   }
 
-  return data
-}
+  if (!support.hasPublicKeyCredential) {
+    return {
+      ok: false,
+      code: 'unsupported',
+      message:
+        support.reason ??
+        'This browser or device does not support passkeys / WebAuthn.',
+    }
+  }
 
-export async function disableBiometricOnThisDevice() {
-  const supabase = createClient() as any
-  const marker = getStoredBiometricDevice()
+  const supabase = createClient()
 
-  if (marker?.factorId) {
-    try {
-      const webauthn = getWebauthnApi(supabase)
-      if (typeof webauthn.unenroll === 'function') {
-        const result = await callVariants<any>(
-          webauthn.unenroll.bind(webauthn),
-          [
-            [{ factorId: marker.factorId, factor_id: marker.factorId }],
-            [marker.factorId],
-          ],
-          'Unable to remove this biometric credential.'
-        )
-        clearStoredBiometricDevice()
-        return result
+  try {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      return {
+        ok: false,
+        code: 'not_authenticated',
+        message: 'Please sign in again before enabling biometric login.',
+        details: userError?.message,
       }
-    } catch {
-      // fall back to generic MFA unenroll
     }
 
-    const genericMfa = supabase?.auth?.mfa
-    if (genericMfa && typeof genericMfa.unenroll === 'function') {
-      const result = await callVariants<any>(
-        genericMfa.unenroll.bind(genericMfa),
-        [
-          [{ factorId: marker.factorId, factor_id: marker.factorId }],
-          [marker.factorId],
-        ],
-        'Unable to remove this biometric credential.'
-      )
-      clearStoredBiometricDevice()
-      return result
+    const mfa = (supabase.auth as unknown as { mfa?: Record<string, unknown> })
+      .mfa
+
+    if (!mfa) {
+      return {
+        ok: false,
+        code: 'provider_unavailable',
+        message:
+          'Biometric login is not available in this auth client configuration.',
+      }
     }
+
+    const webauthn = mfa['webauthn'] as
+      | {
+          register?: (args?: Record<string, unknown>) => Promise<unknown>
+        }
+      | undefined
+
+    if (!webauthn || typeof webauthn.register !== 'function') {
+      return {
+        ok: false,
+        code: 'provider_unavailable',
+        message:
+          'WebAuthn enrollment is not exposed by this Supabase client build.',
+      }
+    }
+
+    const result = (await webauthn.register({
+      friendlyName,
+    })) as
+      | {
+          data?: { id?: string; factorId?: string }
+          error?: { message?: string; status?: number }
+        }
+      | undefined
+
+    if (result?.error) {
+      return {
+        ok: false,
+        code: 'provider_rejected',
+        message:
+          result.error.message ||
+          'Biometric login is not available on this project yet.',
+        details:
+          typeof result.error.status !== 'undefined'
+            ? `status=${result.error.status}`
+            : undefined,
+      }
+    }
+
+    return {
+      ok: true,
+      message: `Biometric login has been enabled as "${friendlyName}".`,
+      factorId: result?.data?.factorId ?? result?.data?.id,
+    }
+  } catch (error) {
+    return normalizeError(error)
   }
-
-  clearStoredBiometricDevice()
-  return { removed: true }
 }
