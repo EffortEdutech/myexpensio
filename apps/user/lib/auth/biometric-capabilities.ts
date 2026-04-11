@@ -1,124 +1,97 @@
 'use client'
 
 export type BiometricSupport = {
-  supported: boolean
-  isSecureContext: boolean
-  isTopLevelContext: boolean
-  hasPublicKeyCredential: boolean
-  hasPlatformAuthenticator: boolean | null
-  hasConditionalMediation: boolean | null
+  available: boolean
+  enabledByFlag: boolean
   reason: string | null
+  secureContext: boolean
+  hasPublicKeyCredential: boolean
+  topLevelContext: boolean
 }
 
-function isLocalhost(hostname: string) {
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+function envFlagEnabled() {
+  return (
+    process.env.NEXT_PUBLIC_BIOMETRIC_LOGIN_SHORTCUT === 'true' ||
+    process.env.NEXT_PUBLIC_ENABLE_EXPERIMENTAL_BIOMETRIC === 'true'
+  )
 }
 
-function safeIsTopLevelContext() {
-  if (typeof window === 'undefined') return false
+function isTopLevelContext() {
   try {
-    return window.self === window.top
+    return typeof window !== 'undefined' && window.top === window
   } catch {
     return false
   }
 }
 
-export async function getBiometricSupport(): Promise<BiometricSupport> {
-  if (typeof window === 'undefined') {
+export function isBiometricLoginShortcutEnabled(): boolean {
+  return envFlagEnabled()
+}
+
+export function getBiometricSupport(): BiometricSupport {
+  const secureContext =
+    typeof window !== 'undefined' ? window.isSecureContext === true : false
+
+  const hasPublicKeyCredential =
+    typeof window !== 'undefined' && 'PublicKeyCredential' in window
+
+  const topLevelContext = isTopLevelContext()
+  const enabledByFlag = envFlagEnabled()
+
+  if (!secureContext) {
     return {
-      supported: false,
-      isSecureContext: false,
-      isTopLevelContext: false,
-      hasPublicKeyCredential: false,
-      hasPlatformAuthenticator: null,
-      hasConditionalMediation: null,
-      reason: 'Biometric login is only available in the browser.',
+      available: false,
+      enabledByFlag,
+      reason:
+        'Biometric login needs a secure context (HTTPS or supported localhost).',
+      secureContext,
+      hasPublicKeyCredential,
+      topLevelContext,
     }
   }
 
-  const hasPublicKeyCredential = typeof window.PublicKeyCredential !== 'undefined'
-  const isSecureContextNow =
-    window.isSecureContext ||
-    window.location.protocol === 'https:' ||
-    isLocalhost(window.location.hostname)
-
-  const isTopLevelContext = safeIsTopLevelContext()
-
-  let hasPlatformAuthenticator: boolean | null = null
-  let hasConditionalMediation: boolean | null = null
-
-  if (
-    hasPublicKeyCredential &&
-    typeof window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function'
-  ) {
-    try {
-      hasPlatformAuthenticator =
-        await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
-    } catch {
-      hasPlatformAuthenticator = null
-    }
-  }
-
-  const conditionalMediationFn = (window.PublicKeyCredential as typeof PublicKeyCredential & {
-    isConditionalMediationAvailable?: () => Promise<boolean>
-  } | undefined)?.isConditionalMediationAvailable
-
-  if (typeof conditionalMediationFn === 'function') {
-    try {
-      hasConditionalMediation = await conditionalMediationFn.call(window.PublicKeyCredential)
-    } catch {
-      hasConditionalMediation = null
+  if (!topLevelContext) {
+    return {
+      available: false,
+      enabledByFlag,
+      reason:
+        'Biometric login must run in the top-level app window, not inside an embedded frame.',
+      secureContext,
+      hasPublicKeyCredential,
+      topLevelContext,
     }
   }
 
   if (!hasPublicKeyCredential) {
     return {
-      supported: false,
-      isSecureContext: isSecureContextNow,
-      isTopLevelContext,
+      available: false,
+      enabledByFlag,
+      reason:
+        'This browser or device does not expose WebAuthn / passkey support.',
+      secureContext,
       hasPublicKeyCredential,
-      hasPlatformAuthenticator,
-      hasConditionalMediation,
-      reason: 'This browser does not support WebAuthn / passkeys.',
+      topLevelContext,
     }
   }
 
-  if (!isSecureContextNow) {
+  if (!enabledByFlag) {
     return {
-      supported: false,
-      isSecureContext: false,
-      isTopLevelContext,
+      available: false,
+      enabledByFlag,
+      reason:
+        'Biometric login is not enabled for this project yet. Password login remains available.',
+      secureContext,
       hasPublicKeyCredential,
-      hasPlatformAuthenticator,
-      hasConditionalMediation,
-      reason: 'Biometric login requires HTTPS or localhost.',
-    }
-  }
-
-  if (!isTopLevelContext) {
-    return {
-      supported: false,
-      isSecureContext: true,
-      isTopLevelContext: false,
-      hasPublicKeyCredential,
-      hasPlatformAuthenticator,
-      hasConditionalMediation,
-      reason: 'Biometric login must run in a top-level browser context.',
+      topLevelContext,
     }
   }
 
   return {
-    supported: true,
-    isSecureContext: true,
-    isTopLevelContext: true,
-    hasPublicKeyCredential,
-    hasPlatformAuthenticator,
-    hasConditionalMediation,
+    available: true,
+    enabledByFlag,
     reason: null,
+    secureContext,
+    hasPublicKeyCredential,
+    topLevelContext,
   }
-}
-
-export async function canOfferBiometricEnrollment() {
-  const support = await getBiometricSupport()
-  return support.supported
 }

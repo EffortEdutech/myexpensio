@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import {
   enrollBiometricOnThisDevice,
   getBiometricSupport,
-} from '@/lib/biometric-auth'
+} from '@/lib/auth/biometric-auth'
 
 export default function BiometricLoginCard() {
   const support = useMemo(() => getBiometricSupport(), [])

@@ -1,15 +1,19 @@
 'use client'
 
 import { createClient } from '@/lib/supabase/client'
+import {
+  getBiometricSupport,
+  isBiometricLoginShortcutEnabled,
+  type BiometricSupport,
+} from '@/lib/auth/biometric-capabilities'
+import {
+  defaultFriendlyName,
+  isBiometricMarkedOnThisDevice,
+  markBiometricEnrolledOnThisDevice,
+} from '@/lib/auth/biometric-device'
 
-export type BiometricSupport = {
-  available: boolean
-  enabledByFlag: boolean
-  reason: string | null
-  secureContext: boolean
-  hasPublicKeyCredential: boolean
-  topLevelContext: boolean
-}
+export { getBiometricSupport, isBiometricLoginShortcutEnabled }
+export type { BiometricSupport }
 
 export type BiometricEnrollResult =
   | {
@@ -32,93 +36,11 @@ export type BiometricEnrollResult =
       details?: string
     }
 
-function envFlagEnabled() {
-  return process.env.NEXT_PUBLIC_ENABLE_EXPERIMENTAL_BIOMETRIC === 'true'
-}
-
-function isTopLevelContext() {
-  try {
-    return typeof window !== 'undefined' && window.top === window
-  } catch {
-    return false
-  }
-}
-
-function defaultFriendlyName() {
-  if (typeof navigator === 'undefined') return 'This device'
-  const ua = navigator.userAgent || ''
-  if (/iPhone/i.test(ua)) return 'This iPhone'
-  if (/iPad/i.test(ua)) return 'This iPad'
-  if (/Android/i.test(ua)) return 'This Android phone'
-  return 'This device'
-}
-
-export function getBiometricSupport(): BiometricSupport {
-  const secureContext =
-    typeof window !== 'undefined' ? window.isSecureContext === true : false
-
-  const hasPublicKeyCredential =
-    typeof window !== 'undefined' && 'PublicKeyCredential' in window
-
-  const topLevelContext = isTopLevelContext()
-  const enabledByFlag = envFlagEnabled()
-
-  if (!secureContext) {
-    return {
-      available: false,
-      enabledByFlag,
-      reason:
-        'Biometric login needs a secure context (HTTPS or supported localhost).',
-      secureContext,
-      hasPublicKeyCredential,
-      topLevelContext,
-    }
-  }
-
-  if (!topLevelContext) {
-    return {
-      available: false,
-      enabledByFlag,
-      reason:
-        'Biometric login must run in the top-level app window, not inside an embedded frame.',
-      secureContext,
-      hasPublicKeyCredential,
-      topLevelContext,
-    }
-  }
-
-  if (!hasPublicKeyCredential) {
-    return {
-      available: false,
-      enabledByFlag,
-      reason:
-        'This browser or device does not expose WebAuthn / passkey support.',
-      secureContext,
-      hasPublicKeyCredential,
-      topLevelContext,
-    }
-  }
-
-  if (!enabledByFlag) {
-    return {
-      available: false,
-      enabledByFlag,
-      reason:
-        'Biometric login is not enabled for this project yet. Password login remains available.',
-      secureContext,
-      hasPublicKeyCredential,
-      topLevelContext,
-    }
-  }
-
-  return {
-    available: true,
-    enabledByFlag,
-    reason: null,
-    secureContext,
-    hasPublicKeyCredential,
-    topLevelContext,
-  }
+export type BiometricLoginShortcutStatus = {
+  readyForLoginShortcut: boolean
+  enrolledOnThisDevice: boolean
+  available: boolean
+  reason: string | null
 }
 
 function normalizeError(error: unknown): BiometricEnrollResult {
@@ -271,6 +193,8 @@ export async function enrollBiometricOnThisDevice(
       }
     }
 
+    markBiometricEnrolledOnThisDevice(true)
+
     return {
       ok: true,
       message: `Biometric login has been enabled as "${friendlyName}".`,
@@ -279,4 +203,26 @@ export async function enrollBiometricOnThisDevice(
   } catch (error) {
     return normalizeError(error)
   }
+}
+
+export async function getBiometricStatusForCurrentUser(): Promise<BiometricLoginShortcutStatus> {
+  const support = getBiometricSupport()
+
+  return {
+    readyForLoginShortcut: false,
+    enrolledOnThisDevice: isBiometricMarkedOnThisDevice(),
+    available: support.available,
+    reason: support.reason,
+  }
+}
+
+export async function authenticateBiometricOnThisDevice(
+  _emailHint?: string,
+): Promise<never> {
+  const support = getBiometricSupport()
+
+  throw new Error(
+    support.reason ??
+      'Biometric sign-in on this phone is not available yet. Please use email and password.',
+  )
 }

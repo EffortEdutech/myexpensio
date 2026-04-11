@@ -1,10 +1,9 @@
-
 'use client'
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { PwaInstallCard } from '@/components/PwaInstallCard'
-import { BiometricLoginCard } from '@/components/settings/BiometricLoginCard'
+import BiometricLoginCard from '@/components/settings/BiometricLoginCard'
 
 type TemplateOption = {
   id: string | null
@@ -474,3 +473,4 @@ const S: Record<string, CSSProperties> = {
   passwordInput: { width: '100%', padding: '10px 42px 10px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 14, color: '#0f172a', backgroundColor: '#fff', boxSizing: 'border-box' },
   eyeBtn: { position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: '#64748b', padding: 0, lineHeight: 1 },
 }
+
