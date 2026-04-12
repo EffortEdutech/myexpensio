@@ -95,7 +95,7 @@ export default function SettingsPage() {
   const [perdiem, setPerdiem] = useState('0.00')
   const [showPwModal, setShowPwModal] = useState(false)
   const [openSections, setOpenSections] = useState<Record<SectionKey, boolean>>({
-    profile: true,
+    profile: false,
     rates: false,
     system: false,
   })

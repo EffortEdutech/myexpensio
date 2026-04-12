@@ -157,7 +157,7 @@ export default async function HomePage() {
 
       <div style={S.quickGrid}>
         <QuickAction href="/trips/start"          icon="▶" label="Start Trip"  color="#16a34a" />
-        <QuickAction href="/trips/plan"          icon="🗺" label="Plan Trip"  color="#2563eb" />
+        <QuickAction href="/trips/plan"          icon="🗺" label="Mileage Calc"  color="#2563eb" />
         <QuickAction href="/claims?action=new"  icon="＋" label="New Claim"  color="#7c3aed" />
         <QuickAction href="/claims?tab=export"  icon="↓" label="Export"      color="#0891b2" />
       </div>

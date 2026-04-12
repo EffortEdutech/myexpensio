@@ -8,7 +8,7 @@ import MembersClient from './MembersClient'
 export default async function MembersPage() {
   const db = createServiceRoleClient()
 
-  const [profilesRes, membersRes, invitesRes, orgsRes] = await Promise.all([
+  const [profilesRes, membersRes, invitesRes, orgsRes, ratesRes] = await Promise.all([
     // ALL users on the platform — this is the primary list
     db.from('profiles')
       .select('id, email, display_name, role, created_at')
@@ -30,6 +30,28 @@ export default async function MembersPage() {
       .select('id, name')
       .eq('status', 'ACTIVE')
       .order('name'),
+
+    // Rate templates for default user-rate seeding
+    db.from('rate_versions')
+      .select(`
+        id,
+        template_name,
+        effective_from,
+        currency,
+        mileage_rate_per_km,
+        meal_rate_default,
+        meal_rate_per_session,
+        meal_rate_full_day,
+        meal_rate_morning,
+        meal_rate_noon,
+        meal_rate_evening,
+        lodging_rate_default,
+        perdiem_rate_myr,
+        created_at
+      `)
+      .order('template_name', { ascending: true })
+      .order('effective_from', { ascending: false })
+      .order('created_at', { ascending: false }),
   ])
 
   return (
@@ -38,6 +60,7 @@ export default async function MembersPage() {
       initialMemberships={membersRes.data ?? []}
       initialInvitations={invitesRes.data ?? []}
       orgs={orgsRes.data ?? []}
+      rateTemplates={ratesRes.data ?? []}
     />
   )
 }

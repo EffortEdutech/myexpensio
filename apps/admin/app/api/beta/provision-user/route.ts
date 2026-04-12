@@ -10,6 +10,22 @@ import { sendOnboardingEmail } from '@/lib/mail/send-onboarding-email'
 
 type OrgRole = 'OWNER' | 'MANAGER' | 'MEMBER'
 
+type RateTemplateRow = {
+  id: string
+  template_name: string | null
+  effective_from: string | null
+  currency: string | null
+  mileage_rate_per_km: number | null
+  meal_rate_default: number | null
+  meal_rate_per_session: number | null
+  meal_rate_full_day: number | null
+  meal_rate_morning: number | null
+  meal_rate_noon: number | null
+  meal_rate_evening: number | null
+  lodging_rate_default: number | null
+  perdiem_rate_myr: number | null
+}
+
 function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
 }
@@ -194,6 +210,106 @@ async function ensureFreeSubscription(
   }
 }
 
+async function resolveRateTemplate(
+  service: ReturnType<typeof createServiceRoleClient>,
+  rateVersionId: string,
+) {
+  const { data, error } = await service
+    .from('rate_versions')
+    .select(`
+      id,
+      org_id,
+      template_name,
+      effective_from,
+      currency,
+      mileage_rate_per_km,
+      meal_rate_default,
+      meal_rate_per_session,
+      meal_rate_full_day,
+      meal_rate_morning,
+      meal_rate_noon,
+      meal_rate_evening,
+      lodging_rate_default,
+      perdiem_rate_myr
+    `)
+    .eq('id', rateVersionId)
+    .single()
+
+  if (error || !data) {
+    throw new Error('Selected rate template was not found.')
+  }
+
+  return data
+}
+
+async function ensureDefaultUserRate(params: {
+  service: ReturnType<typeof createServiceRoleClient>
+  orgId: string
+  userId: string
+  actorUserId: string
+  sourceRateVersionId: string
+}) {
+  const { service, orgId, userId, actorUserId, sourceRateVersionId } = params
+
+  const { data: existing, error: existingError } = await service
+    .from('user_rate_versions')
+    .select('id')
+    .eq('org_id', orgId)
+    .eq('user_id', userId)
+    .order('effective_from', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (existingError) {
+    throw new Error(`Failed to check user default rate: ${existingError.message}`)
+  }
+
+  if (existing) {
+    return { seeded: false, reason: 'EXISTS' as const }
+  }
+
+  const template = await resolveRateTemplate(service, sourceRateVersionId)
+  const effectiveFrom = new Date().toISOString().slice(0, 10)
+
+  const matchedSourceRateVersionId =
+    template.org_id && template.org_id === orgId ? template.id : null
+
+  const { error } = await service.from('user_rate_versions').insert({
+    org_id: orgId,
+    user_id: userId,
+    source_rate_version_id: matchedSourceRateVersionId,
+    effective_from: effectiveFrom,
+    currency: template.currency ?? 'MYR',
+    mileage_rate_per_km: Number(template.mileage_rate_per_km ?? 0.6),
+    meal_rate_default: Number(template.meal_rate_default ?? 0),
+    meal_rate_per_session: Number(
+      template.meal_rate_per_session ?? template.meal_rate_default ?? 0,
+    ),
+    meal_rate_full_day: Number(template.meal_rate_full_day ?? 0),
+    meal_rate_morning: Number(template.meal_rate_morning ?? 0),
+    meal_rate_noon: Number(template.meal_rate_noon ?? 0),
+    meal_rate_evening: Number(template.meal_rate_evening ?? 0),
+    lodging_rate_default: Number(template.lodging_rate_default ?? 0),
+    perdiem_rate_myr: Number(template.perdiem_rate_myr ?? 0),
+    rate_label: `Default from ${template.template_name ?? 'Template'}`,
+    notes:
+      matchedSourceRateVersionId
+        ? 'Seeded automatically during user onboarding.'
+        : `Seeded automatically during user onboarding from global template: ${template.template_name ?? 'Template'}.`,
+    created_by_user_id: actorUserId,
+  })
+
+  if (error) {
+    throw new Error(`Failed to seed default user rate: ${error.message}`)
+  }
+
+  return {
+    seeded: true,
+    reason: matchedSourceRateVersionId ? 'CREATED' as const : 'CREATED_FROM_GLOBAL_TEMPLATE' as const,
+  }
+}
+
 async function writeAuditLog(params: {
   service: ReturnType<typeof createServiceRoleClient>
   orgId: string
@@ -232,12 +348,14 @@ export async function POST(request: NextRequest) {
     reset_if_exists?: boolean
     send_email?: boolean
     login_url?: string
+    source_rate_version_id?: string
   }
 
   const orgId = String(body.org_id ?? '').trim()
   const email = normalizeEmail(body.email ?? '')
   const resetIfExists = body.reset_if_exists === true
   const sendEmail = body.send_email !== false
+  const sourceRateVersionId = String(body.source_rate_version_id ?? '').trim()
   const loginUrl =
     body.login_url?.trim() ||
     process.env.USER_APP_LOGIN_URL?.trim() ||
@@ -253,6 +371,10 @@ export async function POST(request: NextRequest) {
 
   if (!isEmail(email)) {
     return err('VALIDATION_ERROR', 'A valid email is required.', 400)
+  }
+
+  if (!sourceRateVersionId) {
+    return err('VALIDATION_ERROR', 'source_rate_version_id is required.', 400)
   }
 
   let orgRole: OrgRole
@@ -339,6 +461,14 @@ export async function POST(request: NextRequest) {
       orgRole,
     })
 
+    const defaultRate = await ensureDefaultUserRate({
+      service,
+      orgId: org.id,
+      userId,
+      actorUserId: actor.id,
+      sourceRateVersionId,
+    })
+
     await ensureFreeSubscription(service, org.id)
 
     let emailDelivery: {
@@ -361,6 +491,7 @@ export async function POST(request: NextRequest) {
           tempPassword,
           loginUrl,
           displayName,
+          defaultRateTemplateName: defaultRate.template_name ?? 'Default Template',
         })
 
         emailDelivery = {
@@ -393,6 +524,8 @@ export async function POST(request: NextRequest) {
         org_role: orgRole,
         result: mode,
         reset_if_exists: resetIfExists,
+        source_rate_version_id: sourceRateVersionId,
+        default_rate: defaultRate,
         email_delivery: emailDelivery,
       },
     })
@@ -422,6 +555,7 @@ export async function POST(request: NextRequest) {
               temp_password: tempPassword,
               note: 'Share this temporary password securely. User should change it after first login.',
             },
+      default_rate: defaultRate,
       email_delivery: emailDelivery,
     })
   } catch (e) {

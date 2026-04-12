@@ -5,6 +5,7 @@
 // - shows all platform users
 // - shows org memberships
 // - provisions direct access to a selected org
+// - seeds a default personal rate from a selected template
 // - sends onboarding email via /api/beta/provision-user
 // - allows role change and removal from org
 
@@ -43,6 +44,23 @@ type Org = {
   name: string
 }
 
+type RateTemplate = {
+  id: string
+  template_name: string | null
+  effective_from: string | null
+  currency: string | null
+  mileage_rate_per_km: number | null
+  meal_rate_default: number | null
+  meal_rate_per_session: number | null
+  meal_rate_full_day: number | null
+  meal_rate_morning: number | null
+  meal_rate_noon: number | null
+  meal_rate_evening: number | null
+  lodging_rate_default: number | null
+  perdiem_rate_myr: number | null
+  created_at?: string | null
+}
+
 type OrgRole = 'OWNER' | 'MANAGER' | 'MEMBER'
 
 type ProvisionResponse = {
@@ -62,6 +80,13 @@ type ProvisionResponse = {
     email: string
     temp_password: string | null
     note?: string
+  }
+  default_rate?: {
+    seeded: boolean
+    reason: 'CREATED' | 'EXISTS'
+    source_rate_version_id?: string
+    template_name?: string | null
+    effective_from?: string | null
   }
   email_delivery?: {
     attempted?: boolean
@@ -123,16 +148,22 @@ function fmtDateTime(iso: string | null) {
   })
 }
 
+function fmtRateTemplate(r: RateTemplate) {
+  return `${r.template_name ?? 'Template'}${r.effective_from ? ` · ${r.effective_from}` : ''}`
+}
+
 export default function MembersClient({
   initialProfiles,
   initialMemberships,
   initialInvitations,
   orgs,
+  rateTemplates,
 }: {
   initialProfiles: Profile[]
   initialMemberships: Membership[]
   initialInvitations: Invite[]
   orgs: Org[]
+  rateTemplates: RateTemplate[]
 }) {
   const [profiles, setProfiles] = useState(initialProfiles)
   const [memberships, setMemberships] = useState(initialMemberships)
@@ -150,6 +181,7 @@ export default function MembersClient({
   const [pDisplayName, setPDisplayName] = useState('')
   const [pOrgId, setPOrgId] = useState('')
   const [pRole, setPRole] = useState<OrgRole>('MEMBER')
+  const [pRateTemplateId, setPRateTemplateId] = useState('')
   const [pResetIfExists, setPResetIfExists] = useState(false)
   const [pLoading, setPLoading] = useState(false)
   const [pError, setPError] = useState<string | null>(null)
@@ -159,6 +191,8 @@ export default function MembersClient({
   const defaultOrg = useMemo(() => {
     return orgs.find((o) => o.name === 'Beta Organisation') ?? orgs[0] ?? null
   }, [orgs])
+
+  const defaultRateTemplate = useMemo(() => rateTemplates[0] ?? null, [rateTemplates])
 
   function toast_(type: 'ok' | 'err', msg: string) {
     setToast({ type, msg })
@@ -197,6 +231,7 @@ export default function MembersClient({
     setPDisplayName(profile?.display_name ?? profile?.email ?? '')
     setPOrgId(defaultOrg?.id ?? '')
     setPRole('MEMBER')
+    setPRateTemplateId(defaultRateTemplate?.id ?? '')
     setPResetIfExists(false)
     setPError(null)
     setPResult(null)
@@ -264,6 +299,11 @@ export default function MembersClient({
       return
     }
 
+    if (!pRateTemplateId) {
+      setPError('Please select a default rate template.')
+      return
+    }
+
     setPLoading(true)
 
     try {
@@ -277,6 +317,7 @@ export default function MembersClient({
           display_name: pDisplayName.trim() || email,
           reset_if_exists: pResetIfExists,
           send_email: true,
+          source_rate_version_id: pRateTemplateId,
         }),
       })
 
@@ -310,8 +351,8 @@ export default function MembersClient({
       toast_(
         'ok',
         json.email_delivery?.sent
-          ? `User provisioned and email sent to ${email}`
-          : `User provisioned for ${email}`,
+          ? `User provisioned, default rate assigned, and email sent to ${email}`
+          : `User provisioned and default rate assigned for ${email}`,
       )
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed'
@@ -336,6 +377,11 @@ export default function MembersClient({
         `Organisation: ${pResult.org?.name ?? '—'}`,
         `Email: ${pResult.credentials.email}`,
         `Temporary password: ${pResult.credentials.temp_password ?? '(not reset)'}`,
+        `Default rate: ${
+          pResult.default_rate?.template_name
+            ? `${pResult.default_rate.template_name}${pResult.default_rate.effective_from ? ` · ${pResult.default_rate.effective_from}` : ''}`
+            : 'Assigned'
+        }`,
       ].join('\n')
     }
 
@@ -461,7 +507,7 @@ export default function MembersClient({
               Add User to Organisation
             </h2>
             <p className="text-sm text-gray-500 mb-4">
-              Provision the account first, attach it to the selected org, then send the onboarding email.
+              Provision the account, attach it to the selected org, seed a default personal rate, then send the onboarding email.
             </p>
 
             <form onSubmit={handleProvision} className="space-y-4">
@@ -527,6 +573,28 @@ export default function MembersClient({
                 </select>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Default Rate Template <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={pRateTemplateId}
+                  onChange={(e) => setPRateTemplateId(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select rate template…</option>
+                  {rateTemplates.map((rate) => (
+                    <option key={rate.id} value={rate.id}>
+                      {fmtRateTemplate(rate)}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-gray-400">
+                  This selected template will be copied as the user’s initial personal rate.
+                </p>
+              </div>
+
               <label className="flex items-center gap-2 text-sm text-gray-700">
                 <input
                   type="checkbox"
@@ -543,6 +611,7 @@ export default function MembersClient({
                 <div>• create / update auth user</div>
                 <div>• upsert profile</div>
                 <div>• upsert org membership for selected org</div>
+                <div>• seed default personal rate from selected template</div>
                 <div>• generate temporary password</div>
                 <div>• send onboarding email after provisioning succeeds</div>
               </div>
@@ -584,6 +653,15 @@ export default function MembersClient({
                       {pResult.org?.org_role ?? pRole}
                     </div>
 
+                    <div className="text-green-700 font-medium">Default Rate</div>
+                    <div className="text-green-900">
+                      {pResult.default_rate?.template_name
+                        ? `${pResult.default_rate.template_name}${pResult.default_rate.effective_from ? ` · ${pResult.default_rate.effective_from}` : ''}`
+                        : pResult.default_rate?.seeded
+                          ? 'Assigned'
+                          : 'Already existed'}
+                    </div>
+
                     <div className="text-green-700 font-medium">Email Delivery</div>
                     <div className="text-green-900">
                       {pResult.email_delivery?.attempted
@@ -597,6 +675,14 @@ export default function MembersClient({
                   {pResult.credentials?.note && (
                     <div className="text-xs text-green-700 leading-5">
                       {pResult.credentials.note}
+                    </div>
+                  )}
+
+                  {pResult.default_rate && (
+                    <div className="text-xs text-green-700 leading-5">
+                      {pResult.default_rate.seeded
+                        ? 'Initial personal rate was seeded successfully.'
+                        : 'Existing personal rate already existed, so it was not overwritten.'}
                     </div>
                   )}
 
@@ -872,11 +958,11 @@ export default function MembersClient({
           Current onboarding workflow
         </h2>
         <div className="text-sm text-gray-600 leading-7">
-          <div>1. Admin selects organisation and provisions the user.</div>
+          <div>1. Admin selects organisation, role, and default rate template.</div>
           <div>2. System creates or updates auth user, profile, and org membership.</div>
-          <div>3. System generates a temporary password.</div>
-          <div>4. System sends onboarding email after provisioning succeeds.</div>
-          <div>5. User logs in and changes password in Settings.</div>
+          <div>3. System seeds the user’s initial personal rate from the selected template.</div>
+          <div>4. System generates a temporary password and sends onboarding email.</div>
+          <div>5. User logs in and updates password, rate, department/location, and company name in Settings.</div>
         </div>
       </div>
     </div>
