@@ -1,66 +1,51 @@
 // apps/user/app/api/tng/parse/route.ts
+//
 // POST /api/tng/parse
 //
-// Accepts a TNG eWallet PDF statement.
-// 1. Forwards to Python scan service (/parse-tng) for pdfplumber extraction.
-// 2. Saves the original PDF to Supabase Storage (bucket: tng-statements).
-// 3. Returns parsed rows + source_file_path for the frontend to pass to /api/tng/transactions.
+// Accepts a TNG statement PDF (multipart/form-data, field: "file").
+// Forwards to Python scan service (base64). Saves original PDF to Supabase Storage.
+// Returns parsed rows + statement_label for the frontend to pass to POST /api/tng/transactions.
 //
-// Storage path: tng-statements/{user_id}/{upload_id}.pdf
-// source_file_path is returned in response and must be forwarded to POST /api/tng/transactions
-// so every saved row knows which statement file it came from (needed for PDF export appendix).
+// statement_label derivation (priority order):
+//   1. meta.period returned by the scanner  (e.g. "01/02/2025 - 28/02/2025")
+//   2. Fallback: "Imported DD MMM YYYY"     (import date in MYT)
 //
-// Storage upload is best-effort: if it fails, rows are still returned (no data loss).
-//
-// Response shape:
-//   {
-//     rows:             TngParsedRow[]
-//     toll_count:       number
-//     parking_count:    number
-//     total_extracted:  number
-//     source_file_path: string | null   ← NEW: pass this to /api/tng/transactions
-//     meta: { account_name, ewallet_id, period }
-//   }
-//
-// Error codes:
-//   400 VALIDATION_ERROR  — not a PDF / missing file
-//   422 PARSE_ERROR       — scanned/corrupt PDF / no transactions found
-//   502 UPSTREAM_ERROR    — Python service error
-//   504 TIMEOUT           — Python service timed out (cold start)
+// DOES NOT save to DB — saving is done via POST /api/tng/transactions.
+// This separation allows user to preview rows before committing.
 
 import { createClient } from '@/lib/supabase/server'
 import { type NextRequest, NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
 
-const MAX_PDF_BYTES = 10 * 1024 * 1024 // 10 MB
-
 function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
 }
 
-export async function POST(req: NextRequest) {
-  // ── Auth ─────────────────────────────────────────────────────────────────
+export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return err('UNAUTHENTICATED', 'Login required.', 401)
 
-  // ── Parse multipart form ─────────────────────────────────────────────────
-  let formData: FormData
+  // ── Parse multipart ───────────────────────────────────────────────────────
+  let file: File | null = null
   try {
-    formData = await req.formData()
+    const form = await request.formData()
+    file = form.get('file') as File | null
   } catch {
-    return err('VALIDATION_ERROR', 'Request must be multipart/form-data.', 400)
+    return err('VALIDATION_ERROR', 'Invalid multipart request.', 400)
   }
 
-  const file = formData.get('file')
-  if (!file || !(file instanceof Blob)) {
-    return err('VALIDATION_ERROR', 'Field "file" (PDF) is required.', 400)
+  if (!file) return err('VALIDATION_ERROR', 'No file uploaded. Field name must be "file".', 400)
+
+  // Size guard: 10 MB
+  if (file.size > 10 * 1024 * 1024) {
+    return err('VALIDATION_ERROR', 'File exceeds maximum size of 10 MB.', 400)
   }
-  if (file.size > MAX_PDF_BYTES) {
-    return err('VALIDATION_ERROR', 'File too large. Maximum 10 MB.', 400)
-  }
-  if (file.type && !file.type.includes('pdf')) {
+
+  // Content-type guard
+  const ct = file.type
+  if (ct && !ct.includes('pdf')) {
     return err('VALIDATION_ERROR', 'Only PDF files are accepted.', 400)
   }
 
@@ -101,7 +86,7 @@ export async function POST(req: NextRequest) {
     pythonJson = await upstream.json()
 
     if (!upstream.ok) {
-      const detail: string = pythonJson?.detail ?? 'PDF parsing failed.'
+      const detail: string = (pythonJson as { detail?: string })?.detail ?? 'PDF parsing failed.'
       console.error('[POST /api/tng/parse] upstream error:', upstream.status, detail)
       if (detail.startsWith('PARSE_ERROR')) {
         return err('PARSE_ERROR', detail.replace('PARSE_ERROR: ', ''), 422)
@@ -120,9 +105,8 @@ export async function POST(req: NextRequest) {
 
   // ── Save original PDF to Supabase Storage (best-effort) ──────────────────
   // Path: tng-statements/{user_id}/{upload_id}.pdf
-  // This path is returned to the frontend so it can be forwarded to
-  // POST /api/tng/transactions → persisted as source_file_url on each row.
-  // Used later by the PDF export to embed original TNG statements as Appendix B.
+  // Returned to frontend → forwarded to POST /api/tng/transactions → persisted as
+  // source_file_url on each row. Used by PDF export to embed original TNG statements.
 
   let source_file_path: string | null = null
 
@@ -139,7 +123,7 @@ export async function POST(req: NextRequest) {
       })
 
     if (uploadError) {
-      // Non-fatal: log and continue. Rows will save without a statement path.
+      // Non-fatal: log and continue — rows will save without a statement path.
       console.warn('[POST /api/tng/parse] storage upload failed:', uploadError.message)
     } else {
       source_file_path = storagePath
@@ -148,10 +132,23 @@ export async function POST(req: NextRequest) {
     console.warn('[POST /api/tng/parse] storage exception:', (storageEx as Error).message)
   }
 
+  // ── Derive statement_label ────────────────────────────────────────────────
+  // Priority: meta.period from parser → "Imported DD MMM YYYY" fallback.
+  // meta.period format from parser is e.g. "01/02/2025 - 28/02/2025".
+  // Both formats are stored as-is — the UI displays them verbatim.
+  const metaPeriod = (pythonJson.meta as { period?: string } | undefined)?.period ?? null
+  const importDate = new Date().toLocaleDateString('en-MY', {
+    day:      '2-digit',
+    month:    'short',
+    year:     'numeric',
+    timeZone: 'Asia/Kuala_Lumpur',
+  })
+  const statement_label: string = metaPeriod ?? `Imported ${importDate}`
+
   // ── Normalise + return ────────────────────────────────────────────────────
   const rows            = Array.isArray(pythonJson.transactions) ? pythonJson.transactions : []
-  const toll_count      = pythonJson.toll_count     ?? 0
-  const parking_count   = pythonJson.parking_count  ?? 0
+  const toll_count      = pythonJson.toll_count    ?? 0
+  const parking_count   = pythonJson.parking_count ?? 0
   const total_extracted = toll_count + parking_count
 
   return NextResponse.json({
@@ -159,7 +156,8 @@ export async function POST(req: NextRequest) {
     toll_count,
     parking_count,
     total_extracted,
-    source_file_path,        // ← frontend must forward this to /api/tng/transactions
+    source_file_path,   // ← frontend must forward to /api/tng/transactions
+    statement_label,    // ← frontend must forward to /api/tng/transactions
     meta: pythonJson.meta ?? null,
   }, { status: 200 })
 }

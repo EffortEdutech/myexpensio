@@ -1,36 +1,23 @@
 // apps/user/app/api/tng/transactions/route.ts
 //
-// GET  /api/tng/transactions  — list saved TNG transactions for current user
-// POST /api/tng/transactions  — save parsed rows from /api/tng/parse
+// GET  /api/tng/transactions?sector=TOLL|PARKING&claimed=false&from=YYYY-MM-DD&to=YYYY-MM-DD
+// POST /api/tng/transactions
 //
-// GET query params:
-//   ?sector=TOLL|PARKING|RETAIL filter by sector
-//   ?claimed=false             only unclaimed rows (default: all)
-//   ?from=YYYY-MM-DD           filter by exit_datetime >= from
-//   ?to=YYYY-MM-DD             filter by exit_datetime <= to
-//
-// POST request body:
-//   {
-//     rows:             TngParsedRow[]   — array from /api/tng/parse response
-//     source_file_path: string | null   — storage path returned by /api/tng/parse
-//                                         (persisted as source_file_url on each row)
-//   }
-//
-// POST response:
-//   { upload_batch_id, saved_count, skipped_count, message }
-//
-// Dedup: same trans_no per user is skipped on re-upload.
-// RLS:   user can only read/write their own org's rows.
+// GET  — List stored TNG transactions for the current user.
+//         Now returns statement_label on every row.
+// POST — Save parsed rows from /api/tng/parse into tng_transactions.
+//         Deduplicates on trans_no per user. Returns saved + skipped counts.
+//         Accepts statement_label (forwarded from parse route) and writes it on insert.
 
 import { createClient } from '@/lib/supabase/server'
 import { getActiveOrg }  from '@/lib/org'
 import { type NextRequest, NextResponse } from 'next/server'
 
+export const runtime = 'nodejs'
+
 function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
 }
-
-// ── Types ─────────────────────────────────────────────────────────────────────
 
 type TngParsedRow = {
   trans_no:       string | null
@@ -67,6 +54,7 @@ export async function GET(request: NextRequest) {
       amount, currency, sector,
       claimed, claim_item_id,
       upload_batch_id, source_file_url,
+      statement_label,
       created_at
     `)
     .eq('org_id', org.org_id)
@@ -108,7 +96,8 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({})) as {
     rows?:             TngParsedRow[]
-    source_file_path?: string | null   // ← Storage path from /api/tng/parse
+    source_file_path?: string | null   // Storage path from /api/tng/parse
+    statement_label?:  string | null   // Human-readable label from /api/tng/parse
   }
 
   if (!body.rows || !Array.isArray(body.rows) || body.rows.length === 0) {
@@ -127,10 +116,8 @@ export async function POST(request: NextRequest) {
     return err('VALIDATION_ERROR', 'No valid TNG transaction rows in request.', 400)
   }
 
-  // source_file_url: the storage path returned by /api/tng/parse
-  // Written to every row in this batch so we can later retrieve the original PDF
-  // for the TNG Statement Appendix in PDF exports.
   const source_file_url = body.source_file_path ?? null
+  const statement_label = body.statement_label  ?? null
 
   // One batch ID groups all rows from this upload
   const upload_batch_id = crypto.randomUUID()
@@ -160,7 +147,7 @@ export async function POST(request: NextRequest) {
 
   const toInsert = [...newRowsWithTransNo, ...rowsWithoutTransNo]
 
-  let saved_count    = 0
+  let saved_count     = 0
   const skipped_count = skippedWithTransNo
 
   if (toInsert.length > 0) {
@@ -176,8 +163,9 @@ export async function POST(request: NextRequest) {
       currency:        'MYR',
       sector:          r.sector,
       upload_batch_id,
-      source_file_url,    // ← persisted for PDF export appendix
-      claimed:         false,
+      source_file_url,
+      statement_label,  // ← all rows in this batch share the same label
+      claimed:          false,
     }))
 
     const { data: saved, error: insertErr } = await supabase
@@ -195,6 +183,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     upload_batch_id,
+    statement_label,
     saved_count,
     skipped_count,
     message: `${saved_count} transaction${saved_count !== 1 ? 's' : ''} saved. ${skipped_count} duplicate${skipped_count !== 1 ? 's' : ''} skipped.`,

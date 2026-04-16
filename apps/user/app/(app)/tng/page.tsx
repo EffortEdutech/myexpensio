@@ -16,9 +16,9 @@
 //
 // API calls:
 //   GET    /api/tng/transactions           → all rows for this user
-//   POST   /api/tng/parse                  → parse PDF + save to Storage, returns source_file_path
-//   POST   /api/tng/transactions           → save parsed rows (with source_file_path forwarded)
-//   DELETE /api/tng/statements/[batch_id] → remove a batch (unclaimed only)
+//   POST   /api/tng/parse                  → parse PDF + save to Storage, returns source_file_path + statement_label
+//   POST   /api/tng/transactions           → save parsed rows (with source_file_path + statement_label forwarded)
+//   DELETE /api/tng/statements/[batch_id]  → remove a batch (unclaimed only)
 
 import { useState, useRef, useCallback, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter }                          from 'next/navigation'
@@ -35,19 +35,21 @@ type TngRow = {
   amount:          number
   sector:          'TOLL' | 'PARKING' | 'RETAIL'
   upload_batch_id: string | null
+  statement_label: string | null  // ← new: human-readable statement name
   claimed:         boolean
   created_at:      string
 }
 
 type StatementBatch = {
-  batch_id:      string
-  imported_at:   string
-  toll_count:    number
-  parking_count: number
-  retail_count:  number
-  total_amount:  number
-  claimed_count: number
-  rows:          TngRow[]
+  batch_id:       string
+  statement_label: string        // ← new: shown as batch card header
+  imported_at:    string
+  toll_count:     number
+  parking_count:  number
+  retail_count:   number
+  total_amount:   number
+  claimed_count:  number
+  rows:           TngRow[]
 }
 
 type TngParsedRow = {
@@ -82,379 +84,124 @@ function fmtMyr(n: number): string {
 function groupIntoBatches(rows: TngRow[]): StatementBatch[] {
   const map = new Map<string, TngRow[]>()
   for (const r of rows) {
-    const key = r.upload_batch_id ?? 'no-batch'
+    const key = r.upload_batch_id ?? 'unbatched'
     if (!map.has(key)) map.set(key, [])
     map.get(key)!.push(r)
   }
+
   const batches: StatementBatch[] = []
-  for (const [batch_id, bRows] of map.entries()) {
+  for (const [batch_id, batchRows] of map.entries()) {
+    const first = batchRows[0]
+
+    // statement_label: use from first row (all rows in batch share it), or derive fallback
+    const rawLabel = first.statement_label
+    const importDate = new Date(first.created_at).toLocaleDateString('en-MY', {
+      day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur',
+    })
+    const statement_label = rawLabel ?? `Imported ${importDate}`
+
     batches.push({
       batch_id,
-      imported_at:   bRows.reduce((a, b) => a < b.created_at ? a : b.created_at, bRows[0].created_at),
-      toll_count:    bRows.filter(r => r.sector === 'TOLL').length,
-      parking_count: bRows.filter(r => r.sector === 'PARKING').length,
-      retail_count: bRows.filter(r => r.sector === 'RETAIL').length,
-      total_amount:  bRows.reduce((s, r) => s + Number(r.amount), 0),
-      claimed_count: bRows.filter(r => r.claimed).length,
-      rows:          bRows,
+      statement_label,
+      imported_at:   first.created_at,
+      toll_count:    batchRows.filter(r => r.sector === 'TOLL').length,
+      parking_count: batchRows.filter(r => r.sector === 'PARKING').length,
+      retail_count:  batchRows.filter(r => r.sector === 'RETAIL').length,
+      total_amount:  batchRows.reduce((s, r) => s + Number(r.amount), 0),
+      claimed_count: batchRows.filter(r => r.claimed).length,
+      rows:          batchRows,
     })
   }
-  return batches.sort((a, b) => b.imported_at.localeCompare(a.imported_at))
+
+  // Most recently imported first
+  batches.sort((a, b) => b.imported_at.localeCompare(a.imported_at))
+  return batches
 }
 
-// ── Pill badge ────────────────────────────────────────────────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────────
 
-function Pill({ bg, color, children }: { bg: string; color: string; children: React.ReactNode }) {
-  return (
-    <span style={{
-      fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
-      backgroundColor: bg, color, display: 'inline-block',
-    }}>
-      {children}
-    </span>
-  )
+const S = {
+  page:      { padding: '20px 16px 80px', maxWidth: 600, margin: '0 auto', fontFamily: 'system-ui, sans-serif' } as React.CSSProperties,
+  card:      { backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden', marginBottom: 12 } as React.CSSProperties,
+  batchHead: { padding: '14px 16px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 } as React.CSSProperties,
+  batchLabel:{ fontSize: 14, fontWeight: 700, color: '#0f172a', lineHeight: 1.3 } as React.CSSProperties,
+  batchMeta: { fontSize: 11, color: '#64748b', marginTop: 2 } as React.CSSProperties,
+  batchBadge:{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, backgroundColor: '#f1f5f9', color: '#475569', flexShrink: 0 } as React.CSSProperties,
+  row:       { padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid #f8fafc' } as React.CSSProperties,
+  rowIcon:   { width: 30, height: 30, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 } as React.CSSProperties,
+  rowDesc:   { fontSize: 13, color: '#0f172a', lineHeight: 1.3 } as React.CSSProperties,
+  rowSub:    { fontSize: 11, color: '#64748b', marginTop: 1 } as React.CSSProperties,
+  rowAmt:    { fontSize: 13, fontWeight: 700, color: '#0f172a', marginLeft: 'auto', flexShrink: 0 } as React.CSSProperties,
+  claimedDot:{ width: 7, height: 7, borderRadius: '50%', backgroundColor: '#22c55e', flexShrink: 0 } as React.CSSProperties,
+  errorBox:  { padding: '10px 14px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' } as React.CSSProperties,
+  spinner:   { width: 24, height: 24, border: '3px solid #e2e8f0', borderTopColor: '#0f172a', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' } as React.CSSProperties,
+  delBtn:    { fontSize: 12, padding: '4px 10px', border: '1px solid #fca5a5', borderRadius: 6, backgroundColor: '#fff', color: '#ef4444', cursor: 'pointer' } as React.CSSProperties,
 }
 
-// ── Statement card ────────────────────────────────────────────────────────────
-
-function StatementCard({ batch, onRemove, expanded, onToggleExpand }: {
-  batch:          StatementBatch
-  onRemove:       (id: string) => void
-  expanded:       boolean
-  onToggleExpand: (id: string) => void
-}) {
-  const [removing, setRemoving] = useState(false)
-  const canRemove  = batch.claimed_count === 0
-  const visibleRows = batch.rows
-
-  async function handleRemove() {
-    if (!confirm(
-      `Remove this statement?\n\nThis will delete ${visibleRows.length} transaction${visibleRows.length !== 1 ? 's' : ''} from your library.`
-    )) return
-    setRemoving(true)
-    try {
-      const res  = await fetch(`/api/tng/statements/${batch.batch_id}`, { method: 'DELETE' })
-      const json = await res.json()
-      if (!res.ok) { alert(json.error?.message ?? 'Failed to remove.'); setRemoving(false); return }
-      onRemove(batch.batch_id)
-    } catch {
-      alert('Network error. Please try again.')
-      setRemoving(false)
-    }
-  }
-
-  return (
-    <div style={S.card}>
-      {/* Header */}
-      <div style={{ padding: '14px 16px' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-          <span style={{ fontSize: 22, flexShrink: 0, marginTop: 1 }}>📄</span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 6 }}>
-              Imported {fmtDate(batch.imported_at)}
-            </div>
-
-            {/* Stat pills */}
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-              {batch.toll_count > 0    && <Pill bg="#dbeafe" color="#1d4ed8">🛣️ {batch.toll_count} toll</Pill>}
-              {batch.parking_count > 0 && <Pill bg="#fef3c7" color="#92400e">🅿️ {batch.parking_count} parking</Pill>}
-              {batch.retail_count > 0  && <Pill bg="#f5f3ff" color="#6d28d9">💳 {batch.retail_count} retail</Pill>}
-              <Pill bg="#f1f5f9" color="#475569">{fmtMyr(batch.total_amount)}</Pill>
-              {batch.claimed_count > 0 && <Pill bg="#f0fdf4" color="#15803d">✓ {batch.claimed_count} claimed</Pill>}
-            </div>
-
-            {/* Actions */}
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <button
-                onClick={() => onToggleExpand(batch.batch_id)}
-                style={S.btnGhost}
-              >
-                {expanded ? '▲ Hide' : `▼ Show ${visibleRows.length} rows`}
-              </button>
-              {canRemove
-                ? <button onClick={handleRemove} disabled={removing} style={{ ...S.btnGhost, color: '#dc2626' }}>
-                    {removing ? 'Removing…' : '🗑 Remove'}
-                  </button>
-                : <span style={{ fontSize: 11, color: '#94a3b8' }}>
-                    {batch.claimed_count} row{batch.claimed_count !== 1 ? 's' : ''} claimed — cannot remove
-                  </span>
-              }
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Rows list */}
-      {expanded && (
-        <div style={{ borderTop: '1px solid #f1f5f9' }}>
-          {visibleRows.length === 0
-            ? <div style={{ padding: '16px', fontSize: 13, color: '#94a3b8', textAlign: 'center' }}>No TNG rows.</div>
-            : visibleRows.map((row, i) => {
-                const loc  = row.sector === 'TOLL'
-                  ? [row.entry_location, row.exit_location].filter(Boolean).join(' → ')
-                  : (row.entry_location ?? '—')
-                const date = fmtDate(row.exit_datetime ?? row.entry_datetime)
-                return (
-                  <div key={row.id} style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '9px 16px',
-                    borderBottom: i < visibleRows.length - 1 ? '1px solid #f8fafc' : 'none',
-                    backgroundColor: row.claimed ? '#f0fdf4' : '#fff',
-                  }}>
-                    <span style={{ fontSize: 13 }}>{row.sector === 'TOLL' ? '🛣️' : '🅿️'}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {loc}
-                      </div>
-                      <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                        {date}{row.trans_no ? ` · #${row.trans_no}` : ''}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{fmtMyr(row.amount)}</div>
-                      {row.claimed && <div style={{ fontSize: 10, color: '#15803d', fontWeight: 700 }}>✓ claimed</div>}
-                    </div>
-                  </div>
-                )
-              })
-          }
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Inline importer ───────────────────────────────────────────────────────────
+// ── Inline Importer ───────────────────────────────────────────────────────────
 
 function InlineImporter({ onSaved }: { onSaved: (count: number) => void }) {
-  const [importState,     setImportState]     = useState<ImportState>('IDLE')
-  const [rows,            setRows]            = useState<TngParsedRow[]>([])
-  const [meta,            setMeta]            = useState<ParseMeta>(null)
-  const [selected,        setSelected]        = useState<Set<number>>(new Set())
-  const [errorMsg,        setErrorMsg]        = useState<string | null>(null)
-  const [savedCount,      setSavedCount]      = useState(0)
-  const [isDragging,      setIsDragging]      = useState(false)
-  // ── NEW: capture the storage path returned by /api/tng/parse ─────────────
-  const [sourceFilePath,  setSourceFilePath]  = useState<string | null>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
+  const fileRef   = useRef<HTMLInputElement>(null)
+  const [state,    setState]    = useState<ImportState>('IDLE')
+  const [parsed,   setParsed]   = useState<TngParsedRow[]>([])
+  const [meta,     setMeta]     = useState<ParseMeta>(null)
+  const [label,    setLabel]    = useState<string | null>(null)
+  const [srcPath,  setSrcPath]  = useState<string | null>(null)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [errMsg,   setErrMsg]   = useState<string | null>(null)
+  const [isDragging, setDragging] = useState(false)
 
-  const handleFile = useCallback(async (file: File) => {
-    if (!file.name.toLowerCase().endsWith('.pdf')) { setErrorMsg('Please upload a PDF file.'); return }
-    setImportState('PARSING')
-    setErrorMsg(null)
-    setRows([])
-    setMeta(null)
-    setSelected(new Set())
-    setSourceFilePath(null)   // ← reset
-
-    const fd = new FormData()
-    fd.append('file', file)
-
+  async function handleFile(file: File) {
+    setState('PARSING'); setErrMsg(null)
     try {
-      const res  = await fetch('/api/tng/parse', { method: 'POST', body: fd })
+      const form = new FormData()
+      form.append('file', file)
+      const res  = await fetch('/api/tng/parse', { method: 'POST', body: form })
       const json = await res.json()
+      if (!res.ok) { setErrMsg(json.error?.message ?? 'Parse failed.'); setState('ERROR'); return }
 
-      if (!res.ok) {
-        setErrorMsg(json?.error?.message ?? 'Parse failed.')
-        setImportState('ERROR')
-        return
-      }
-
-      const parsed: TngParsedRow[] = Array.isArray(json.rows) ? json.rows : []
-      if (parsed.length === 0) {
-        setErrorMsg('No TNG transactions found. Please check this is a TNG Customer Transactions Statement PDF.')
-        setImportState('ERROR')
-        return
-      }
-
-      setRows(parsed)
+      const rows: TngParsedRow[] = json.rows ?? []
+      setParsed(rows)
       setMeta(json.meta ?? null)
-      setSelected(new Set(parsed.map((_, i) => i)))
-      setSourceFilePath(json.source_file_path ?? null)   // ← capture path
-      setImportState('PREVIEW')
+      setLabel(json.statement_label ?? null)  // ← capture statement_label from parse
+      setSrcPath(json.source_file_path ?? null)
+      setSelected(new Set(rows.map((_, i) => i)))
+      setState('PREVIEW')
+    } catch { setErrMsg('Network error.'); setState('ERROR') }
+  }
 
-    } catch {
-      setErrorMsg('Network error. Please try again.')
-      setImportState('ERROR')
-    }
-  }, [])
-
-  const handleSave = useCallback(async () => {
-    const toSave = rows.filter((_, i) => selected.has(i))
+  async function handleSave() {
+    const toSave = parsed.filter((_, i) => selected.has(i))
     if (toSave.length === 0) return
-    setImportState('SAVING')
-    setErrorMsg(null)
-
+    setState('SAVING')
     try {
       const res  = await fetch('/api/tng/transactions', {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
+        body: JSON.stringify({
           rows:             toSave,
-          source_file_path: sourceFilePath,   // ← forward storage path to transactions route
+          source_file_path: srcPath,
+          statement_label:  label,  // ← forward statement_label to persist on rows
         }),
       })
       const json = await res.json()
-
-      if (!res.ok) {
-        setErrorMsg(json?.error?.message ?? 'Failed to save.')
-        setImportState('PREVIEW')
-        return
-      }
-
-      setSavedCount(json.saved_count ?? 0)
-      setImportState('SAVED')
+      if (!res.ok) { setErrMsg(json.error?.message ?? 'Save failed.'); setState('ERROR'); return }
+      setState('SAVED')
       onSaved(json.saved_count ?? 0)
-
-    } catch {
-      setErrorMsg('Network error while saving.')
-      setImportState('PREVIEW')
-    }
-  }, [rows, selected, sourceFilePath, onSaved])
-
-  function toggleRow(i: number) {
-    setSelected(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n })
+    } catch { setErrMsg('Network error.'); setState('ERROR') }
   }
 
-  function reset() {
-    setImportState('IDLE')
-    setRows([])
-    setMeta(null)
-    setSelected(new Set())
-    setErrorMsg(null)
-    setSavedCount(0)
-    setSourceFilePath(null)
-  }
+  const tollRows    = parsed.filter(r => r.sector === 'TOLL')
+  const parkingRows = parsed.filter(r => r.sector === 'PARKING')
 
-  const selectedTotal = rows.filter((_, i) => selected.has(i)).reduce((s, r) => s + r.amount, 0)
-  const tollRows      = rows.filter(r => r.sector === 'TOLL')
-  const parkingRows   = rows.filter(r => r.sector === 'PARKING')
-
-  // ── SAVED ──────────────────────────────────────────────────────────────────
-
-  if (importState === 'SAVED') return (
-    <div style={{ textAlign: 'center', padding: '8px 0' }}>
-      <div style={{ fontSize: 28, marginBottom: 6 }}>✅</div>
-      <div style={{ fontSize: 14, fontWeight: 700, color: '#15803d', marginBottom: 4 }}>
-        {savedCount} transaction{savedCount !== 1 ? 's' : ''} saved to library
-      </div>
-      {!sourceFilePath && (
-        <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 8 }}>
-          Note: original PDF could not be saved — transactions are still available for matching.
-        </div>
-      )}
-      <button onClick={reset} style={{ ...S.btnGhost, marginTop: 8 }}>Import another statement</button>
-    </div>
-  )
-
-  // ── PARSING / SAVING ───────────────────────────────────────────────────────
-
-  if (importState === 'PARSING' || importState === 'SAVING') return (
-    <div style={{ textAlign: 'center', padding: '16px 0' }}>
-      <div style={S.spinner} />
-      <div style={{ fontSize: 13, color: '#64748b' }}>
-        {importState === 'PARSING' ? 'Reading statement…' : `Saving ${selected.size} transactions…`}
-      </div>
-    </div>
-  )
-
-  // ── PREVIEW ────────────────────────────────────────────────────────────────
-
-  if (importState === 'PREVIEW') {
-    const renderSection = (label: string, sRows: TngParsedRow[], bg: string, col: string) => {
-      if (sRows.length === 0) return null
-      const gi     = sRows.map(r => rows.indexOf(r))
-      const allSel = gi.every(i => selected.has(i))
-      return (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>
-              {label} <Pill bg={bg} color={col}>{sRows.length}</Pill>
-            </span>
-            <button
-              style={{ fontSize: 11, color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600 }}
-              onClick={() => setSelected(prev => {
-                const n = new Set(prev)
-                allSel ? gi.forEach(i => n.delete(i)) : gi.forEach(i => n.add(i))
-                return n
-              })}>
-              {allSel ? 'Deselect all' : 'Select all'}
-            </button>
-          </div>
-          {sRows.map((row, j) => {
-            const idx   = rows.indexOf(row)
-            const isSel = selected.has(idx)
-            const desc  = label === 'TOLL'
-              ? [row.entry_location, row.exit_location].filter(Boolean).join(' → ')
-              : (row.entry_location ?? '—')
-            return (
-              <div key={j} onClick={() => toggleRow(idx)} style={{
-                display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0',
-                borderBottom: '1px solid #f1f5f9', cursor: 'pointer', opacity: isSel ? 1 : 0.45,
-              }}>
-                <input type="checkbox" checked={isSel} onChange={() => toggleRow(idx)}
-                  onClick={e => e.stopPropagation()}
-                  style={{ width: 16, height: 16, accentColor: '#0f172a', flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{desc}</div>
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                    {fmtDate(row.exit_datetime ?? row.entry_datetime)}{row.trans_no ? ` · #${row.trans_no}` : ''}
-                  </div>
-                </div>
-                <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', flexShrink: 0 }}>{fmtMyr(row.amount)}</span>
-              </div>
-            )
-          })}
-        </div>
-      )
-    }
-
-    return (
-      <div>
-        {meta?.account_name && (
-          <div style={{ padding: '7px 10px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, marginBottom: 12, fontSize: 12, color: '#15803d' }}>
-            <strong>Account:</strong> {meta.account_name}
-            {meta.period && <> · <strong>Period:</strong> {meta.period}</>}
-          </div>
-        )}
-        {sourceFilePath && (
-          <div style={{ padding: '6px 10px', backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, marginBottom: 12, fontSize: 11, color: '#0369a1' }}>
-            ✓ Original PDF saved — will be embedded in expense claim PDF exports
-          </div>
-        )}
-        {errorMsg && <div style={{ ...S.errorBox, marginBottom: 12 }}>{errorMsg}</div>}
-        {renderSection('TOLL',    tollRows,    '#dbeafe', '#1d4ed8')}
-        {renderSection('PARKING', parkingRows, '#fef3c7', '#92400e')}
-
-        {/* Save bar */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '11px 14px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, marginTop: 4 }}>
-          <div style={{ fontSize: 13, color: '#374151' }}>
-            <strong>{selected.size}</strong> selected
-            {selectedTotal > 0 && <> · <strong style={{ color: '#0f172a' }}>{fmtMyr(selectedTotal)}</strong></>}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={reset} style={{ ...S.btnGhost, border: '1px solid #e2e8f0' }}>Cancel</button>
-            <button onClick={handleSave} disabled={selected.size === 0}
-              style={{ fontSize: 12, fontWeight: 700, padding: '7px 16px', border: 'none', borderRadius: 8, cursor: 'pointer', backgroundColor: '#0f172a', color: '#fff', opacity: selected.size === 0 ? 0.45 : 1 }}>
-              Save ({selected.size})
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // ── IDLE / ERROR ───────────────────────────────────────────────────────────
-
-  return (
+  if (state === 'IDLE' || state === 'ERROR') return (
     <div>
-      {errorMsg && <div style={{ ...S.errorBox, marginBottom: 12 }}>{errorMsg}</div>}
       <div
-        style={{ border: `2px dashed ${isDragging ? '#3b82f6' : '#cbd5e1'}`, borderRadius: 12, padding: '28px 20px', textAlign: 'center', backgroundColor: isDragging ? '#eff6ff' : '#f8fafc', cursor: 'pointer' }}
+        style={{ border: `2px dashed ${isDragging ? '#3b82f6' : '#cbd5e1'}`, borderRadius: 12, padding: '28px 20px', textAlign: 'center' as const, backgroundColor: isDragging ? '#eff6ff' : '#f8fafc', cursor: 'pointer' }}
         onClick={() => fileRef.current?.click()}
-        onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
-        onDragLeave={() => setIsDragging(false)}
-        onDrop={e => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files?.[0]; if (f) handleFile(f) }}
+        onDragOver={e => { e.preventDefault(); setDragging(true) }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files?.[0]; if (f) handleFile(f) }}
       >
         <div style={{ fontSize: 32, marginBottom: 8 }}>📄</div>
         <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 4 }}>Drop TNG statement here or tap to browse</div>
@@ -464,6 +211,122 @@ function InlineImporter({ onSaved }: { onSaved: (count: number) => void }) {
         onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }} />
       <div style={{ marginTop: 10, fontSize: 11, color: '#94a3b8', lineHeight: 1.6 }}>
         TNG app → History → Export Statement → Customer Transactions Statement PDF
+      </div>
+      {state === 'ERROR' && errMsg && <div style={S.errorBox}>{errMsg}</div>}
+    </div>
+  )
+
+  if (state === 'PARSING') return (
+    <div style={{ textAlign: 'center', padding: '32px 0' }}>
+      <div style={S.spinner} />
+      <div style={{ fontSize: 13, color: '#64748b', marginTop: 12 }}>Reading statement…</div>
+    </div>
+  )
+
+  if (state === 'SAVING') return (
+    <div style={{ textAlign: 'center', padding: '32px 0' }}>
+      <div style={S.spinner} />
+      <div style={{ fontSize: 13, color: '#64748b', marginTop: 12 }}>Saving transactions…</div>
+    </div>
+  )
+
+  if (state === 'SAVED') return (
+    <div style={{ padding: '20px', textAlign: 'center' }}>
+      <div style={{ fontSize: 32, marginBottom: 8 }}>✅</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: '#15803d' }}>Transactions saved</div>
+      {label && <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>📋 {label}</div>}
+    </div>
+  )
+
+  // PREVIEW state
+  const selCount  = selected.size
+  const selAmount = parsed.filter((_, i) => selected.has(i)).reduce((s, r) => s + r.amount, 0)
+
+  function toggleRow(i: number) {
+    setSelected(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n })
+  }
+  function toggleAll(rows: TngParsedRow[], baseIdx: number) {
+    const idxs = rows.map((_, j) => baseIdx + j)
+    const allOn = idxs.every(i => selected.has(i))
+    setSelected(prev => { const n = new Set(prev); idxs.forEach(i => allOn ? n.delete(i) : n.add(i)); return n })
+  }
+
+  return (
+    <div>
+      {/* Statement period label */}
+      {label && (
+        <div style={{ marginBottom: 12, padding: '8px 12px', backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, fontSize: 12, color: '#0369a1', fontWeight: 600 }}>
+          📋 {label}
+          {meta?.account_name && <span style={{ fontWeight: 400, marginLeft: 6, color: '#0284c7' }}>· {meta.account_name}</span>}
+        </div>
+      )}
+
+      {errMsg && <div style={{ ...S.errorBox, marginBottom: 10 }}>{errMsg}</div>}
+
+      {/* TOLL section */}
+      {tollRows.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' as const }}>🛣 Toll ({tollRows.length})</span>
+            <button onClick={() => toggleAll(tollRows, 0)} style={{ fontSize: 10, padding: '2px 8px', border: '1px solid #e2e8f0', borderRadius: 4, backgroundColor: '#f8fafc', cursor: 'pointer', color: '#475569' }}>
+              {tollRows.every((_, j) => selected.has(j)) ? 'Deselect all' : 'Select all'}
+            </button>
+          </div>
+          {tollRows.map((r, j) => {
+            const globalIdx = j
+            const desc = [r.entry_location, r.exit_location].filter(Boolean).join(' → ') || 'Toll'
+            const date = (r.exit_datetime ?? r.entry_datetime ?? '').slice(0, 10)
+            return (
+              <label key={j} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}>
+                <input type="checkbox" checked={selected.has(globalIdx)} onChange={() => toggleRow(globalIdx)} style={{ width: 16, height: 16, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, color: '#0f172a', lineHeight: 1.3 }}>{desc}</div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>{date}{r.trans_no ? ` · #${r.trans_no}` : ''}</div>
+                </div>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a', flexShrink: 0 }}>{fmtMyr(r.amount)}</span>
+              </label>
+            )
+          })}
+        </div>
+      )}
+
+      {/* PARKING section */}
+      {parkingRows.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' as const }}>🅿️ Parking ({parkingRows.length})</span>
+            <button onClick={() => toggleAll(parkingRows, tollRows.length)} style={{ fontSize: 10, padding: '2px 8px', border: '1px solid #e2e8f0', borderRadius: 4, backgroundColor: '#f8fafc', cursor: 'pointer', color: '#475569' }}>
+              {parkingRows.every((_, j) => selected.has(tollRows.length + j)) ? 'Deselect all' : 'Select all'}
+            </button>
+          </div>
+          {parkingRows.map((r, j) => {
+            const globalIdx = tollRows.length + j
+            const desc = r.entry_location ?? r.exit_location ?? 'Parking'
+            const date = (r.exit_datetime ?? r.entry_datetime ?? '').slice(0, 10)
+            return (
+              <label key={j} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}>
+                <input type="checkbox" checked={selected.has(globalIdx)} onChange={() => toggleRow(globalIdx)} style={{ width: 16, height: 16, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, color: '#0f172a', lineHeight: 1.3 }}>{desc}</div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>{date}{r.trans_no ? ` · #${r.trans_no}` : ''}</div>
+                </div>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a', flexShrink: 0 }}>{fmtMyr(r.amount)}</span>
+              </label>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Footer */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12, borderTop: '1px solid #e2e8f0' }}>
+        <span style={{ fontSize: 12, color: '#64748b' }}>{selCount} selected · {fmtMyr(selAmount)}</span>
+        <button
+          onClick={handleSave}
+          disabled={selCount === 0}
+          style={{ fontSize: 13, fontWeight: 700, padding: '9px 18px', backgroundColor: selCount === 0 ? '#f1f5f9' : '#0f172a', color: selCount === 0 ? '#94a3b8' : '#fff', border: 'none', borderRadius: 8, cursor: selCount === 0 ? 'default' : 'pointer' }}
+        >
+          Save {selCount > 0 ? `${selCount} transaction${selCount !== 1 ? 's' : ''}` : 'Selected'}
+        </button>
       </div>
     </div>
   )
@@ -485,6 +348,8 @@ function TngStatementManager() {
   const [loadErr,       setLoadErr]       = useState<string | null>(null)
   const [expandedBatch, setExpandedBatch] = useState<string | null>(null)
   const [showImporter,  setShowImporter]  = useState(false)
+  const [deletingId,    setDeletingId]    = useState<string | null>(null)
+  const [deleteErr,     setDeleteErr]     = useState<string | null>(null)
 
   const loadLibrary = useCallback(async () => {
     setLoadingLib(true); setLoadErr(null)
@@ -503,6 +368,18 @@ function TngStatementManager() {
     if (count > 0) { loadLibrary(); setShowImporter(false) }
   }
 
+  async function handleDelete(batchId: string) {
+    if (!confirm('Remove this statement? Only unclaimed transactions will be deleted.')) return
+    setDeletingId(batchId); setDeleteErr(null)
+    try {
+      const res  = await fetch(`/api/tng/statements/${batchId}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok) { setDeleteErr(json.error?.message ?? 'Delete failed.'); setDeletingId(null); return }
+      loadLibrary()
+    } catch { setDeleteErr('Network error.') }
+    finally   { setDeletingId(null) }
+  }
+
   const hasStatements = batches.length > 0
   const totalTxns     = batches.reduce((s, b) => s + b.toll_count + b.parking_count + b.retail_count, 0)
 
@@ -511,7 +388,7 @@ function TngStatementManager() {
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* ── Header ────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 16 }}>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 800, color: '#0f172a', margin: 0 }}>💳 TNG Statements</h1>
           <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0' }}>
@@ -531,7 +408,7 @@ function TngStatementManager() {
 
       {/* ── Return context banner ──────────────────────────────────────── */}
       {returnUrl && (
-        <div style={{ padding: '10px 14px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, fontSize: 12, color: '#1d4ed8', lineHeight: 1.5 }}>
+        <div style={{ padding: '10px 14px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, fontSize: 12, color: '#1d4ed8', lineHeight: 1.5, marginBottom: 12 }}>
           💡 Import a statement below, then tap <strong>Continue to match</strong> to link it to your claim.
           {hasStatements && <> Or tap <strong>Continue</strong> now to match existing transactions.</>}
         </div>
@@ -550,55 +427,96 @@ function TngStatementManager() {
       )}
 
       {/* ── Errors ────────────────────────────────────────────────────── */}
-      {loadErr && <div style={S.errorBox}>{loadErr}</div>}
+      {loadErr  && <div style={S.errorBox}>{loadErr}</div>}
+      {deleteErr && <div style={{ ...S.errorBox, marginTop: 8 }}>{deleteErr}</div>}
 
-      {/* ── Library ───────────────────────────────────────────────────── */}
+      {/* ── Continue button (return flow) ─────────────────────────────── */}
+      {returnUrl && hasStatements && !showImporter && (
+        <button
+          onClick={() => router.push(returnUrl)}
+          style={{ width: '100%', padding: '12px', marginBottom: 12, backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+        >
+          Continue to Match →
+        </button>
+      )}
+
+      {/* ── Statement library ─────────────────────────────────────────── */}
       {loadingLib
         ? <div style={{ textAlign: 'center', padding: '40px 0' }}><div style={S.spinner} /></div>
         : hasStatements
-          ? batches.map(b => (
-              <StatementCard
-                key={b.batch_id}
-                batch={b}
-                onRemove={id => setBatches(prev => prev.filter(x => x.batch_id !== id))}
-                expanded={expandedBatch === b.batch_id}
-                onToggleExpand={id => setExpandedBatch(prev => prev === id ? null : id)}
-              />
-            ))
-          : !showImporter && (
-              <div style={{ textAlign: 'center', padding: '40px 20px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12 }}>
-                <div style={{ fontSize: 40, marginBottom: 10 }}>📄</div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>No statements yet</div>
-                <div style={{ fontSize: 13, color: '#64748b', marginBottom: 16, lineHeight: 1.6 }}>
-                  Import your TNG Customer Transactions Statement PDF.<br />
-                  Rows stay in your library and can be matched to any claim.
+          ? batches.map(batch => (
+            <div key={batch.batch_id} style={S.card}>
+              {/* Batch header */}
+              <div style={S.batchHead}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {/* statement_label as the primary title */}
+                  <div style={S.batchLabel}>📋 {batch.statement_label}</div>
+                  <div style={S.batchMeta}>
+                    {[
+                      batch.toll_count    > 0 ? `${batch.toll_count} toll`    : null,
+                      batch.parking_count > 0 ? `${batch.parking_count} parking` : null,
+                      batch.retail_count  > 0 ? `${batch.retail_count} retail`  : null,
+                    ].filter(Boolean).join(' · ')}
+                    {' · '}
+                    {fmtMyr(batch.total_amount)}
+                    {batch.claimed_count > 0 && ` · ${batch.claimed_count} claimed`}
+                  </div>
                 </div>
-                <button onClick={() => setShowImporter(true)} style={{ fontSize: 13, fontWeight: 700, padding: '10px 20px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 10, cursor: 'pointer' }}>
-                  + Import First Statement
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    onClick={() => setExpandedBatch(b => b === batch.batch_id ? null : batch.batch_id)}
+                    style={{ fontSize: 11, padding: '4px 10px', border: '1px solid #e2e8f0', borderRadius: 6, backgroundColor: '#f8fafc', color: '#475569', cursor: 'pointer' }}
+                  >
+                    {expandedBatch === batch.batch_id ? 'Hide' : 'Show'}
+                  </button>
+                  {batch.claimed_count === 0 && (
+                    <button
+                      onClick={() => handleDelete(batch.batch_id)}
+                      disabled={deletingId === batch.batch_id}
+                      style={S.delBtn}
+                    >
+                      {deletingId === batch.batch_id ? '…' : 'Remove'}
+                    </button>
+                  )}
+                </div>
               </div>
-            )
-      }
 
-      {/* ── Continue button (claim return flow) ───────────────────────── */}
-      {returnUrl && hasStatements && !loadingLib && (
-        <button
-          onClick={() => router.push(returnUrl)}
-          style={{ width: '100%', padding: '14px 20px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', letterSpacing: 0.2 }}
-        >
-          Continue → Match TNG to claim items
-        </button>
-      )}
+              {/* Expandable rows */}
+              {expandedBatch === batch.batch_id && (
+                <div>
+                  {batch.rows.map(row => {
+                    const desc = row.sector === 'TOLL'
+                      ? [row.entry_location, row.exit_location].filter(Boolean).join(' → ') || 'Toll'
+                      : row.entry_location ?? row.exit_location ?? (row.sector === 'PARKING' ? 'Parking' : 'Retail')
+                    const date = (row.exit_datetime ?? row.entry_datetime ?? '').slice(0, 10)
+                    return (
+                      <div key={row.id} style={S.row}>
+                        <div style={{ ...S.rowIcon, backgroundColor: row.sector === 'TOLL' ? '#f0fdf4' : row.sector === 'PARKING' ? '#eff6ff' : '#fefce8' }}>
+                          {row.sector === 'TOLL' ? '🛣' : row.sector === 'PARKING' ? '🅿️' : '🛍'}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={S.rowDesc}>{desc}</div>
+                          <div style={S.rowSub}>{fmtDate(date)}{row.trans_no ? ` · #${row.trans_no}` : ''}</div>
+                        </div>
+                        <div style={{ ...S.rowAmt, color: row.claimed ? '#15803d' : '#0f172a' }}>
+                          {fmtMyr(Number(row.amount))}
+                        </div>
+                        {row.claimed && <div style={S.claimedDot} title="Claimed" />}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          ))
+          : !loadErr && (
+            <div style={{ textAlign: 'center', padding: '40px 20px', color: '#94a3b8' }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#64748b', marginBottom: 6 }}>No statements yet</div>
+              <div style={{ fontSize: 13, lineHeight: 1.6 }}>Import your TNG eWallet statement PDF to see toll and parking transactions here.</div>
+            </div>
+          )
+      }
     </div>
   )
-}
-
-// ── Styles ────────────────────────────────────────────────────────────────────
-
-const S: Record<string, React.CSSProperties> = {
-  page:     { maxWidth: 520, margin: '0 auto', padding: '20px 16px 60px', fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', gap: 16 },
-  card:     { backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden' },
-  btnGhost: { fontSize: 11, fontWeight: 700, padding: '6px 12px', border: 'none', borderRadius: 8, cursor: 'pointer', backgroundColor: '#f1f5f9', color: '#374151' },
-  spinner:  { width: 26, height: 26, border: '3px solid #e2e8f0', borderTop: '3px solid #0f172a', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 10px' },
-  errorBox: { backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#dc2626' },
 }
