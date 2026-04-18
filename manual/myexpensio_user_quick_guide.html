@@ -1,0 +1,119 @@
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font-sans); }
+.guide { max-width: 680px; padding: 0 0 2rem; }
+.header { padding: 1.5rem 0 1rem; border-bottom: 0.5px solid var(--color-border-tertiary); margin-bottom: 1.5rem; }
+.header h1 { font-size: 20px; font-weight: 500; color: var(--color-text-primary); }
+.header p { font-size: 13px; color: var(--color-text-secondary); margin-top: 4px; }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.tab { font-size: 12px; padding: 6px 14px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-tertiary); background: transparent; color: var(--color-text-secondary); cursor: pointer; font-family: var(--font-sans); transition: all 0.15s; }
+.tab:hover { background: var(--color-background-secondary); color: var(--color-text-primary); }
+.tab.active { background: var(--color-background-secondary); border-color: var(--color-border-primary); color: var(--color-text-primary); font-weight: 500; }
+.section { display: none; }
+.section.active { display: block; }
+.step-list { display: flex; flex-direction: column; gap: 12px; }
+.step { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 1rem 1.25rem; display: flex; gap: 16px; align-items: flex-start; }
+.step-num { width: 28px; height: 28px; border-radius: 50%; background: var(--color-background-info); color: var(--color-text-info); font-size: 13px; font-weight: 500; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+.step-body { flex: 1; }
+.step-title { font-size: 14px; font-weight: 500; color: var(--color-text-primary); margin-bottom: 4px; }
+.step-desc { font-size: 13px; color: var(--color-text-secondary); line-height: 1.6; }
+.badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 20px; margin-left: 6px; vertical-align: middle; }
+.badge-free { background: var(--color-background-success); color: var(--color-text-success); }
+.badge-pro { background: var(--color-background-warning); color: var(--color-text-warning); }
+.badge-lock { background: var(--color-background-danger); color: var(--color-text-danger); }
+.note { background: var(--color-background-secondary); border-left: 2px solid var(--color-border-info); border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0; padding: 10px 14px; font-size: 13px; color: var(--color-text-secondary); margin-top: 12px; line-height: 1.6; }
+.divider { font-size: 11px; font-weight: 500; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; margin: 1.25rem 0 0.75rem; }
+.tip { display: flex; gap: 10px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 10px 14px; margin-top: 10px; align-items: flex-start; }
+.tip-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+.tip-text { font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; }
+</style>
+<h2 class="sr-only">myexpensio user quick guide — step-by-step instructions for all main features</h2>
+<div class="guide">
+  <div class="header">
+    <h1>myexpensio — user quick guide</h1>
+    <p>Step-by-step reference for all core features. Select a topic below.</p>
+  </div>
+  <div class="tabs">
+    <button class="tab active" onclick="show('start')">Getting started</button>
+    <button class="tab" onclick="show('trip')">Recording trips</button>
+    <button class="tab" onclick="show('claim')">Claims</button>
+    <button class="tab" onclick="show('transport')">Transport</button>
+    <button class="tab" onclick="show('export')">Exports</button>
+    <button class="tab" onclick="show('settings')">Settings</button>
+  </div>
+
+  <div id="start" class="section active">
+    <div class="step-list">
+      <div class="step"><div class="step-num">1</div><div class="step-body"><div class="step-title">Accept your invitation</div><div class="step-desc">Your admin sends you an invite link. Open it, enter your email and set a password. You will be joined to your organisation automatically — no manual setup needed.</div></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body"><div class="step-title">Log in</div><div class="step-desc">Go to the app and log in with your email and password. You will land on the Home screen with quick-action buttons.</div></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body"><div class="step-title">Review your home screen</div><div class="step-desc">Home shows: <strong>Start Trip</strong>, <strong>Plan Trip</strong>, <strong>New Claim</strong>, and <strong>Export</strong>. Summary cards show trips this month, route calculations used, and claim counts.</div></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body"><div class="step-title">Set your rates (optional)</div><div class="step-desc">Go to <strong>Settings → Rates</strong> to configure your mileage rate per KM (MYR), meal default, and lodging default. Your admin may have set org-wide defaults already.</div></div></div>
+    </div>
+    <div class="note">New to the app? Start by recording a trip, then attach it to a claim, then submit. That is the full cycle.</div>
+  </div>
+
+  <div id="trip" class="section">
+    <div class="divider">GPS tracking (Free + Pro)</div>
+    <div class="step-list">
+      <div class="step"><div class="step-num">1</div><div class="step-body"><div class="step-title">Tap Start Trip</div><div class="step-desc">Grant location permission when prompted. The app records GPS points in the background while you travel. You will see a "Tracking ON" indicator.</div></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body"><div class="step-title">Tap Stop Trip when done</div><div class="step-desc">The trip is saved. You reach the Trip Summary screen showing start/end time and calculated distance.</div></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body"><div class="step-title">Add odometer evidence (optional)</div><div class="step-desc">Upload photos of your odometer at start and end, or enter readings manually. Toggle "Use odometer as official distance" if you need to override GPS.</div></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body"><div class="step-title">Save or Add to Claim</div><div class="step-desc">Tap Save Trip to keep it in your trip list, or Add to Claim to attach it directly to an open draft claim.</div></div></div>
+    </div>
+    <div class="divider">Route planning (Free: 2/month <span class="badge badge-free">Free limit</span>, Pro: unlimited <span class="badge badge-pro">Pro</span>)</div>
+    <div class="step-list">
+      <div class="step"><div class="step-num">1</div><div class="step-body"><div class="step-title">Tap Plan Trip</div><div class="step-desc">Enter origin and destination. Tap Get Routes. The app fetches route alternatives and counts as one route calculation against your monthly limit.</div></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body"><div class="step-title">Select a route</div><div class="step-desc">Review alternatives (distance in KM, duration, summary). Tap Select This Route. Distance is locked as the official distance for reimbursement.</div></div></div>
+    </div>
+    <div class="tip"><div class="tip-icon">i</div><div class="tip-text">If you hit your Free route-calc limit, you can still record trips using GPS tracking — no route calculation is used.</div></div>
+  </div>
+
+  <div id="claim" class="section">
+    <div class="step-list">
+      <div class="step"><div class="step-num">1</div><div class="step-body"><div class="step-title">Create a new claim</div><div class="step-desc">Tap New Claim from Home or the Claims tab. Set a title (e.g. "March Field Visits") and the claim period (start date → end date).</div></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body"><div class="step-title">Add items</div><div class="step-desc">Tap Add Item and choose a type: Mileage, Meal, Lodging, Toll, Parking, or Bus. Fill in the details for each item. Attach receipts where required.</div></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body"><div class="step-title">Attach a trip (mileage items)</div><div class="step-desc">For Mileage items, select a saved trip. The official distance (KM) and reimbursement amount are calculated automatically from your rate.</div></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body"><div class="step-title">Review totals</div><div class="step-desc">The claim footer shows the total in MYR. Check all items before submitting.</div></div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-body"><div class="step-title">Submit claim <span class="badge badge-lock">Locks on submit</span></div><div class="step-desc">Tap Submit Claim. Once submitted, the claim is locked — no edits are possible. Status changes to SUBMITTED and is ready for admin review.</div></div></div>
+    </div>
+    <div class="note">A submitted claim cannot be edited. Double-check all items and amounts before tapping Submit.</div>
+  </div>
+
+  <div id="transport" class="section">
+    <div class="step-list">
+      <div class="step"><div class="step-num">1</div><div class="step-body"><div class="step-title">Add a Toll item</div><div class="step-desc">In a claim, Add Item → Toll. Enter the amount paid (MYR) and choose payment method: Cash or TNG eWallet. Optionally import from a TNG statement.</div></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body"><div class="step-title">Add a Parking item</div><div class="step-desc">Add Item → Parking. Enter amount, location (optional), and duration. Attach a receipt if available.</div></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body"><div class="step-title">Add a Bus fare item</div><div class="step-desc">Add Item → Bus. Enter the fare amount. Select payment method (Cash or TNG). Enter origin and destination stops.</div></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body"><div class="step-title">Import from TNG statement (Toll/Parking)</div><div class="step-desc">Upload your TNG eWallet PDF statement. The app parses transactions automatically and shows a picker — select the relevant transactions to import them as claim items.</div></div></div>
+    </div>
+    <div class="tip"><div class="tip-icon">i</div><div class="tip-text">TNG statement import works offline for previously uploaded statements. New uploads require a network connection.</div></div>
+  </div>
+
+  <div id="export" class="section">
+    <div class="step-list">
+      <div class="step"><div class="step-num">1</div><div class="step-body"><div class="step-title">Go to the Export tab</div><div class="step-desc">Tap Export from Home or the bottom navigation. You will see the export configuration screen.</div></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body"><div class="step-title">Set date range and status</div><div class="step-desc">Choose a date range for claims. Status defaults to Submitted — this is the recommended setting for finance submission. You can also include Draft for internal reviews.</div></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body"><div class="step-title">Choose format</div><div class="step-desc">Select CSV or XLSX. XLSX is recommended for finance teams as it preserves formatting and column structure.</div></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body"><div class="step-title">Tap Generate Export</div><div class="step-desc">The file is generated and appears in the export history list. Tap Download to save it. Failed exports show a Retry option.</div></div></div>
+    </div>
+    <div class="note">Export values are locked to submitted amounts — totals cannot change after submission, ensuring audit consistency.</div>
+  </div>
+
+  <div id="settings" class="section">
+    <div class="step-list">
+      <div class="step"><div class="step-num">1</div><div class="step-body"><div class="step-title">Profile</div><div class="step-desc">Update your display name and company name (optional). These appear on exported claim reports.</div></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body"><div class="step-title">Rates</div><div class="step-desc">Set your mileage rate per KM (MYR), meal default rate, and lodging default rate. Rates are applied when creating claim items. You can override per-item at claim time.</div></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body"><div class="step-title">Location privacy</div><div class="step-desc">View your current location permission status. The app only accesses your location during an active trip — never in the background otherwise.</div></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body"><div class="step-title">Sign out</div><div class="step-desc">Tap Sign Out at the bottom of Settings. Your data remains saved in your account.</div></div></div>
+    </div>
+  </div>
+</div>
+<script>
+function show(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>

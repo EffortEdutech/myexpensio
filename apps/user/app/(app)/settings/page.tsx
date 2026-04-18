@@ -1,6 +1,12 @@
 'use client'
 
+/**
+ * apps/user/app/(app)/settings/page.tsx
+ */
+
+
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { PwaInstallCard } from '@/components/PwaInstallCard'
 import BiometricLoginCard from '@/components/settings/BiometricLoginCard'
@@ -44,7 +50,7 @@ type ProfileResponse = {
   error?: { message?: string }
 }
 
-type SectionKey = 'profile' | 'rates' | 'system'
+type SectionKey = 'profile' | 'rates' | 'billing' | 'system'
 
 function f2(v: unknown) {
   const n = Number(v)
@@ -97,6 +103,7 @@ export default function SettingsPage() {
   const [openSections, setOpenSections] = useState<Record<SectionKey, boolean>>({
     profile: false,
     rates: false,
+    billing: false,
     system: false,
   })
 
@@ -276,6 +283,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* ── Profile ── */}
       <AccordionSection
         icon="👤"
         title="Profile"
@@ -353,6 +361,7 @@ export default function SettingsPage() {
         </form>
       </AccordionSection>
 
+      {/* ── Rates ── */}
       <AccordionSection
         icon="💸"
         title="Rates"
@@ -504,6 +513,37 @@ export default function SettingsPage() {
         </form>
       </AccordionSection>
 
+      {/* ── Subscription & Billing ── NEW SECTION ── */}
+      <AccordionSection
+        icon="💳"
+        title="Subscription & Billing"
+        description="View your current plan, monthly usage limits, invoice history, and upgrade options."
+        previewItems={['Plan & Subscription']}
+        open={openSections.billing}
+        onToggle={() => toggleSection('billing')}
+      >
+        <div style={S.form}>
+          <Card
+            icon="🚀"
+            title="Plan & Billing"
+            sub="Manage your myexpensio subscription, view usage meters, and check your invoice history."
+          >
+            <div style={S.billingRow}>
+              <div>
+                <div style={S.billingLabel}>Subscription details</div>
+                <div style={S.billingSub}>
+                  See your active plan, usage this month, and upgrade to Pro for unlimited access.
+                </div>
+              </div>
+              <Link href="/settings/billing" style={S.billingLink}>
+                Manage billing →
+              </Link>
+            </div>
+          </Card>
+        </div>
+      </AccordionSection>
+
+      {/* ── System Settings ── */}
       <AccordionSection
         icon="⚙️"
         title="System Settings"
@@ -892,6 +932,28 @@ const S: Record<string, CSSProperties> = {
     fontSize: 13,
     fontWeight: 700,
     cursor: 'pointer',
+  },
+  // Billing section styles
+  billingRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+    padding: '4px 0',
+  },
+  billingLabel: { fontSize: 14, fontWeight: 600, color: '#0f172a', marginBottom: 4 },
+  billingSub: { fontSize: 12, color: '#64748b', lineHeight: 1.5 },
+  billingLink: {
+    display: 'inline-block',
+    flexShrink: 0,
+    padding: '10px 18px',
+    backgroundColor: '#4f46e5',
+    color: '#fff',
+    borderRadius: 10,
+    fontSize: 14,
+    fontWeight: 700,
+    textDecoration: 'none',
+    whiteSpace: 'nowrap',
   },
   rateRow: {
     display: 'flex',

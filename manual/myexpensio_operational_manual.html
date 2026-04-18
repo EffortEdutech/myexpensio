@@ -1,0 +1,183 @@
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+.manual { max-width: 680px; padding: 0 0 2rem; font-family: var(--font-sans); }
+.man-header { padding: 1.5rem 0 1rem; border-bottom: 0.5px solid var(--color-border-tertiary); margin-bottom: 0; }
+.man-header h1 { font-size: 20px; font-weight: 500; color: var(--color-text-primary); }
+.man-header p { font-size: 13px; color: var(--color-text-secondary); margin-top: 4px; }
+.toc { background: var(--color-background-secondary); border-radius: var(--border-radius-lg); padding: 1rem 1.25rem; margin: 1.25rem 0; }
+.toc-title { font-size: 12px; font-weight: 500; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+.toc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
+.toc-item { font-size: 13px; color: var(--color-text-info); cursor: pointer; padding: 3px 0; }
+.toc-item:hover { text-decoration: underline; }
+.mod { border-top: 0.5px solid var(--color-border-tertiary); padding: 1.5rem 0 0; margin-top: 1.25rem; }
+.mod-title { font-size: 17px; font-weight: 500; color: var(--color-text-primary); margin-bottom: 6px; }
+.mod-sub { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 1rem; line-height: 1.6; }
+.rule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 1rem; }
+.rule-card { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 10px 12px; }
+.rule-label { font-size: 11px; font-weight: 500; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+.rule-value { font-size: 13px; color: var(--color-text-primary); line-height: 1.5; }
+.htable { width: 100%; border-collapse: collapse; font-size: 13px; margin: 0.75rem 0; }
+.htable th { font-size: 11px; font-weight: 500; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 0.5px solid var(--color-border-tertiary); padding: 6px 10px 6px 0; text-align: left; }
+.htable td { padding: 7px 10px 7px 0; border-bottom: 0.5px solid var(--color-border-tertiary); color: var(--color-text-primary); vertical-align: top; }
+.htable tr:last-child td { border-bottom: none; }
+.badge { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 20px; }
+.b-free { background: var(--color-background-success); color: var(--color-text-success); }
+.b-pro { background: var(--color-background-warning); color: var(--color-text-warning); }
+.b-lock { background: var(--color-background-danger); color: var(--color-text-danger); }
+.b-admin { background: var(--color-background-info); color: var(--color-text-info); }
+.b-ok { background: var(--color-background-success); color: var(--color-text-success); }
+.alert { border-left: 2px solid var(--color-border-danger); background: var(--color-background-danger); border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0; padding: 10px 14px; font-size: 13px; color: var(--color-text-danger); margin: 10px 0; line-height: 1.6; }
+.info { border-left: 2px solid var(--color-border-info); background: var(--color-background-info); border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0; padding: 10px 14px; font-size: 13px; color: var(--color-text-info); margin: 10px 0; line-height: 1.6; }
+.section-label { font-size: 11px; font-weight: 500; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; margin: 1rem 0 6px; }
+</style>
+<h2 class="sr-only">myexpensio operational manual — module-by-module reference for users and administrators</h2>
+<div class="manual">
+  <div class="man-header">
+    <h1>myexpensio — operational manual</h1>
+    <p>Complete module reference. Version 1.0 — Phase 1.</p>
+  </div>
+  <div class="toc">
+    <div class="toc-title">Contents</div>
+    <div class="toc-grid">
+      <span class="toc-item" onclick="scrollTo('m-auth')">1. Auth &amp; onboarding</span>
+      <span class="toc-item" onclick="scrollTo('m-trips')">2. Trips &amp; distance</span>
+      <span class="toc-item" onclick="scrollTo('m-claims')">3. Claims &amp; items</span>
+      <span class="toc-item" onclick="scrollTo('m-transport')">4. Transport claims</span>
+      <span class="toc-item" onclick="scrollTo('m-tng')">5. TNG statement import</span>
+      <span class="toc-item" onclick="scrollTo('m-export')">6. Exports</span>
+      <span class="toc-item" onclick="scrollTo('m-tiers')">7. Subscription tiers</span>
+      <span class="toc-item" onclick="scrollTo('m-admin')">8. Admin responsibilities</span>
+    </div>
+  </div>
+
+  <div class="mod" id="m-auth">
+    <div class="mod-title">1. Auth &amp; onboarding</div>
+    <div class="mod-sub">myexpensio uses invite-only onboarding. There is no public sign-up. All users must be invited by an admin of their organisation.</div>
+    <div class="rule-grid">
+      <div class="rule-card"><div class="rule-label">Onboarding type</div><div class="rule-value">Invite-only. No public registration.</div></div>
+      <div class="rule-card"><div class="rule-label">Who can invite</div><div class="rule-value">Admin users only, via the admin app.</div></div>
+      <div class="rule-card"><div class="rule-label">Invite validity</div><div class="rule-value">Token expires after set period. One-time use.</div></div>
+      <div class="rule-card"><div class="rule-label">Organisation scope</div><div class="rule-value">Each user belongs to one org. All data is org-scoped.</div></div>
+    </div>
+    <div class="section-label">User roles</div>
+    <table class="htable">
+      <tr><th>Role</th><th>Access level</th><th>App</th></tr>
+      <tr><td>User</td><td>Own trips, claims, exports</td><td>User app</td></tr>
+      <tr><td>Admin <span class="badge b-admin">Admin</span></td><td>All users in org, invite management, rates, templates</td><td>Admin app</td></tr>
+    </table>
+    <div class="info">If your invite link is expired or already used, contact your admin to request a new one.</div>
+  </div>
+
+  <div class="mod" id="m-trips">
+    <div class="mod-title">2. Trips &amp; distance</div>
+    <div class="mod-sub">Trips are the primary evidence for mileage claims. Every trip produces a single authoritative distance used for reimbursement calculations.</div>
+    <div class="section-label">Distance recording modes</div>
+    <table class="htable">
+      <tr><th>Mode</th><th>How it works</th><th>Route calc used?</th></tr>
+      <tr><td>GPS tracking</td><td>App records GPS points during trip. Distance derived from track.</td><td>No</td></tr>
+      <tr><td>Selected route</td><td>User selects a route from alternatives fetched via route API.</td><td>Yes <span class="badge b-free">counts</span></td></tr>
+      <tr><td>Odometer override</td><td>User enters start/end odometer readings or manual distance. Overrides GPS.</td><td>No</td></tr>
+    </table>
+    <div class="section-label">Distance rules</div>
+    <div class="rule-grid">
+      <div class="rule-card"><div class="rule-label">Storage unit</div><div class="rule-value">Meters (internally). Displayed and exported as KM (2 decimal places).</div></div>
+      <div class="rule-card"><div class="rule-label">Authoritative field</div><div class="rule-value"><code>final_distance_m</code> — single source of truth for all reimbursement calculations.</div></div>
+      <div class="rule-card"><div class="rule-label">Currency</div><div class="rule-value">All amounts in MYR.</div></div>
+      <div class="rule-card"><div class="rule-label">Evidence</div><div class="rule-value">Odometer photos uploadable. Distance source is recorded for audit.</div></div>
+    </div>
+  </div>
+
+  <div class="mod" id="m-claims">
+    <div class="mod-title">3. Claims &amp; items</div>
+    <div class="mod-sub">A claim is a submission covering a period. It contains one or more items of different types. Claims move from Draft to Submitted — and once submitted, they are locked permanently in Phase 1.</div>
+    <div class="section-label">Claim lifecycle</div>
+    <table class="htable">
+      <tr><th>Status</th><th>Editable?</th><th>Description</th></tr>
+      <tr><td>Draft</td><td><span class="badge b-ok">Yes</span></td><td>Being built. Items can be added, edited, or removed.</td></tr>
+      <tr><td>Submitted <span class="badge b-lock">Locked</span></td><td><span class="badge b-lock">No</span></td><td>Locked permanently. No edits, no deletes. Values are frozen for audit.</td></tr>
+    </table>
+    <div class="alert">Once submitted, a claim cannot be edited. This is a hard system rule — not a UI restriction. Always review all items before submitting.</div>
+    <div class="section-label">Supported item types</div>
+    <table class="htable">
+      <tr><th>Type</th><th>Requires trip?</th><th>Requires receipt?</th></tr>
+      <tr><td>Mileage</td><td>Yes (from saved trip)</td><td>No (odometer evidence optional)</td></tr>
+      <tr><td>Meal</td><td>No</td><td>Receipt mode: yes. Fixed rate mode: no.</td></tr>
+      <tr><td>Lodging</td><td>No</td><td>Receipt mode: yes. Fixed rate mode: no.</td></tr>
+      <tr><td>Toll</td><td>No</td><td>Optional</td></tr>
+      <tr><td>Parking</td><td>No</td><td>Optional</td></tr>
+      <tr><td>Bus fare</td><td>No</td><td>Optional</td></tr>
+    </table>
+  </div>
+
+  <div class="mod" id="m-transport">
+    <div class="mod-title">4. Transport claims</div>
+    <div class="mod-sub">Toll, Parking, and Bus items capture non-mileage transport costs. Each supports both cash and TNG eWallet as payment methods.</div>
+    <div class="rule-grid">
+      <div class="rule-card"><div class="rule-label">Toll</div><div class="rule-value">Enter amount + payment method. Optional: import from TNG statement.</div></div>
+      <div class="rule-card"><div class="rule-label">Parking</div><div class="rule-value">Enter amount, location, duration. Attach receipt optionally.</div></div>
+      <div class="rule-card"><div class="rule-label">Bus fare</div><div class="rule-value">Enter fare, origin/destination stops. Payment: cash or TNG.</div></div>
+      <div class="rule-card"><div class="rule-label">Payment methods</div><div class="rule-value">Cash or TNG eWallet. Recorded per transaction.</div></div>
+    </div>
+  </div>
+
+  <div class="mod" id="m-tng">
+    <div class="mod-title">5. TNG statement import</div>
+    <div class="mod-sub">Upload your Touch 'n Go eWallet PDF statement to automatically extract toll and parking transactions for import into a claim.</div>
+    <div class="section-label">Import flow</div>
+    <table class="htable">
+      <tr><th>Step</th><th>Action</th></tr>
+      <tr><td>1</td><td>In a Toll or Parking item, tap "Add from TNG Statement".</td></tr>
+      <tr><td>2</td><td>Upload your TNG eWallet PDF statement.</td></tr>
+      <tr><td>3</td><td>The app parses the statement and shows a transaction picker.</td></tr>
+      <tr><td>4</td><td>Select the relevant transactions. They are imported as claim items.</td></tr>
+    </table>
+    <div class="info">The parser uses transaction reference numbers (Trans No) to reliably identify rows. Multi-page statements are supported.</div>
+  </div>
+
+  <div class="mod" id="m-export">
+    <div class="mod-title">6. Exports</div>
+    <div class="mod-sub">Exports produce a CSV or XLSX file of your submitted claims. Values are deterministic — they reflect what was submitted and cannot differ from the locked claim record.</div>
+    <div class="rule-grid">
+      <div class="rule-card"><div class="rule-label">Formats</div><div class="rule-value">CSV and XLSX.</div></div>
+      <div class="rule-card"><div class="rule-label">Default status filter</div><div class="rule-value">Submitted only (recommended for finance).</div></div>
+      <div class="rule-card"><div class="rule-label">Distance in export</div><div class="rule-value">KM, 2 decimal places.</div></div>
+      <div class="rule-card"><div class="rule-label">Amounts in export</div><div class="rule-value">MYR. Deterministic — locked to submitted values.</div></div>
+    </div>
+    <div class="alert">Never recalculate reimbursement amounts after submission. Exports always use the submitted snapshot — this protects you in finance disputes.</div>
+  </div>
+
+  <div class="mod" id="m-tiers">
+    <div class="mod-title">7. Subscription tiers</div>
+    <div class="mod-sub">myexpensio has two tiers in Phase 1. The key limit is route calculations per month — GPS tracking is always unlimited.</div>
+    <table class="htable">
+      <tr><th>Feature</th><th>Free <span class="badge b-free">Free</span></th><th>Pro <span class="badge b-pro">Pro</span></th></tr>
+      <tr><td>GPS trip tracking</td><td>Unlimited</td><td>Unlimited</td></tr>
+      <tr><td>Route calculations / month</td><td>2</td><td>Unlimited</td></tr>
+      <tr><td>Claims</td><td>Unlimited</td><td>Unlimited</td></tr>
+      <tr><td>Exports</td><td>Unlimited</td><td>Unlimited</td></tr>
+      <tr><td>TNG import</td><td>Unlimited</td><td>Unlimited</td></tr>
+    </table>
+    <div class="info">When you reach the Free route-calc limit, the app will show a "Limit reached" screen. You can still record trips via GPS without using any quota.</div>
+  </div>
+
+  <div class="mod" id="m-admin">
+    <div class="mod-title">8. Admin responsibilities</div>
+    <div class="mod-sub">Admins manage the organisation via the separate admin app. Users in the user app cannot perform admin actions.</div>
+    <table class="htable">
+      <tr><th>Responsibility</th><th>Description</th></tr>
+      <tr><td>Invite management</td><td>Create and revoke invite links for new users.</td></tr>
+      <tr><td>Rate configuration</td><td>Set org-wide mileage, meal, and lodging default rates.</td></tr>
+      <tr><td>Per diem settings</td><td>Set org-wide daily per diem rate. Users can override per claim.</td></tr>
+      <tr><td>Export templates</td><td>Configure which columns appear in exports and in what order.</td></tr>
+      <tr><td>Claim review</td><td>Review submitted claims from all org members.</td></tr>
+    </table>
+    <div class="info">The admin app is a separate interface. If you need admin access, contact your organisation administrator.</div>
+  </div>
+</div>
+<script>
+function scrollTo(id) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+</script>
