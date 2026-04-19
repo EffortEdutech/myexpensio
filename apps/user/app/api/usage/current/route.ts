@@ -34,15 +34,25 @@ import { createServiceRoleClient } from '@/lib/supabase/service'
 import { getActiveOrg } from '@/lib/org'
 import { err } from '@/lib/billing/http'
 
+// ── Explicit type so TypeScript knows null fields are number | null ─────────
+// Without this, TypeScript infers the literal type `null` for null fields,
+// which causes "Type 'number' is not assignable to type 'null'" when the
+// billing_plans catalog value is later assigned to the entitlements object.
+type EntitlementsShape = {
+  routeCalculationsPerMonth: number | null
+  tripsPerMonth:             number | null
+  exportsPerMonth:           number | null
+}
+
 // Default entitlements when no plan record is found.
 // Matches the seeded FREE plan: 2 route calculations / month.
-const FREE_ENTITLEMENTS = {
+const FREE_ENTITLEMENTS: EntitlementsShape = {
   routeCalculationsPerMonth: 2,
   tripsPerMonth:             null,
   exportsPerMonth:           null,
 }
 
-const PRO_ENTITLEMENTS = {
+const PRO_ENTITLEMENTS: EntitlementsShape = {
   routeCalculationsPerMonth: null,   // unlimited
   tripsPerMonth:             null,
   exportsPerMonth:           null,
@@ -89,7 +99,7 @@ export async function GET() {
   const planCode = subscriptionRes.data?.plan_code ?? null
 
   // Resolve entitlements from the billing_plans catalog if plan_code known
-  let entitlements = tier === 'PRO' ? PRO_ENTITLEMENTS : FREE_ENTITLEMENTS
+  let entitlements: EntitlementsShape = tier === 'PRO' ? PRO_ENTITLEMENTS : FREE_ENTITLEMENTS
 
   if (planCode) {
     const { data: plan } = await db
