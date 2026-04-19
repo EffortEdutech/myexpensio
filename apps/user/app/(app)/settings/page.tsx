@@ -495,7 +495,7 @@ export default function SettingsPage() {
                 Version {process.env.NEXT_PUBLIC_APP_VERSION ?? '—'} (Official Build) (64-bit)
               </div>
               <div style={S.aboutDivider} />
-              <div style={S.aboutCopy}>Copyright © KL 2026. All rights reserved.</div>
+              <div style={S.aboutCopy}>Copyright © EffortEdutech 2026. All rights reserved.</div>
               <div style={S.aboutPowered}>Built with ❤️ by EffortEdutech</div>
             </div>
           </Card>
