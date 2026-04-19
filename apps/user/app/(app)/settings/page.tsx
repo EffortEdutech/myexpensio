@@ -469,10 +469,12 @@ export default function SettingsPage() {
       {/* ── System Settings ── */}
       <AccordionSection icon="⚙️" title="System Settings"
         description="Device setup and account access controls for install, biometrics, and password."
-        previewItems={['App Install', 'Biometric Login', 'Password']} open={openSections.system} onToggle={() => toggleSection('system')}>
+        previewItems={['App Install', 'Biometric Login', 'Password', 'About']}
+        open={openSections.system} onToggle={() => toggleSection('system')}>
         <div style={S.form}>
           <PwaInstallCard />
           <BiometricLoginCard />
+
           <Card icon="🔐" title="Password" sub="Change your signed-in account password.">
             <div style={S.passwordBox}>
               <div>
@@ -482,6 +484,19 @@ export default function SettingsPage() {
               <button type="button" onClick={() => setShowPwModal(true)} style={S.btnSecondary}>
                 Change Password
               </button>
+            </div>
+          </Card>
+
+          {/* ── About myexpensio ── */}
+          <Card icon="ℹ️" title="About myexpensio" sub="Application information and version details.">
+            <div style={S.aboutBox}>
+              <div style={S.aboutAppName}>myexpensio</div>
+              <div style={S.aboutVersion}>
+                Version {process.env.NEXT_PUBLIC_APP_VERSION ?? '—'} (Official Build) (64-bit)
+              </div>
+              <div style={S.aboutDivider} />
+              <div style={S.aboutCopy}>Copyright © KL 2026. All rights reserved.</div>
+              <div style={S.aboutPowered}>Built with ❤️ by EffortEdutech</div>
             </div>
           </Card>
         </div>
@@ -678,4 +693,11 @@ const S: Record<string, CSSProperties> = {
   passwordWrap: { position: 'relative', width: '100%' },
   passwordInput: { width: '100%', padding: '10px 42px 10px 12px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 14, color: '#0f172a', backgroundColor: '#fff', boxSizing: 'border-box' },
   eyeBtn: { position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: '#64748b', padding: 0, lineHeight: 1 },
+  // ── About myexpensio ────────────────────────────────────────────────────────
+  aboutBox: { display: 'flex', flexDirection: 'column', gap: 3, padding: '6px 2px' },
+  aboutAppName: { fontSize: 15, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.01em' },
+  aboutVersion: { fontSize: 12, color: '#475569', marginTop: 1 },
+  aboutDivider: { height: 1, backgroundColor: '#f1f5f9', margin: '8px 0' },
+  aboutCopy: { fontSize: 11, color: '#94a3b8' },
+  aboutPowered: { fontSize: 11, color: '#cbd5e1' },
 }
