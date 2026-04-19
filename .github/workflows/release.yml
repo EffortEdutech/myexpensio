@@ -1,0 +1,80 @@
+name: Auto Release
+
+# Triggers on every push to main.
+# The "skip release commit" step prevents infinite loops when the bot
+# pushes the version-bump commit back to main.
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout with full history (required by standard-version) ──────
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 2. Guard: skip if this push was already a release commit ──────────
+      #    standard-version commits with message "chore(release): x.y.z"
+      - name: Check for release commit (prevent infinite loop)
+        id: guard
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          echo "Last commit: $COMMIT_MSG"
+          if echo "$COMMIT_MSG" | grep -qE "^chore\(release\)|^chore: release"; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "⏭ Skipping — this is a release commit."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      # ── 3. Setup pnpm (monorepo package manager) ─────────────────────────
+      - name: Setup pnpm
+        if: steps.guard.outputs.skip == 'false'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      # ── 4. Setup Node ─────────────────────────────────────────────────────
+      - name: Setup Node
+        if: steps.guard.outputs.skip == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      # ── 5. Install workspace dependencies from root ───────────────────────
+      - name: Install dependencies
+        if: steps.guard.outputs.skip == 'false'
+        run: pnpm install --frozen-lockfile
+
+      # ── 6. Configure git for the release commit ───────────────────────────
+      - name: Configure git identity
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      # ── 7. Run standard-version from apps/user ────────────────────────────
+      #    This: bumps package.json version, generates CHANGELOG.md,
+      #    runs postrelease (generate-version.js), and creates a git tag.
+      - name: Run release (user app)
+        if: steps.guard.outputs.skip == 'false'
+        working-directory: apps/user
+        run: pnpm run release
+
+      # ── 8. Push the release commit + tag back to main ────────────────────
+      #    Vercel watches the repo and will auto-deploy on this push.
+      - name: Push release commit and tags
+        if: steps.guard.outputs.skip == 'false'
+        run: git push --follow-tags origin main

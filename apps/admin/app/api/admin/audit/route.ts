@@ -1,27 +1,45 @@
-// apps/admin/app/api/admin/audit/route.ts
-// GET /api/admin/audit — last 200 audit log entries for the org
-import { NextResponse } from 'next/server'
+/**
+ * apps/admin/app/api/admin/audit/route.ts
+ * Already exists — verify this version matches. Replace if needed.
+ */
 import { requireAdminAuth } from '@/lib/auth'
 import { createServiceRoleClient } from '@/lib/supabase/server'
+import { err, ok, parsePaging } from '@/lib/billing/http'
 
-export async function GET() {
+export async function GET(request: Request) {
   const ctx = await requireAdminAuth('api')
-  if (!ctx) return NextResponse.json({ error: { code: 'UNAUTHORIZED' } }, { status: 403 })
-  if (!ctx.orgId) return NextResponse.json({ error: { code: 'MISSING_ORG' } }, { status: 400 })
+  if (!ctx) return err('UNAUTHORIZED', 'Access denied.', 403)
 
-  const db = createServiceRoleClient()
+  const db  = createServiceRoleClient()
+  const url = new URL(request.url)
+  const { from, to, page, pageSize } = parsePaging(url)
 
-  const { data, error } = await db
+  const entityType = url.searchParams.get('entity_type')?.trim()
+  const actorId    = url.searchParams.get('actor_user_id')?.trim()
+
+  let query = db
     .from('audit_logs')
-    .select(`
-      id, actor_user_id, entity_type, entity_id, action, metadata, created_at,
-      profiles ( display_name, email )
-    `)
-    .eq('org_id', ctx.orgId)
+    .select(
+      `id, org_id, actor_user_id, entity_type, entity_id,
+       action, metadata, created_at,
+       profiles ( display_name, email )`,
+      { count: 'exact' }
+    )
+    .range(from, to)
     .order('created_at', { ascending: false })
-    .limit(200)
 
-  if (error) return NextResponse.json({ error: { code: 'DB_ERROR' } }, { status: 500 })
+  if (entityType) query = query.eq('entity_type', entityType)
+  if (actorId)    query = query.eq('actor_user_id', actorId)
 
-  return NextResponse.json({ logs: data })
+  const { data, error, count } = await query
+  if (error) return err('SERVER_ERROR', error.message, 500)
+
+  const items = (data ?? []).map((row) => {
+    const profile = Array.isArray(row.profiles)
+      ? (row.profiles[0] ?? null)
+      : (row.profiles ?? null)
+    return { ...row, profiles: profile }
+  })
+
+  return ok({ items, page, page_size: pageSize, total: count ?? 0 })
 }

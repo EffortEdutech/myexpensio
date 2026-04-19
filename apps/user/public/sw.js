@@ -13,8 +13,12 @@ const PRECACHE_URLS = [
 ]
 
 self.addEventListener('install', (event) => {
+  // ── IMPORTANT: Do NOT call self.skipWaiting() here. ─────────────────────
+  // The new SW must enter the "waiting" state so the update banner can detect
+  // it via registration.waiting. skipWaiting is triggered only when the user
+  // confirms the update (see the message handler at the bottom of this file).
   event.waitUntil(
-    caches.open(SHELL_CACHE).then((cache) => cache.addAll(PRECACHE_URLS)).then(() => self.skipWaiting())
+    caches.open(SHELL_CACHE).then((cache) => cache.addAll(PRECACHE_URLS))
   )
 })
 
@@ -42,6 +46,14 @@ self.addEventListener('fetch', (event) => {
   if (!isSameOrigin(url)) return
   if (url.pathname.startsWith('/api/')) return
   if (url.pathname.startsWith('/auth/')) return
+
+  // ── Never cache version.json — always fetch fresh from network. ──────────
+  // The PWA update hook fetches this file to compare versions.
+  // Caching it would prevent users from ever seeing the update banner.
+  if (url.pathname === '/version.json') {
+    event.respondWith(fetch(request))
+    return
+  }
 
   if (request.mode === 'navigate') {
     event.respondWith(
@@ -75,5 +87,15 @@ self.addEventListener('fetch', (event) => {
         return cached || networkPromise
       })
     )
+  }
+})
+
+// ── PWA Auto-Update: activate waiting SW when user confirms update ─────────
+// The usePWAUpdate hook calls registration.waiting.postMessage({ type: 'SKIP_WAITING' })
+// when the user taps "Update Now". This handler receives that message and
+// activates the new SW, which then triggers a page reload via controllerchange.
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting()
   }
 })

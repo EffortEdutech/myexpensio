@@ -1,91 +1,130 @@
-// apps/admin/app/(protected)/claims/page.tsx
-// All claims across all organisations.
+'use client'
+/**
+ * apps/admin/app/(protected)/claims/page.tsx
+ * Admin view of all org claims — all users, filterable, read-only.
+ */
+import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
+import StatusChip from '@/components/billing/StatusChip'
+import MoneyCell from '@/components/billing/MoneyCell'
 
-import { createServiceRoleClient } from '@/lib/supabase/server'
+type Claim = {
+  id: string; org_id: string; user_id: string
+  status: string; title: string | null; total_amount: number
+  currency: string; period_start: string | null; period_end: string | null
+  submitted_at: string | null; created_at: string
+  profiles: { display_name: string | null; email: string | null } | null
+}
 
-function fmtDate(iso: string | null) {
+function fmtDate(iso: string | null | undefined) {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-export default async function ClaimsPage() {
-  const db = createServiceRoleClient()
+export default function AdminClaimsPage() {
+  const [claims, setClaims]     = useState<Claim[]>([])
+  const [total, setTotal]       = useState(0)
+  const [loading, setLoading]   = useState(true)
+  const [error, setError]       = useState<string | null>(null)
+  const [status, setStatus]     = useState('')
+  const [q, setQ]               = useState('')
+  const [page, setPage]         = useState(1)
+  const PAGE = 25
 
-  const { data: claims, error } = await db
-    .from('claims')
-    .select(`
-      id, status, title, total_amount, currency,
-      period_start, period_end, submitted_at, created_at,
-      profiles ( display_name, email ),
-      organizations ( name )
-    `)
-    .order('created_at', { ascending: false })
-    .limit(500)
+  const load = useCallback(async () => {
+    setLoading(true); setError(null)
+    try {
+      const params = new URLSearchParams({ page: String(page), page_size: String(PAGE) })
+      if (status) params.set('status', status)
+      if (q)      params.set('q', q)
+      const res  = await fetch(`/api/admin/claims?${params}`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error?.message ?? 'Failed')
+      setClaims(data.items ?? [])
+      setTotal(data.total ?? 0)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Error') }
+    finally { setLoading(false) }
+  }, [page, status, q])
 
-  if (error) {
-    return <div><h1 className="text-xl font-bold text-gray-900 mb-2">Claims</h1>
-      <p className="text-sm text-red-600">Failed to load: {error.message}</p></div>
-  }
-
-  const rows = claims ?? []
-  const submitted = rows.filter(c => c.status === 'SUBMITTED').length
-  const draft     = rows.filter(c => c.status === 'DRAFT').length
+  useEffect(() => { void load() }, [load])
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">Claims</h1>
-        <p className="text-sm text-gray-500 mt-0.5">{submitted} submitted · {draft} draft — all organisations</p>
+    <div style={{ padding: '32px 36px', maxWidth: '1100px' }}>
+      <div style={{ marginBottom: '24px' }}>
+        <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 600, color: '#111827' }}>Claims</h1>
+        <p style={{ margin: '4px 0 0', fontSize: '14px', color: '#6b7280' }}>
+          All organisation claims. SUBMITTED claims are read-only — no admin edits in Phase 1.
+        </p>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Org</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Staff</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Claim</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Total</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Period</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Created</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {rows.map(c => {
-                const p   = Array.isArray(c.profiles)      ? c.profiles[0]      : c.profiles
-                const org = Array.isArray(c.organizations) ? c.organizations[0] : c.organizations
-                return (
-                  <tr key={c.id} className="hover:bg-gray-50">
-                    <td className="px-5 py-3 font-medium text-gray-900 whitespace-nowrap">{(org as {name?:string}|null)?.name ?? '—'}</td>
-                    <td className="px-4 py-3">
-                      <div className="text-gray-700">{(p as {display_name?:string|null}|null)?.display_name ?? '—'}</div>
-                      <div className="text-xs text-gray-400">{(p as {email?:string|null}|null)?.email ?? ''}</div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 max-w-[160px] truncate">{c.title ?? <span className="italic text-gray-400">Untitled</span>}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${c.status === 'SUBMITTED' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {c.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right font-medium text-gray-900 whitespace-nowrap">
-                      MYR {Number(c.total_amount).toFixed(2)}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
-                      {fmtDate(c.period_start)}{c.period_end ? ` – ${fmtDate(c.period_end)}` : ''}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{fmtDate(c.created_at)}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-5 py-3 border-t border-gray-100 text-xs text-gray-400">
-          Showing {rows.length} claims (max 500)
-        </div>
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+        <input placeholder="Search user or title" value={q}
+          onChange={(e) => { setQ(e.target.value); setPage(1) }} style={inp} />
+        <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }} style={{ ...inp, maxWidth: '160px' }}>
+          <option value="">All statuses</option>
+          <option value="DRAFT">Draft</option>
+          <option value="SUBMITTED">Submitted</option>
+        </select>
+      </div>
+
+      {error && <div style={{ padding: '12px 16px', background: '#fef2f2', color: '#dc2626', borderRadius: '6px', marginBottom: '16px', fontSize: '14px' }}>{error}</div>}
+
+      <div style={{ border: '1px solid #e5e7eb', borderRadius: '10px', background: '#fff', overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead style={{ background: '#f9fafb' }}>
+            <tr>
+              {['User', 'Title', 'Period', 'Status', 'Total', 'Submitted', ''].map((h) => (
+                <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '14px' }}>Loading…</td></tr>
+            ) : claims.length === 0 ? (
+              <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '14px' }}>No claims found.</td></tr>
+            ) : claims.map((claim) => {
+              const profile = claim.profiles as { display_name?: string | null; email?: string | null } | null
+              return (
+                <tr key={claim.id} style={{ borderTop: '1px solid #f3f4f6' }}>
+                  <td style={td}>
+                    <div style={{ fontSize: '13px', fontWeight: 500, color: '#111827' }}>{profile?.display_name ?? '—'}</div>
+                    <div style={{ fontSize: '11px', color: '#9ca3af' }}>{profile?.email ?? ''}</div>
+                  </td>
+                  <td style={{ ...td, fontSize: '13px', color: '#374151', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {claim.title ?? '(untitled)'}
+                  </td>
+                  <td style={{ ...td, fontSize: '12px', color: '#6b7280', whiteSpace: 'nowrap' }}>
+                    {claim.period_start ? `${fmtDate(claim.period_start)} – ${fmtDate(claim.period_end)}` : '—'}
+                  </td>
+                  <td style={td}><StatusChip status={claim.status} size="sm" /></td>
+                  <td style={td}><MoneyCell amount={claim.total_amount} size="sm" /></td>
+                  <td style={{ ...td, fontSize: '12px', color: '#9ca3af' }}>{fmtDate(claim.submitted_at)}</td>
+                  <td style={td}>
+                    <Link href={`/claims/${claim.id}`} style={{ fontSize: '13px', color: '#4f46e5', textDecoration: 'none' }}>
+                      View →
+                    </Link>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+
+        {total > PAGE && (
+          <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '13px', color: '#6b7280' }}>{(page - 1) * PAGE + 1}–{Math.min(page * PAGE, total)} of {total}</span>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={() => setPage((p) => p - 1)} disabled={page <= 1} style={pbtn(page <= 1)}>← Prev</button>
+              <button onClick={() => setPage((p) => p + 1)} disabled={page * PAGE >= total} style={pbtn(page * PAGE >= total)}>Next →</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
 }
+
+const td: React.CSSProperties  = { padding: '11px 14px', verticalAlign: 'middle' }
+const inp: React.CSSProperties = { padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', color: '#111827', fontFamily: 'inherit', background: '#fff' }
+const pbtn = (d: boolean): React.CSSProperties => ({ padding: '6px 12px', borderRadius: '6px', border: '1px solid #e5e7eb', background: d ? '#f9fafb' : '#fff', color: d ? '#d1d5db' : '#374151', fontSize: '13px', cursor: d ? 'not-allowed' : 'pointer' })

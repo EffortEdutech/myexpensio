@@ -1,185 +1,169 @@
-// apps/admin/app/(protected)/audit/page.tsx
-import React from 'react'
-import { createServiceRoleClient } from '@/lib/supabase/server'
+'use client'
+/**
+ * apps/admin/app/(protected)/audit/page.tsx
+ */
+import { useCallback, useEffect, useState } from 'react'
 
-function fmtDate(iso: string) {
+type AuditEntry = {
+  id: string; org_id: string | null; actor_user_id: string | null
+  entity_type: string; entity_id: string | null; action: string
+  metadata: Record<string, unknown>; created_at: string
+  profiles: { display_name: string | null; email: string | null } | null
+}
+
+function fmtDateTime(iso: string) {
   return new Date(iso).toLocaleString('en-MY', {
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })
 }
 
-export default async function AuditPage() {
-  const db = createServiceRoleClient()
+const ACTION_COLORS: Record<string, { bg: string; color: string }> = {
+  CREATE:  { bg: '#d1fae5', color: '#065f46' },
+  UPDATE:  { bg: '#dbeafe', color: '#1e40af' },
+  DELETE:  { bg: '#fee2e2', color: '#991b1b' },
+  SUBMIT:  { bg: '#ede9fe', color: '#5b21b6' },
+  APPROVE: { bg: '#d1fae5', color: '#065f46' },
+  REJECT:  { bg: '#fee2e2', color: '#991b1b' },
+  LOGIN:   { bg: '#f3f4f6', color: '#6b7280' },
+}
 
-  const { data: logs } = await db
-    .from('audit_logs')
-    .select(`
-      id, entity_type, entity_id, action, metadata, created_at,
-      profiles ( display_name, email ),
-      organizations ( name )
-    `)
-    .order('created_at', { ascending: false })
-    .limit(500)
+function ActionBadge({ action }: { action: string }) {
+  const verb = action.split('_')[0] ?? action
+  const style = ACTION_COLORS[verb.toUpperCase()] ?? { bg: '#f3f4f6', color: '#6b7280' }
+  return (
+    <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 7px', borderRadius: '4px', ...style, whiteSpace: 'nowrap' }}>
+      {action}
+    </span>
+  )
+}
 
-  const rows = logs ?? []
+export default function AuditLogPage() {
+  const [entries, setEntries]   = useState<AuditEntry[]>([])
+  const [total, setTotal]       = useState(0)
+  const [loading, setLoading]   = useState(true)
+  const [error, setError]       = useState<string | null>(null)
+  const [entityType, setEntity] = useState('')
+  const [page, setPage]         = useState(1)
+  const [selected, setSelected] = useState<AuditEntry | null>(null)
+  const PAGE = 30
 
-  // Count unresolved storage orphans so we can show a banner
-  const orphanLogs = rows.filter(r => r.action === 'TNG_STORAGE_ORPHAN')
+  const load = useCallback(async () => {
+    setLoading(true); setError(null)
+    try {
+      const params = new URLSearchParams({ page: String(page), page_size: String(PAGE) })
+      if (entityType) params.set('entity_type', entityType)
+      const res  = await fetch(`/api/admin/audit?${params}`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error?.message ?? 'Failed')
+      setEntries(data.items ?? [])
+      setTotal(data.total ?? 0)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Error') }
+    finally { setLoading(false) }
+  }, [page, entityType])
 
-  const actionColor: Record<string, string> = {
-    TEMPLATE_CREATED:     'bg-blue-100 text-blue-700',
-    TEMPLATE_UPDATED:     'bg-blue-50 text-blue-600',
-    TEMPLATE_DEACTIVATED: 'bg-gray-100 text-gray-600',
-    ORG_STATUS_CHANGED:   'bg-amber-100 text-amber-700',
-    ORG_UPDATED:          'bg-amber-50 text-amber-600',
-    ORG_CREATED:          'bg-green-100 text-green-700',
-    ORG_TIER_CHANGED:     'bg-purple-100 text-purple-700',
-    INVITE_SENT:          'bg-purple-100 text-purple-700',
-    INVITE_ACCEPTED:      'bg-green-100 text-green-700',
-    INVITE_REVOKED:       'bg-red-100 text-red-600',
-    MEMBER_ROLE_CHANGED:  'bg-blue-100 text-blue-700',
-    MEMBER_REMOVED:       'bg-red-100 text-red-600',
-    RATE_CREATED:         'bg-green-100 text-green-700',
-    // Storage orphan — prominent red alert
-    TNG_STORAGE_ORPHAN:   'bg-red-100 text-red-700 font-bold',
-  }
+  useEffect(() => { void load() }, [load])
+
+  const entityTypes = ['claim', 'claim_item', 'trip', 'export', 'member', 'rate_version', 'template', 'invitation']
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">Audit Log</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          All admin and system actions — {rows.length} entries (latest 500)
-        </p>
+    <div style={{ padding: '32px 36px', maxWidth: '1100px' }}>
+      <div style={{ marginBottom: '24px' }}>
+        <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 600, color: '#111827' }}>Audit Log</h1>
+        <p style={{ margin: '4px 0 0', fontSize: '14px', color: '#6b7280' }}>All platform actions. Click a row to see metadata.</p>
       </div>
 
-      {/* ── Orphan alert banner ─────────────────────────────────────────────── */}
-      {orphanLogs.length > 0 && (
-        <div className="mb-6 rounded-xl border border-red-300 bg-red-50 p-4">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl flex-shrink-0">⚠️</span>
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+        <select value={entityType} onChange={(e) => { setEntity(e.target.value); setPage(1) }} style={inp}>
+          <option value="">All entity types</option>
+          {entityTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+
+      {error && <div style={{ padding: '12px 16px', background: '#fef2f2', color: '#dc2626', borderRadius: '6px', marginBottom: '16px', fontSize: '14px' }}>{error}</div>}
+
+      <div style={{ border: '1px solid #e5e7eb', borderRadius: '10px', background: '#fff', overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead style={{ background: '#f9fafb' }}>
+            <tr>
+              {['Time', 'Actor', 'Action', 'Entity type', 'Entity ID', ''].map((h) => (
+                <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '14px' }}>Loading…</td></tr>
+            ) : entries.length === 0 ? (
+              <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', fontSize: '14px' }}>No audit entries found.</td></tr>
+            ) : entries.map((entry) => {
+              const profile = entry.profiles as { display_name?: string | null; email?: string | null } | null
+              return (
+                <tr key={entry.id} onClick={() => setSelected(entry)} style={{ borderTop: '1px solid #f3f4f6', cursor: 'pointer' }}>
+                  <td style={{ ...td, fontSize: '12px', color: '#6b7280', whiteSpace: 'nowrap' }}>{fmtDateTime(entry.created_at)}</td>
+                  <td style={td}>
+                    <div style={{ fontSize: '13px', color: '#374151' }}>{profile?.display_name ?? 'System'}</div>
+                    {profile?.email && <div style={{ fontSize: '11px', color: '#9ca3af' }}>{profile.email}</div>}
+                  </td>
+                  <td style={td}><ActionBadge action={entry.action} /></td>
+                  <td style={{ ...td, fontSize: '12px', color: '#6b7280', fontFamily: 'monospace' }}>{entry.entity_type}</td>
+                  <td style={{ ...td, fontSize: '11px', color: '#9ca3af', fontFamily: 'monospace', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {entry.entity_id ?? '—'}
+                  </td>
+                  <td style={{ ...td, fontSize: '12px', color: '#4f46e5' }}>Details →</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+
+        {total > PAGE && (
+          <div style={{ padding: '12px 20px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '13px', color: '#6b7280' }}>{(page - 1) * PAGE + 1}–{Math.min(page * PAGE, total)} of {total}</span>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={() => setPage((p) => p - 1)} disabled={page <= 1} style={pbtn(page <= 1)}>← Prev</button>
+              <button onClick={() => setPage((p) => p + 1)} disabled={page * PAGE >= total} style={pbtn(page * PAGE >= total)}>Next →</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Metadata drawer */}
+      {selected && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(0,0,0,0.4)', display: 'flex', justifyContent: 'flex-end' }} onClick={() => setSelected(null)}>
+          <div style={{ width: '440px', background: '#fff', height: '100%', overflowY: 'auto', padding: '28px', display: 'flex', flexDirection: 'column', gap: '16px' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#111827' }}>Audit detail</h2>
+              <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#9ca3af' }}>×</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <Detail label="Action" value={selected.action} />
+              <Detail label="Entity type" value={selected.entity_type} />
+              <Detail label="Entity ID" value={selected.entity_id ?? '—'} mono />
+              <Detail label="Time" value={fmtDateTime(selected.created_at)} />
+            </div>
             <div>
-              <div className="text-sm font-bold text-red-800 mb-1">
-                {orphanLogs.length} orphaned TNG statement file{orphanLogs.length !== 1 ? 's' : ''} — manual cleanup required
-              </div>
-              <p className="text-xs text-red-700 mb-3">
-                These PDF files were not deleted from the <code className="bg-red-100 px-1 rounded">tng-statements</code> bucket
-                when the statement batch was removed. Please delete them manually in
-                Supabase Storage → tng-statements.
-              </p>
-              {orphanLogs.map(log => {
-                const meta = log.metadata as Record<string, unknown>
-                const paths = (meta?.orphaned_paths as string[]) ?? []
-                return (
-                  <div key={log.id} className="mb-2 rounded-lg bg-white border border-red-200 p-3">
-                    <div className="text-xs text-red-500 mb-1">{fmtDate(log.created_at)}</div>
-                    <div className="text-xs font-medium text-gray-700 mb-1">
-                      Bucket: <code className="bg-gray-100 px-1 rounded">tng-statements</code>
-                    </div>
-                    <div className="text-xs text-gray-600 mb-1">Files to delete:</div>
-                    {paths.map(p => (
-                      <code key={p} className="block text-xs bg-gray-50 border border-gray-200 rounded px-2 py-1 mb-1 font-mono text-gray-800">
-                        {p}
-                      </code>
-                    ))}
-                    {meta?.storage_error && (
-                      <div className="text-xs text-red-500 mt-1">
-                        Error: {String(meta.storage_error)}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
+              <p style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Metadata</p>
+              <pre style={{ margin: 0, padding: '12px', background: '#f9fafb', borderRadius: '6px', fontSize: '11px', color: '#374151', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                {JSON.stringify(selected.metadata, null, 2)}
+              </pre>
             </div>
           </div>
         </div>
       )}
-
-      {/* ── Main table ──────────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">When</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Actor</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Action</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Entity</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Org</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {rows.map(log => {
-                const p   = Array.isArray(log.profiles)      ? log.profiles[0]      : log.profiles
-                const org = Array.isArray(log.organizations) ? log.organizations[0] : log.organizations
-                const isOrphan = log.action === 'TNG_STORAGE_ORPHAN'
-                const meta     = log.metadata as Record<string, unknown>
-                const paths    = isOrphan ? ((meta?.orphaned_paths as string[]) ?? []) : []
-
-                return (
-                  <React.Fragment key={log.id}>
-                    <tr className={isOrphan ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}>
-                      <td className="px-5 py-3 text-gray-400 text-xs whitespace-nowrap">
-                        {fmtDate(log.created_at)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="text-gray-700 text-xs font-medium">
-                          {(p as { display_name?: string | null } | null)?.display_name ?? '—'}
-                        </div>
-                        <div className="text-xs text-gray-400">
-                          {(p as { email?: string | null } | null)?.email ?? ''}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex px-2 py-0.5 rounded text-xs ${actionColor[log.action] ?? 'bg-gray-100 text-gray-600'}`}>
-                          {isOrphan ? '⚠️ STORAGE ORPHAN' : log.action.replace(/_/g, ' ')}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="text-xs text-gray-600 font-medium">{log.entity_type}</div>
-                        <div className="text-xs text-gray-400 font-mono">
-                          {log.entity_id?.slice(0, 8)}…
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">
-                        {(org as { name?: string } | null)?.name ?? '—'}
-                      </td>
-                    </tr>
-
-                    {/* Detail row for storage orphans — shows paths inline */}
-                    {isOrphan && paths.length > 0 && (
-                      <tr className="bg-red-50">
-                        <td colSpan={5} className="px-5 pb-3 pt-0">
-                          <div className="rounded-lg border border-red-200 bg-white p-3">
-                            <div className="text-xs font-semibold text-red-700 mb-2">
-                              🗑 Files to manually delete from{' '}
-                              <code className="bg-red-50 px-1 rounded">tng-statements</code> bucket:
-                            </div>
-                            {paths.map(p => (
-                              <code key={p} className="block text-xs bg-gray-50 border border-gray-200 rounded px-2 py-1 mb-1 font-mono text-gray-700">
-                                {p}
-                              </code>
-                            ))}
-                            {meta?.storage_error && (
-                              <div className="text-xs text-red-500 mt-2">
-                                Storage error: {String(meta.storage_error)}
-                              </div>
-                            )}
-                            <div className="text-xs text-gray-400 mt-2">
-                              Supabase Dashboard → Storage → tng-statements → navigate to path → delete file
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   )
 }
+
+function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div>
+      <p style={{ margin: '0 0 3px', fontSize: '11px', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
+      <p style={{ margin: 0, fontSize: '13px', color: '#374151', fontFamily: mono ? 'monospace' : 'inherit', wordBreak: 'break-all' }}>{value}</p>
+    </div>
+  )
+}
+
+const td: React.CSSProperties  = { padding: '10px 14px', verticalAlign: 'middle' }
+const inp: React.CSSProperties = { padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', color: '#111827', fontFamily: 'inherit', background: '#fff' }
+const pbtn = (d: boolean): React.CSSProperties => ({ padding: '6px 12px', borderRadius: '6px', border: '1px solid #e5e7eb', background: d ? '#f9fafb' : '#fff', color: d ? '#d1d5db' : '#374151', fontSize: '13px', cursor: d ? 'not-allowed' : 'pointer' })
