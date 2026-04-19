@@ -38,25 +38,25 @@ jobs:
             echo "skip=false" >> $GITHUB_OUTPUT
           fi
 
-      # ── 3. Setup pnpm (monorepo package manager) ─────────────────────────
+      # ── 3. Setup pnpm ─────────────────────────────────────────────────────
+      #    No version pin — auto-reads from root package.json "packageManager"
+      #    field (pnpm@10.30.3). Avoids ERR_PNPM_BAD_PM_VERSION conflict.
       - name: Setup pnpm
         if: steps.guard.outputs.skip == 'false'
         uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
-      # ── 4. Setup Node ─────────────────────────────────────────────────────
+      # ── 4. Setup Node 24 ──────────────────────────────────────────────────
       - name: Setup Node
         if: steps.guard.outputs.skip == 'false'
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: 'pnpm'
 
       # ── 5. Install workspace dependencies from root ───────────────────────
       - name: Install dependencies
         if: steps.guard.outputs.skip == 'false'
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       # ── 6. Configure git for the release commit ───────────────────────────
       - name: Configure git identity
@@ -66,8 +66,8 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       # ── 7. Run standard-version from apps/user ────────────────────────────
-      #    This: bumps package.json version, generates CHANGELOG.md,
-      #    runs postrelease (generate-version.js), and creates a git tag.
+      #    Bumps package.json version, generates CHANGELOG.md,
+      #    runs postrelease (generate-version.js), creates git tag.
       - name: Run release (user app)
         if: steps.guard.outputs.skip == 'false'
         working-directory: apps/user

@@ -22,8 +22,13 @@ export function usePWAUpdate() {
       });
       if (!res.ok) return;
       const data: VersionInfo = await res.json();
+
       if (data.version !== CURRENT_VERSION) {
+        // Version mismatch detected — show banner regardless of SW state.
+        // This covers the common Next.js case where Vercel deployed new assets
+        // but no SW "waiting" event fired (e.g. first open after deploy).
         setNewVersion(data);
+        setUpdateAvailable(true);
       }
     } catch {
       // Non-critical — fail silently
@@ -46,7 +51,10 @@ export function usePWAUpdate() {
       reg.update();
 
       // Re-check every hour while app is open
-      intervalId = setInterval(() => reg.update(), 60 * 60 * 1000);
+      intervalId = setInterval(() => {
+        reg.update();
+        fetchVersion(); // also re-check version.json every hour
+      }, 60 * 60 * 1000);
 
       reg.addEventListener('updatefound', () => {
         const newWorker = reg.installing;
@@ -57,7 +65,7 @@ export function usePWAUpdate() {
             newWorker.state === 'installed' &&
             navigator.serviceWorker.controller
           ) {
-            // New SW installed and a previous version is still controlling the page
+            // New SW installed and waiting — fetch version to populate changelog
             setUpdateAvailable(true);
             fetchVersion();
           }
@@ -79,8 +87,13 @@ export function usePWAUpdate() {
   }, []);
 
   const updateApp = () => {
-    if (!registration?.waiting) return;
-    registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+    if (registration?.waiting) {
+      // SW is waiting — activate it; controllerchange listener will reload
+      registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+    } else {
+      // No SW waiting (version-only mismatch) — plain reload fetches new assets
+      window.location.reload();
+    }
   };
 
   return {
