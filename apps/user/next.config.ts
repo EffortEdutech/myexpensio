@@ -10,12 +10,12 @@ const nextConfig: NextConfig = {
   // All three must be excluded from Turbopack/webpack server bundling.
   serverExternalPackages: ['pdfkit', 'pdf-parse', 'pdfjs-dist'],
 
-  // Inject app version at build time from package.json.
-  // standard-version bumps package.json → Vercel builds → version is baked in.
-  // No .env.production needed. Falls back to .env.local override if set.
+  // Always read version from package.json at Vercel build time.
+  // standard-version bumps package.json → Vercel builds → correct version baked in.
+  // Do NOT set NEXT_PUBLIC_APP_VERSION in the Vercel dashboard — it will override this.
+  // Local dev: override via apps/user/.env.local if needed.
   env: {
-    NEXT_PUBLIC_APP_VERSION:
-      process.env.NEXT_PUBLIC_APP_VERSION ?? pkg.version,
+    NEXT_PUBLIC_APP_VERSION: pkg.version,
   },
 }
 
