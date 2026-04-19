@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.5](https://github.com/EffortEdutech/myexpensio/compare/v0.1.4...v0.1.5) (2026-04-19)
+
+
+### Bug Fixes
+
+* read version from package.json directly ([7692ada](https://github.com/EffortEdutech/myexpensio/commit/7692adab1e7be5d9ee45328100e699ef9d6c9915))
+
 ### [0.1.4](https://github.com/EffortEdutech/myexpensio/compare/v0.1.3...v0.1.4) (2026-04-19)
 
 
