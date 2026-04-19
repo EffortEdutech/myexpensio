@@ -78,6 +78,8 @@ export default function BillingPage() {
   const [selected, setSelected] = useState<AvailablePlan | null>(null)
   const [checkingOut, setCheckingOut] = useState(false)
   const [checkoutErr, setCheckoutErr] = useState<string | null>(null)
+  const [openingPortal, setOpeningPortal] = useState(false)
+  const [portalErr, setPortalErr] = useState<string | null>(null)
 
   // Check for Stripe return
   const checkoutResult = typeof window !== 'undefined'
@@ -131,6 +133,22 @@ export default function BillingPage() {
     } catch (e) {
       setCheckoutErr(e instanceof Error ? e.message : 'Checkout failed.')
       setCheckingOut(false)
+    }
+  }
+
+  async function handleOpenPortal() {
+    setOpeningPortal(true); setPortalErr(null)
+    try {
+      const origin = window.location.origin
+      const data = await apiFetch<{ url: string }>('/api/billing/portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ return_url: `${origin}/settings/billing` }),
+      })
+      window.location.href = data.url
+    } catch (e) {
+      setPortalErr(e instanceof Error ? e.message : 'Could not open billing portal.')
+      setOpeningPortal(false)
     }
   }
 
@@ -223,16 +241,18 @@ export default function BillingPage() {
             </div>
           )}
 
-          {/* Stripe portal link — manage card/cancel */}
-          <div style={{ marginTop: 14, display: 'flex', gap: 10 }}>
-            <a
-              href={`https://billing.stripe.com/p/login/live_placeholder`}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ fontSize: 13, color: '#4f46e5', fontWeight: 600, textDecoration: 'none', padding: '8px 14px', border: '1px solid #e0e7ff', borderRadius: 8, background: '#f5f3ff' }}
+          {/* Stripe portal — manage card/cancel */}
+          <div style={{ marginTop: 14 }}>
+            <button
+              onClick={() => void handleOpenPortal()}
+              disabled={openingPortal}
+              style={{ fontSize: 13, color: '#4f46e5', fontWeight: 600, padding: '8px 14px', border: '1px solid #e0e7ff', borderRadius: 8, background: openingPortal ? '#f5f3ff' : '#f5f3ff', cursor: openingPortal ? 'wait' : 'pointer' }}
             >
-              Manage card & subscription in Stripe →
-            </a>
+              {openingPortal ? 'Opening portal…' : 'Manage card & subscription in Stripe →'}
+            </button>
+            {portalErr && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#dc2626' }}>{portalErr}</div>
+            )}
           </div>
           <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
             Opens Stripe's secure portal to update payment method or cancel.
