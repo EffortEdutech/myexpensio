@@ -1,3 +1,6 @@
+/**
+ * FILE PATH: apps/user/pwa/PWAUpdateProvider.tsx
+ */
 'use client';
 
 import React, { createContext, useContext } from 'react';
@@ -7,6 +10,7 @@ import type { VersionInfo } from './usePWAUpdate';
 type PWAUpdateContextType = {
   updateAvailable: boolean;
   updateApp: () => void;
+  dismissUpdate: () => void;
   newVersion: VersionInfo | null;
   currentVersion: string;
 };

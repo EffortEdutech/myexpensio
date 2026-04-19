@@ -1,3 +1,6 @@
+/**
+ * FILE PATH: apps/user/pwa/usePWAUpdate.ts
+ */
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -7,36 +10,41 @@ export type VersionInfo = {
   changelog: string[];
 };
 
+// Persists across reloads within the same browser session.
+// Prevents the banner re-appearing after the user has actioned it.
+const SESSION_KEY = 'pwa_dismissed_version';
+
 export function usePWAUpdate() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [registration, setRegistration] = useState<ServiceWorkerRegistration | null>(null);
   const [newVersion, setNewVersion] = useState<VersionInfo | null>(null);
 
-  // Next.js uses NEXT_PUBLIC_ prefix (not VITE_APP_VERSION)
   const CURRENT_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? '0.0.0';
 
   async function fetchVersion() {
     try {
-      const res = await fetch(`/version.json?t=${Date.now()}`, {
-        cache: 'no-store',
-      });
+      const res = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' });
       if (!res.ok) return;
       const data: VersionInfo = await res.json();
 
-      if (data.version !== CURRENT_VERSION) {
-        // Version mismatch detected — show banner regardless of SW state.
-        // This covers the common Next.js case where Vercel deployed new assets
-        // but no SW "waiting" event fired (e.g. first open after deploy).
-        setNewVersion(data);
-        setUpdateAvailable(true);
+      // Already on latest — nothing to do
+      if (data.version === CURRENT_VERSION) return;
+
+      // User already actioned this exact version this session — don't re-show.
+      // This prevents the infinite banner loop after "Update Now" triggers a reload.
+      if (typeof sessionStorage !== 'undefined') {
+        const dismissed = sessionStorage.getItem(SESSION_KEY);
+        if (dismissed === data.version) return;
       }
+
+      setNewVersion(data);
+      setUpdateAvailable(true);
     } catch {
       // Non-critical — fail silently
     }
   }
 
   useEffect(() => {
-    // Check version immediately on mount
     fetchVersion();
 
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
@@ -46,26 +54,18 @@ export function usePWAUpdate() {
     navigator.serviceWorker.getRegistration().then((reg) => {
       if (!reg) return;
       setRegistration(reg);
-
-      // Trigger update check on app open
       reg.update();
 
-      // Re-check every hour while app is open
       intervalId = setInterval(() => {
         reg.update();
-        fetchVersion(); // also re-check version.json every hour
+        fetchVersion();
       }, 60 * 60 * 1000);
 
       reg.addEventListener('updatefound', () => {
         const newWorker = reg.installing;
         if (!newWorker) return;
-
         newWorker.addEventListener('statechange', () => {
-          if (
-            newWorker.state === 'installed' &&
-            navigator.serviceWorker.controller
-          ) {
-            // New SW installed and waiting — fetch version to populate changelog
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
             setUpdateAvailable(true);
             fetchVersion();
           }
@@ -73,10 +73,7 @@ export function usePWAUpdate() {
       });
     });
 
-    // Once the new SW takes control, reload the page
-    const handleControllerChange = () => {
-      window.location.reload();
-    };
+    const handleControllerChange = () => window.location.reload();
     navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
 
     return () => {
@@ -86,19 +83,31 @@ export function usePWAUpdate() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Called when user taps "Update Now"
   const updateApp = () => {
+    if (newVersion && typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(SESSION_KEY, newVersion.version);
+    }
     if (registration?.waiting) {
-      // SW is waiting — activate it; controllerchange listener will reload
       registration.waiting.postMessage({ type: 'SKIP_WAITING' });
     } else {
-      // No SW waiting (version-only mismatch) — plain reload fetches new assets
       window.location.reload();
     }
+  };
+
+  // Called when user taps "Later" — suppresses banner for this version this session
+  const dismissUpdate = () => {
+    if (newVersion && typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(SESSION_KEY, newVersion.version);
+    }
+    setUpdateAvailable(false);
+    setNewVersion(null);
   };
 
   return {
     updateAvailable,
     updateApp,
+    dismissUpdate,
     newVersion,
     currentVersion: CURRENT_VERSION,
   };

@@ -1,3 +1,6 @@
+/**
+ * FILE PATH: apps/user/pwa/UpdateBanner.tsx
+ */
 'use client';
 
 import { useState } from 'react';
@@ -5,16 +8,16 @@ import { usePWAUpdateContext } from './PWAUpdateProvider';
 import ChangelogModal from './ChangelogModal';
 
 export default function UpdateBanner() {
-  const { updateAvailable, newVersion, currentVersion } = usePWAUpdateContext();
+  const { updateAvailable, newVersion, currentVersion, dismissUpdate } = usePWAUpdateContext();
   const [showModal, setShowModal] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
 
-  // Don't render if no update, already dismissed, or version info not yet loaded
-  if (!updateAvailable || dismissed || !newVersion) return null;
+  // updateAvailable is cleared by dismissUpdate() which also writes sessionStorage.
+  // No local "dismissed" state needed — the hook owns the source of truth.
+  if (!updateAvailable || !newVersion) return null;
 
   return (
     <>
-      {/* Bottom snackbar — sits above the bottom nav bar (bottom-20 accounts for ~80px nav) */}
+      {/* Bottom snackbar — sits above the bottom nav bar (bottom-20 ≈ 80px) */}
       <div
         role="alert"
         aria-live="polite"
@@ -31,8 +34,9 @@ export default function UpdateBanner() {
           >
             View
           </button>
+          {/* dismissUpdate() writes to sessionStorage — banner stays gone after reload */}
           <button
-            onClick={() => setDismissed(true)}
+            onClick={dismissUpdate}
             className="text-sm text-gray-400 hover:text-white px-1"
             aria-label="Dismiss update notification"
           >

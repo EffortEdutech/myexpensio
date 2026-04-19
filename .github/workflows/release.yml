@@ -1,8 +1,6 @@
-name: Auto Release
+# FILE PATH: .github/workflows/release.yml
 
-# Triggers on every push to main.
-# The "skip release commit" step prevents infinite loops when the bot
-# pushes the version-bump commit back to main.
+name: Auto Release
 
 on:
   push:
@@ -17,30 +15,29 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. Checkout with full history (required by standard-version) ──────
+      # ── 1. Checkout with full history ─────────────────────────────────────
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── 2. Guard: skip if this push was already a release commit ──────────
-      #    standard-version commits with message "chore(release): x.y.z"
-      - name: Check for release commit (prevent infinite loop)
+      # ── 2. Guard: skip release and artifact commits to prevent infinite loop
+      - name: Check for release commit
         id: guard
         run: |
           COMMIT_MSG=$(git log -1 --pretty=%B)
           echo "Last commit: $COMMIT_MSG"
-          if echo "$COMMIT_MSG" | grep -qE "^chore\(release\)|^chore: release"; then
+          if echo "$COMMIT_MSG" | grep -qE "^chore\(release\)|^chore: release|^chore: update version"; then
             echo "skip=true" >> $GITHUB_OUTPUT
-            echo "⏭ Skipping — this is a release commit."
+            echo "⏭ Skipping — release or artifact commit."
           else
             echo "skip=false" >> $GITHUB_OUTPUT
           fi
 
       # ── 3. Setup pnpm ─────────────────────────────────────────────────────
-      #    No version pin — auto-reads from root package.json "packageManager"
-      #    field (pnpm@10.30.3). Avoids ERR_PNPM_BAD_PM_VERSION conflict.
+      #    No version pin — auto-reads from root package.json "packageManager".
+      #    Fixes: ERR_PNPM_BAD_PM_VERSION conflict with pnpm@10.x
       - name: Setup pnpm
         if: steps.guard.outputs.skip == 'false'
         uses: pnpm/action-setup@v4
@@ -53,12 +50,12 @@ jobs:
           node-version: 24
           cache: 'pnpm'
 
-      # ── 5. Install workspace dependencies from root ───────────────────────
+      # ── 5. Install dependencies ───────────────────────────────────────────
       - name: Install dependencies
         if: steps.guard.outputs.skip == 'false'
         run: pnpm install --no-frozen-lockfile
 
-      # ── 6. Configure git for the release commit ───────────────────────────
+      # ── 6. Configure git identity ─────────────────────────────────────────
       - name: Configure git identity
         if: steps.guard.outputs.skip == 'false'
         run: |
@@ -66,15 +63,30 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       # ── 7. Run standard-version from apps/user ────────────────────────────
-      #    Bumps package.json version, generates CHANGELOG.md,
-      #    runs postrelease (generate-version.js), creates git tag.
+      #    Bumps apps/user/package.json, generates CHANGELOG.md, creates
+      #    release commit + tag. The postrelease script writes version.json
+      #    to disk BUT it is not included in the release commit (see step 8).
       - name: Run release (user app)
         if: steps.guard.outputs.skip == 'false'
         working-directory: apps/user
         run: pnpm run release
 
-      # ── 8. Push the release commit + tag back to main ────────────────────
-      #    Vercel watches the repo and will auto-deploy on this push.
-      - name: Push release commit and tags
+      # ── 8. Commit version.json ────────────────────────────────────────────
+      #    postrelease runs AFTER standard-version's commit, so version.json
+      #    is written to disk but never committed. This step fixes that.
+      #    Without this, the PWA hook always fetches a stale version.json.
+      - name: Commit version.json
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          git add apps/user/public/version.json
+          git diff --staged --quiet \
+            && echo "version.json unchanged — nothing to commit" \
+            || git commit -m "chore: update version.json"
+
+      # ── 9. Push everything: release commit + version.json commit + tag ────
+      #    Vercel detects the push and deploys. next.config.js reads
+      #    package.json at build time so NEXT_PUBLIC_APP_VERSION is always
+      #    correct without needing .env.production.
+      - name: Push changes and tags
         if: steps.guard.outputs.skip == 'false'
         run: git push --follow-tags origin main
