@@ -9,18 +9,17 @@
 //   - If user is logged in but NOT ADMIN → stay on /login (show error)
 //   - This prevents the redirect loop where a non-admin user bounces
 //     between /login?error=unauthorized and /dashboard indefinitely.
-
 import { createServerClient } from '@supabase/ssr'
 import { type NextRequest, NextResponse } from 'next/server'
 
-const PUBLIC_PATHS = ['/login', '/auth']
+// Webhook routes MUST be public — Stripe cannot pass a session cookie.
+// Auth for webhooks is done via HMAC signature inside the route handler.
+const PUBLIC_PATHS = ['/login', '/auth', '/api/admin/webhooks', '/api/beta']
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p))
-
   let response = NextResponse.next({ request: { headers: request.headers } })
-
   // Build Supabase client that reads/writes cookies
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -36,10 +35,8 @@ export async function middleware(request: NextRequest) {
       },
     }
   )
-
   // Always refresh session
   const { data: { user } } = await supabase.auth.getUser()
-
   if (isPublic) {
     // On /login: only redirect to /dashboard if user is actually ADMIN.
     // If they are logged in but not ADMIN, leave them on /login so the
@@ -47,7 +44,6 @@ export async function middleware(request: NextRequest) {
     if (user && pathname === '/login') {
       const { data: profile } = await supabase
         .from('profiles').select('role').eq('id', user.id).single()
-
       if (profile?.role === 'ADMIN') {
         return NextResponse.redirect(new URL('/dashboard', request.url))
       }
@@ -55,25 +51,20 @@ export async function middleware(request: NextRequest) {
     }
     return response
   }
-
   // Protected routes — must be authenticated
   if (!user) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('next', pathname)
     return NextResponse.redirect(loginUrl)
   }
-
   // Must be ADMIN
   const { data: profile } = await supabase
     .from('profiles').select('role').eq('id', user.id).single()
-
   if (profile?.role !== 'ADMIN') {
     return NextResponse.redirect(new URL('/login?error=unauthorized', request.url))
   }
-
   return response
 }
-
 export const config = {
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
