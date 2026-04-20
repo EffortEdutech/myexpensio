@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.7](https://github.com/EffortEdutech/myexpensio/compare/v0.1.6...v0.1.7) (2026-04-20)
+
+
+### Bug Fixes
+
+* billing ([c0c7331](https://github.com/EffortEdutech/myexpensio/commit/c0c7331f814d17e953b22fe8f03fcdb19581ce84))
+
 ### [0.1.6](https://github.com/EffortEdutech/myexpensio/compare/v0.1.5...v0.1.6) (2026-04-19)
 
 ### [0.1.5](https://github.com/EffortEdutech/myexpensio/compare/v0.1.4...v0.1.5) (2026-04-19)
