@@ -278,7 +278,6 @@ export default function MileageCalculatorPage() {
   const [geocoding,       setGeocoding]     = useState<LocationTarget | null>(null)
   const [locatingTarget,  setLocatingTarget]= useState<LocationTarget | null>(null)
   const [limitInfo,       setLimitInfo]     = useState<LimitInfo | null>(null)
-  const [vehicleType,     setVehicleType]   = useState<'car' | 'motorcycle'>('car')
 
   useEffect(() => {
     fetch('/api/usage').then(r => r.json())
@@ -444,7 +443,6 @@ export default function MileageCalculatorPage() {
           origin_text:      origin.text,
           destination_text: destination.text,
           started_at:       startedAt,
-          vehicle_type:     vehicleType,
         }),
       })
       const cj = await cr.json()
@@ -620,37 +618,6 @@ export default function MileageCalculatorPage() {
           {geocoding === 'dest' && <p style={S.geocodingHint}>📍 Resolving address…</p>}
 
           {error && <div style={S.errorBox}>{error}</div>}
-
-          {/* Vehicle type selector */}
-          <div>
-            <label style={S.label}>🚗 Vehicle Type</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {(['car', 'motorcycle'] as const).map(v => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setVehicleType(v)}
-                  style={{
-                    flex: 1,
-                    padding: '10px 8px',
-                    borderRadius: 8,
-                    cursor: 'pointer',
-                    border: vehicleType === v ? '2px solid #2563eb' : '1.5px solid #e2e8f0',
-                    backgroundColor: vehicleType === v ? '#eff6ff' : '#fff',
-                    color: vehicleType === v ? '#1d4ed8' : '#374151',
-                    fontWeight: vehicleType === v ? 700 : 500,
-                    fontSize: 14,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                  }}
-                >
-                  {v === 'car' ? '🚗 Car' : '🏍 Motorcycle'}
-                </button>
-              ))}
-            </div>
-          </div>
 
           <button
             type="submit"

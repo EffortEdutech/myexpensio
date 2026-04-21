@@ -14,7 +14,6 @@ type TemplateOption = {
   effective_from: string | null
   currency: string
   mileage_rate_per_km: number
-  motorcycle_rate_per_km: number | null
   meal_rate_default: number
   meal_rate_per_session: number
   meal_rate_morning: number
@@ -127,7 +126,6 @@ export default function SettingsPage() {
   const [rateLabel, setRateLabel] = useState('Personal Rate')
   const [notes, setNotes] = useState('')
   const [mileage, setMileage] = useState('0.60')
-  const [motorcycle, setMotorcycle] = useState('0.30')
   const [morning, setMorning] = useState('20.00')
   const [noon, setNoon] = useState('30.00')
   const [evening, setEvening] = useState('30.00')
@@ -173,7 +171,6 @@ export default function SettingsPage() {
           setRateLabel(rate?.rate_label ?? 'Personal Rate')
           setNotes(rate?.notes ?? '')
           setMileage(f2(rate?.mileage_rate_per_km ?? 0.6))
-          setMotorcycle(f2(rate?.motorcycle_rate_per_km ?? 0.30))
           setMorning(f2(rate?.meal_rate_morning ?? 20))
           setNoon(f2(rate?.meal_rate_noon ?? 30))
           setEvening(f2(rate?.meal_rate_evening ?? 30))
@@ -216,7 +213,7 @@ export default function SettingsPage() {
   )
 
   const ratesPreview = useMemo(() => [
-    `🚗 Car MYR ${mileage || '0.00'}/km · 🏍 Moto MYR ${motorcycle || '0.00'}/km`,
+    `Mileage MYR ${mileage || '0.00'}/km`,
     `Meal avg MYR ${mealAverage}`,
     `Lodging MYR ${lodging || '0.00'}/night`,
     `Per diem MYR ${perdiem || '0.00'}/day`,
@@ -242,7 +239,6 @@ export default function SettingsPage() {
     setRateLabel(template.rate_label ?? `Copied from ${template.template_name ?? 'Template'}`)
     setNotes(template.notes ?? '')
     setMileage(f2(template.mileage_rate_per_km))
-    setMotorcycle(f2(template.motorcycle_rate_per_km ?? 0.30))
     setMorning(f2(template.meal_rate_morning))
     setNoon(f2(template.meal_rate_noon))
     setEvening(f2(template.meal_rate_evening))
@@ -277,7 +273,6 @@ export default function SettingsPage() {
         body: JSON.stringify({
           template_id: selectedTemplateId || undefined,
           mileage_rate_per_km: parseFloat(mileage) || 0.6,
-          motorcycle_rate_per_km: parseFloat(motorcycle) || null,
           meal_rate_default: parseFloat(mealAverage) || 0,
           meal_rate_per_session: parseFloat(mealAverage) || 0,
           meal_rate_morning: parseFloat(morning) || 0,
@@ -379,10 +374,8 @@ export default function SettingsPage() {
             </Field>
           </Card>
 
-          <Card icon="🚗" title="Mileage Rates" sub="Set both rates. Users choose Car or Motorcycle when creating each trip.">
-            <RateRow label="🚗 Car rate per km" suffix="/km" value={mileage} onChange={(v) => num(v, setMileage)} />
-            <RateRow label="🏍 Motorcycle rate per km" suffix="/km" value={motorcycle} onChange={(v) => num(v, setMotorcycle)} />
-            <div style={S.info}>Car and motorcycle rates are applied automatically based on vehicle type selected per trip.</div>
+          <Card icon="🚗" title="Mileage Rate" sub="Used for mileage claim item calculation.">
+            <RateRow label="Rate per km" suffix="/km" value={mileage} onChange={(v) => num(v, setMileage)} />
           </Card>
 
           <Card icon="🍽️" title="Meal Rates" sub="Personal fixed-rate values when no receipt is used.">

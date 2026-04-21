@@ -78,7 +78,6 @@ export default function StartTripPage() {
   const [statusMsg,      setStatusMsg]      = useState('')
   const [isOnline,       setIsOnline]       = useState(true)
   const [limitInfo,      setLimitInfo]      = useState<TripLimitInfo | null>(null)
-  const [vehicleType,    setVehicleType]    = useState<'car' | 'motorcycle'>('car')
 
   const pointsQueue = useRef<GpsPoint[]>([])
   const seqRef      = useRef(0)
@@ -205,7 +204,7 @@ export default function StartTripPage() {
     const res = await fetch('/api/trips', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ calculation_mode: 'GPS_TRACKING', vehicle_type: vehicleType }),
+      body:    JSON.stringify({ calculation_mode: 'GPS_TRACKING' }),
     })
 
     if (res.status === 429) {
@@ -341,33 +340,6 @@ export default function StartTripPage() {
             <p style={S.subMsg}>Signal is weak. You can wait for better signal or proceed anyway.</p>
           )}
           <p style={S.subMsg}>Trip recording starts only after you tap Start Trip.</p>
-          {/* Vehicle type selector */}
-          <div style={{ display: 'flex', gap: 8, width: '100%', maxWidth: 320 }}>
-            {(['car', 'motorcycle'] as const).map(v => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setVehicleType(v)}
-                style={{
-                  flex: 1,
-                  padding: '10px 8px',
-                  borderRadius: 8,
-                  cursor: 'pointer',
-                  border: vehicleType === v ? '2px solid #2563eb' : '1.5px solid #e2e8f0',
-                  backgroundColor: vehicleType === v ? '#eff6ff' : '#fff',
-                  color: vehicleType === v ? '#1d4ed8' : '#374151',
-                  fontWeight: vehicleType === v ? 700 : 500,
-                  fontSize: 14,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                }}
-              >
-                {v === 'car' ? '🚗 Car' : '🏍 Motorcycle'}
-              </button>
-            ))}
-          </div>
           <div style={S.actions}>
             <button onClick={confirmStart} style={S.btnStart}>▶ Start Trip</button>
             <button onClick={cancelBeforeStart} style={S.btnCancel}>Cancel</button>
