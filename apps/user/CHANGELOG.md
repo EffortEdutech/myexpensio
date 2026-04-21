@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.9](https://github.com/EffortEdutech/myexpensio/compare/v0.1.8...v0.1.9) (2026-04-21)
+
+
+### Features
+
+* rate for car & bike ([cbe3dc7](https://github.com/EffortEdutech/myexpensio/commit/cbe3dc70a945d2b477e3d0fa7bebdd376006c2ef))
+
 ### [0.1.8](https://github.com/EffortEdutech/myexpensio/compare/v0.1.7...v0.1.8) (2026-04-21)
 
 ### [0.1.7](https://github.com/EffortEdutech/myexpensio/compare/v0.1.6...v0.1.7) (2026-04-20)
