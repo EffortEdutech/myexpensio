@@ -1,4 +1,13 @@
 // apps/user/lib/entitlements.ts
+//
+// Resolves org entitlements for usage gating.
+//
+// CHANGE LOG:
+//   2026-04-21 — Removed platform_settings (dropped in R1).
+//                Added platform_config read for admin-configurable Free tier limits.
+//                PRO tier remains always unlimited (no DB read needed).
+//                admin_settings org-override system (BETA_UNLIMITED/CUSTOM) preserved.
+
 import { createClient } from '@/lib/supabase/server'
 
 export type LimitValue = number | null
@@ -15,11 +24,24 @@ export type ResolvedEntitlements = {
   override_notes: string | null
 }
 
-const DEFAULTS = {
-  FREE: { routes_per_month: 2 as LimitValue, trips_per_month: null as LimitValue, exports_per_month: null as LimitValue, label: 'Free' },
-  PRO:  { routes_per_month: null as LimitValue, trips_per_month: null as LimitValue, exports_per_month: null as LimitValue, label: 'Pro Unlimited' },
+// ── Hardcoded fallback defaults ───────────────────────────────────────────────
+// Used when platform_config row is missing or columns are null.
+// PRO is always unlimited — not read from DB.
+const FALLBACK_FREE = {
+  routes_per_month:  2 as LimitValue,
+  trips_per_month:   null as LimitValue,
+  exports_per_month: null as LimitValue,
+  label: 'Free',
 }
 
+const PRO_LIMITS = {
+  routes_per_month:  null as LimitValue,
+  trips_per_month:   null as LimitValue,
+  exports_per_month: null as LimitValue,
+  label: 'Pro Unlimited',
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function toNullableInt(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null
   const n = Number(value)
@@ -37,56 +59,39 @@ function isExpired(iso: string | null): boolean {
   return Number.isFinite(t) && t < Date.now()
 }
 
-function parsePlatformSettings(raw: unknown) {
-  const root = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
-  const plans = root.plans && typeof root.plans === 'object' ? root.plans as Record<string, unknown> : {}
-  const free = plans.FREE && typeof plans.FREE === 'object' ? plans.FREE as Record<string, unknown> : {}
-  const pro = plans.PRO && typeof plans.PRO === 'object' ? plans.PRO as Record<string, unknown> : {}
-
-  return {
-    FREE: {
-      routes_per_month: free.routes_per_month === null ? null : (toNullableInt(free.routes_per_month) ?? DEFAULTS.FREE.routes_per_month),
-      trips_per_month: free.trips_per_month === null ? null : (toNullableInt(free.trips_per_month) ?? DEFAULTS.FREE.trips_per_month),
-      exports_per_month: free.exports_per_month === null ? null : (toNullableInt(free.exports_per_month) ?? DEFAULTS.FREE.exports_per_month),
-      label: toNullableString(free.label) ?? DEFAULTS.FREE.label,
-    },
-    PRO: {
-      routes_per_month: pro.routes_per_month === null ? null : (toNullableInt(pro.routes_per_month) ?? DEFAULTS.PRO.routes_per_month),
-      trips_per_month: pro.trips_per_month === null ? null : (toNullableInt(pro.trips_per_month) ?? DEFAULTS.PRO.trips_per_month),
-      exports_per_month: pro.exports_per_month === null ? null : (toNullableInt(pro.exports_per_month) ?? DEFAULTS.PRO.exports_per_month),
-      label: toNullableString(pro.label) ?? DEFAULTS.PRO.label,
-    },
-  }
-}
-
+// ── Org override parser (reads from admin_settings.settings.limits) ───────────
 function parseOrgOverride(raw: unknown) {
   const root = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
-  const limits = root.limits && typeof root.limits === 'object' ? root.limits as Record<string, unknown> : {}
+  const limits = root.limits && typeof root.limits === 'object'
+    ? root.limits as Record<string, unknown>
+    : {}
+
   const presetRaw = String(limits.preset ?? 'DEFAULT').trim().toUpperCase()
-  const preset = presetRaw === 'BETA_UNLIMITED' ? 'BETA_UNLIMITED' : presetRaw === 'CUSTOM' ? 'CUSTOM' : 'DEFAULT'
+  const preset =
+    presetRaw === 'BETA_UNLIMITED' ? 'BETA_UNLIMITED'
+    : presetRaw === 'CUSTOM' ? 'CUSTOM'
+    : 'DEFAULT'
 
   return {
     preset,
-    routes_per_month: limits.routes_per_month === null ? null : toNullableInt(limits.routes_per_month),
-    trips_per_month: limits.trips_per_month === null ? null : toNullableInt(limits.trips_per_month),
+    routes_per_month:  limits.routes_per_month  === null ? null : toNullableInt(limits.routes_per_month),
+    trips_per_month:   limits.trips_per_month   === null ? null : toNullableInt(limits.trips_per_month),
     exports_per_month: limits.exports_per_month === null ? null : toNullableInt(limits.exports_per_month),
-    label: toNullableString(limits.label),
+    label:      toNullableString(limits.label),
     expires_at: toNullableString(limits.expires_at),
-    notes: toNullableString(limits.notes),
+    notes:      toNullableString(limits.notes),
   }
 }
 
+// ── Main resolver ─────────────────────────────────────────────────────────────
 export async function loadOrgEntitlements(params: {
   supabase: Awaited<ReturnType<typeof createClient>>
   orgId: string
   tier: 'FREE' | 'PRO'
   isAdmin?: boolean
 }): Promise<ResolvedEntitlements> {
-  const [platformRes, adminRes] = await Promise.all([
-    params.supabase.from('platform_settings').select('settings').eq('id', true).maybeSingle(),
-    params.supabase.from('admin_settings').select('settings').eq('org_id', params.orgId).maybeSingle(),
-  ])
 
+  // Platform-level admins (SUPER_ADMIN / SUPPORT) bypass all limits.
   if (params.isAdmin) {
     return {
       tier: params.tier,
@@ -101,13 +106,56 @@ export async function loadOrgEntitlements(params: {
     }
   }
 
-  const platform = parsePlatformSettings(platformRes.data?.settings ?? null)
-  const override = parseOrgOverride(adminRes.data?.settings ?? null)
-  const base = platform[params.tier]
+  // PRO tier is always unlimited — no DB read needed.
+  if (params.tier === 'PRO') {
+    return {
+      tier: 'PRO',
+      routes_limit: PRO_LIMITS.routes_per_month,
+      trips_limit:  PRO_LIMITS.trips_per_month,
+      exports_limit: PRO_LIMITS.exports_per_month,
+      limit_label: PRO_LIMITS.label,
+      limit_preset: 'DEFAULT',
+      limit_source: 'PLAN_DEFAULT',
+      override_expires_at: null,
+      override_notes: null,
+    }
+  }
 
+  // FREE tier — load platform_config + org override in parallel.
+  const [platformRes, adminRes] = await Promise.all([
+    params.supabase
+      .from('platform_config')
+      .select('free_routes_per_month, free_trips_per_month, free_exports_per_month')
+      .eq('id', true)
+      .maybeSingle(),
+    params.supabase
+      .from('admin_settings')
+      .select('settings')
+      .eq('org_id', params.orgId)
+      .maybeSingle(),
+  ])
+
+  // Build effective FREE baseline from platform_config (admin-editable).
+  // Falls back to hardcoded FALLBACK_FREE if the row/column is null.
+  const base = {
+    routes_per_month: platformRes.data?.free_routes_per_month !== undefined
+      ? platformRes.data.free_routes_per_month   // null is valid (unlimited)
+      : FALLBACK_FREE.routes_per_month,
+    trips_per_month: platformRes.data?.free_trips_per_month !== undefined
+      ? platformRes.data.free_trips_per_month
+      : FALLBACK_FREE.trips_per_month,
+    exports_per_month: platformRes.data?.free_exports_per_month !== undefined
+      ? platformRes.data.free_exports_per_month
+      : FALLBACK_FREE.exports_per_month,
+    label: FALLBACK_FREE.label,
+  }
+
+  const override = parseOrgOverride(adminRes.data?.settings ?? null)
+
+  // BETA_UNLIMITED — unlimited access for beta orgs.
   if (override.preset === 'BETA_UNLIMITED' && !isExpired(override.expires_at)) {
     return {
-      tier: params.tier,
+      tier: 'FREE',
       routes_limit: null,
       trips_limit: null,
       exports_limit: null,
@@ -119,11 +167,12 @@ export async function loadOrgEntitlements(params: {
     }
   }
 
+  // CUSTOM — specific limits set by admin for this org.
   if (override.preset === 'CUSTOM' && !isExpired(override.expires_at)) {
     return {
-      tier: params.tier,
+      tier: 'FREE',
       routes_limit: override.routes_per_month,
-      trips_limit: override.trips_per_month,
+      trips_limit:  override.trips_per_month,
       exports_limit: override.exports_per_month,
       limit_label: override.label ?? 'Custom Policy',
       limit_preset: 'CUSTOM',
@@ -133,10 +182,11 @@ export async function loadOrgEntitlements(params: {
     }
   }
 
+  // Default: use platform_config Free baseline.
   return {
-    tier: params.tier,
+    tier: 'FREE',
     routes_limit: base.routes_per_month,
-    trips_limit: base.trips_per_month,
+    trips_limit:  base.trips_per_month,
     exports_limit: base.exports_per_month,
     limit_label: base.label,
     limit_preset: 'DEFAULT',

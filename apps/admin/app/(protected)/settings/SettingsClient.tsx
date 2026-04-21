@@ -1,7 +1,9 @@
-
 'use client'
+/**
+* apps/admin/app/(protected)/settings/
+*/
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 type Org = {
   id: string
@@ -18,11 +20,13 @@ type Org = {
 type Sub = { org_id: string; tier: 'FREE' | 'PRO'; period_start: string | null; period_end: string | null; updated_at: string }
 type OrgSettingRow = { org_id: string; settings: unknown; updated_at: string }
 
-type PlanForm = {
-  routes_per_month: string
-  trips_per_month: string
-  exports_per_month: string
-  label: string
+// Hardcoded PRO limits (always unlimited — not editable)
+const PRO_DEFAULTS = { routes_per_month: null as number | null, trips_per_month: null as number | null, exports_per_month: null as number | null }
+
+type PlatformConfig = {
+  free_routes_per_month: number | null
+  free_trips_per_month: number | null
+  free_exports_per_month: number | null
 }
 
 type OrgPolicyForm = {
@@ -54,25 +58,6 @@ function toInput(value: number | null | undefined) {
 function trimOrNull(value: string) {
   const v = value.trim()
   return v ? v : null
-}
-
-function parsePlan(raw: unknown, fallbackLabel: string) {
-  const obj = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
-  return {
-    routes_per_month: typeof obj.routes_per_month === 'number' ? obj.routes_per_month : null,
-    trips_per_month: typeof obj.trips_per_month === 'number' ? obj.trips_per_month : null,
-    exports_per_month: typeof obj.exports_per_month === 'number' ? obj.exports_per_month : null,
-    label: typeof obj.label === 'string' && obj.label.trim() ? obj.label : fallbackLabel,
-  }
-}
-
-function parsePlatformSettings(raw: unknown) {
-  const obj = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
-  const plans = obj.plans && typeof obj.plans === 'object' ? obj.plans as Record<string, unknown> : {}
-  return {
-    FREE: parsePlan(plans.FREE, 'Free'),
-    PRO: parsePlan(plans.PRO, 'Pro Unlimited'),
-  }
 }
 
 function parseOrgLimits(raw: unknown) {
@@ -117,11 +102,13 @@ function buildOrgInitialState(orgs: Org[], subscriptions: Sub[], rows: OrgSettin
   ) as Record<string, OrgPolicyForm>
 }
 
-function effectiveRouteText(state: OrgPolicyForm, plans: { FREE: ReturnType<typeof parsePlan>; PRO: ReturnType<typeof parsePlan> }) {
-  if (state.preset === 'BETA_UNLIMITED') return state.label || 'Beta Unlimited'
-  if (state.preset === 'CUSTOM') return state.routes_per_month ? `${state.routes_per_month} / month` : 'Unlimited'
-  const plan = plans[state.tier]
-  return plan.routes_per_month == null ? `${plan.label} — Unlimited` : `${plan.label} — ${plan.routes_per_month} / month`
+// effectiveRouteText now uses platform_config state (fetched from API)
+function effectiveRouteText(form: OrgPolicyForm, freeConfig: PlatformConfig) {
+  if (form.preset === 'BETA_UNLIMITED') return form.label || 'Beta Unlimited'
+  if (form.preset === 'CUSTOM') return form.routes_per_month ? `${form.routes_per_month} / month` : 'Unlimited'
+  if (form.tier === 'PRO') return 'Pro Unlimited'
+  const r = freeConfig.free_routes_per_month
+  return r == null ? 'Free — Unlimited' : `Free — ${r} / month`
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -134,12 +121,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 export default function SettingsClient({
-  orgs, subscriptions, orgSettings, platformSettings,
+  orgs, subscriptions, orgSettings,
 }: {
   orgs: Org[]
   subscriptions: Sub[]
   orgSettings: OrgSettingRow[]
-  platformSettings: unknown
 }) {
   const [toast, setToast] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -147,22 +133,60 @@ export default function SettingsClient({
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
 
-  const platformParsed = useMemo(() => parsePlatformSettings(platformSettings), [platformSettings])
-
-  const [plans, setPlans] = useState<{ FREE: PlanForm; PRO: PlanForm }>({
-    FREE: {
-      routes_per_month: toInput(platformParsed.FREE.routes_per_month),
-      trips_per_month: toInput(platformParsed.FREE.trips_per_month),
-      exports_per_month: toInput(platformParsed.FREE.exports_per_month),
-      label: platformParsed.FREE.label,
-    },
-    PRO: {
-      routes_per_month: toInput(platformParsed.PRO.routes_per_month),
-      trips_per_month: toInput(platformParsed.PRO.trips_per_month),
-      exports_per_month: toInput(platformParsed.PRO.exports_per_month),
-      label: platformParsed.PRO.label,
-    },
+  // ── Platform config state (fetched from /api/admin/platform-config) ─────────
+  const [platformConfig, setPlatformConfig] = useState<PlatformConfig>({
+    free_routes_per_month: 2,
+    free_trips_per_month: null,
+    free_exports_per_month: null,
   })
+  const [freeForm, setFreeForm] = useState({
+    routes: '2',
+    trips: '',
+    exports: '',
+  })
+  const [configLoaded, setConfigLoaded] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/admin/platform-config')
+      .then(r => r.json())
+      .then(json => {
+        if (json.config) {
+          const c: PlatformConfig = json.config
+          setPlatformConfig(c)
+          setFreeForm({
+            routes: toInput(c.free_routes_per_month),
+            trips: toInput(c.free_trips_per_month),
+            exports: toInput(c.free_exports_per_month),
+          })
+        }
+      })
+      .catch(() => {/* fail silently — defaults stay */})
+      .finally(() => setConfigLoaded(true))
+  }, [])
+
+  async function saveFreeLimits() {
+    setBusy('platform')
+    try {
+      const payload = {
+        free_routes_per_month: freeForm.routes.trim() === '' ? null : Number(freeForm.routes),
+        free_trips_per_month: freeForm.trips.trim() === '' ? null : Number(freeForm.trips),
+        free_exports_per_month: freeForm.exports.trim() === '' ? null : Number(freeForm.exports),
+      }
+      const res = await fetch('/api/admin/platform-config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed')
+      setPlatformConfig(json.config)
+      toast_('ok', 'Free tier limits updated')
+    } catch (e: unknown) {
+      toast_('err', e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setBusy(null)
+    }
+  }
 
   const [orgForms, setOrgForms] = useState<Record<string, OrgPolicyForm>>(buildOrgInitialState(orgs, subscriptions, orgSettings))
 
@@ -188,42 +212,6 @@ export default function SettingsClient({
       toast_('err', e instanceof Error ? e.message : 'Failed')
     } finally {
       setCreating(false)
-    }
-  }
-
-  async function savePlatformDefaults() {
-    setBusy('platform')
-    try {
-      const payload = {
-        scope: 'platform',
-        plans: {
-          FREE: {
-            routes_per_month: trimOrNull(plans.FREE.routes_per_month) ? Number(plans.FREE.routes_per_month) : null,
-            trips_per_month: trimOrNull(plans.FREE.trips_per_month) ? Number(plans.FREE.trips_per_month) : null,
-            exports_per_month: trimOrNull(plans.FREE.exports_per_month) ? Number(plans.FREE.exports_per_month) : null,
-            label: plans.FREE.label,
-          },
-          PRO: {
-            routes_per_month: trimOrNull(plans.PRO.routes_per_month) ? Number(plans.PRO.routes_per_month) : null,
-            trips_per_month: trimOrNull(plans.PRO.trips_per_month) ? Number(plans.PRO.trips_per_month) : null,
-            exports_per_month: trimOrNull(plans.PRO.exports_per_month) ? Number(plans.PRO.exports_per_month) : null,
-            label: plans.PRO.label,
-          },
-        },
-      }
-
-      const res = await fetch('/api/admin/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error?.message ?? 'Failed')
-      toast_('ok', 'Platform defaults updated')
-    } catch (e: unknown) {
-      toast_('err', e instanceof Error ? e.message : 'Failed')
-    } finally {
-      setBusy(null)
     }
   }
 
@@ -318,37 +306,69 @@ export default function SettingsClient({
         </div>
       )}
 
+      {/* ── Platform Free Tier Limits ─────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
         <div>
-          <h2 className="text-sm font-semibold text-gray-900">Platform Default Plans</h2>
-          <p className="text-xs text-gray-500 mt-1">These defaults apply when an organisation uses preset = DEFAULT.</p>
+          <h2 className="text-sm font-semibold text-gray-900">Free Tier Limits</h2>
+          <p className="text-xs text-gray-500 mt-1">
+            Default limits for all FREE organisations using the DEFAULT preset. Leave blank for unlimited. PRO tier is always unlimited.
+          </p>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-4">
-          {(['FREE', 'PRO'] as const).map(tier => (
-            <div key={tier} className="border border-gray-200 rounded-xl p-4 space-y-3">
-              <div className="text-sm font-semibold text-gray-900">{tier} default</div>
-              <div className="grid grid-cols-3 gap-3">
-                <Field label="Routes / month"><input value={plans[tier].routes_per_month} onChange={e => setPlans(prev => ({ ...prev, [tier]: { ...prev[tier], routes_per_month: e.target.value } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></Field>
-                <Field label="Trips / month"><input value={plans[tier].trips_per_month} onChange={e => setPlans(prev => ({ ...prev, [tier]: { ...prev[tier], trips_per_month: e.target.value } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></Field>
-                <Field label="Exports / month"><input value={plans[tier].exports_per_month} onChange={e => setPlans(prev => ({ ...prev, [tier]: { ...prev[tier], exports_per_month: e.target.value } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></Field>
-              </div>
-              <Field label="Label"><input value={plans[tier].label} onChange={e => setPlans(prev => ({ ...prev, [tier]: { ...prev[tier], label: e.target.value } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></Field>
+        {!configLoaded ? (
+          <div className="text-xs text-gray-400">Loading…</div>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-4">
+              <Field label="Routes / month">
+                <input
+                  type="number" min="0" step="1"
+                  placeholder="blank = unlimited"
+                  value={freeForm.routes}
+                  onChange={e => setFreeForm(f => ({ ...f, routes: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </Field>
+              <Field label="Trips / month">
+                <input
+                  type="number" min="0" step="1"
+                  placeholder="blank = unlimited"
+                  value={freeForm.trips}
+                  onChange={e => setFreeForm(f => ({ ...f, trips: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </Field>
+              <Field label="Exports / month">
+                <input
+                  type="number" min="0" step="1"
+                  placeholder="blank = unlimited"
+                  value={freeForm.exports}
+                  onChange={e => setFreeForm(f => ({ ...f, exports: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </Field>
             </div>
-          ))}
-        </div>
-
-        <div className="flex justify-end">
-          <button onClick={savePlatformDefaults} disabled={busy === 'platform'} className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50">
-            {busy === 'platform' ? 'Saving…' : 'Save Platform Defaults'}
-          </button>
-        </div>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-400">
+                Current: Routes {platformConfig.free_routes_per_month ?? '∞'} · Trips {platformConfig.free_trips_per_month ?? '∞'} · Exports {platformConfig.free_exports_per_month ?? '∞'}
+              </p>
+              <button
+                onClick={saveFreeLimits}
+                disabled={busy === 'platform'}
+                className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-gray-700"
+              >
+                {busy === 'platform' ? 'Saving…' : 'Save Free Tier Limits'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
+      {/* ── Per-org policies ──────────────────────────────────────────────────── */}
       <div className="space-y-4">
         {orgs.map(org => {
           const form = orgForms[org.id]
-          const effective = effectiveRouteText(form, { FREE: platformParsed.FREE, PRO: platformParsed.PRO })
+          const effective = effectiveRouteText(form, platformConfig)
 
           return (
             <div key={org.id} className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">

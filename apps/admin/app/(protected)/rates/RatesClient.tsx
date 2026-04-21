@@ -1,4 +1,3 @@
-
 'use client'
 
 import { useMemo, useState } from 'react'
@@ -9,6 +8,7 @@ type Rate = {
   effective_from: string
   currency: string
   mileage_rate_per_km: number
+  motorcycle_rate_per_km: number | null    // ← NEW
   meal_rate_default: number | null
   meal_rate_per_session: number | null
   meal_rate_full_day: number | null
@@ -27,6 +27,7 @@ const EMPTY = {
   template_name: '',
   effective_from: new Date().toISOString().slice(0, 10),
   mileage_rate_per_km: 0.60,
+  motorcycle_rate_per_km: 0.30,            // ← NEW
   perdiem_rate_myr: 150,
   meal_rate_morning: 20,
   meal_rate_noon: 30,
@@ -102,6 +103,7 @@ export default function RatesClient({
       template_name: rate.template_name ?? '',
       effective_from: rate.effective_from,
       mileage_rate_per_km: Number(rate.mileage_rate_per_km ?? 0),
+      motorcycle_rate_per_km: Number(rate.motorcycle_rate_per_km ?? 0),   // ← NEW
       perdiem_rate_myr: Number(rate.perdiem_rate_myr ?? 0),
       meal_rate_morning: Number(rate.meal_rate_morning ?? 0),
       meal_rate_noon: Number(rate.meal_rate_noon ?? 0),
@@ -191,7 +193,13 @@ export default function RatesClient({
               <label className="block text-sm font-medium text-gray-700 mb-1">Effective From</label>
               <input type="date" value={form.effective_from} onChange={(e) => setForm((f) => ({ ...f, effective_from: e.target.value }))} required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
-            {field('mileage_rate_per_km', 'Mileage Rate (MYR/km)')}
+
+            {/* ── Mileage rates ─────────────────────────────────────── */}
+            <div className="grid grid-cols-2 gap-3">
+              {field('mileage_rate_per_km', '🚗 Car Rate (MYR/km)')}
+              {field('motorcycle_rate_per_km', '🏍 Motorcycle Rate (MYR/km)')}
+            </div>
+
             {field('perdiem_rate_myr', 'Per Diem Rate (MYR/day)')}
             <div className="grid grid-cols-2 gap-3">
               {field('meal_rate_morning', 'Morning')}
@@ -225,7 +233,8 @@ export default function RatesClient({
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Template</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Effective</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Mileage</th>
+                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">🚗 Car/km</th>
+                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">🏍 Moto/km</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Per Diem</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Meal (Full)</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Lodging</th>
@@ -240,7 +249,8 @@ export default function RatesClient({
                   <tr key={r.id} className="hover:bg-gray-50">
                     <td className="px-5 py-3 font-medium text-gray-900">{r.template_name ?? '—'}</td>
                     <td className="px-4 py-3 text-gray-700">{fmtDate(r.effective_from)}</td>
-                    <td className="px-4 py-3 text-right text-gray-700">{fmtMoney(r.mileage_rate_per_km)}/km</td>
+                    <td className="px-4 py-3 text-right text-gray-700">{fmtMoney(r.mileage_rate_per_km)}</td>
+                    <td className="px-4 py-3 text-right text-gray-700">{r.motorcycle_rate_per_km != null ? fmtMoney(r.motorcycle_rate_per_km) : <span className="text-gray-300">—</span>}</td>
                     <td className="px-4 py-3 text-right text-gray-700">{fmtMoney(r.perdiem_rate_myr)}/day</td>
                     <td className="px-4 py-3 text-right text-gray-700">{fmtMoney(r.meal_rate_full_day)}</td>
                     <td className="px-4 py-3 text-right text-gray-700">{fmtMoney(r.lodging_rate_default)}</td>

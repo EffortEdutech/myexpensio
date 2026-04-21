@@ -13,7 +13,7 @@ export type Profile = {
   id: string
   email: string | null
   display_name: string | null
-  role: 'USER' | 'ADMIN'
+  role: 'USER' | 'SUPPORT' | 'SUPER_ADMIN'
   created_at: string
 }
 

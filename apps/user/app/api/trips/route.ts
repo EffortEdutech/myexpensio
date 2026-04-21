@@ -14,6 +14,10 @@ function err(code: string, message: string, status: number, details?: object) {
   return NextResponse.json({ error: { code, message, ...(details ? { details } : {}) } }, { status })
 }
 
+function normalizeVehicleType(raw: unknown): 'car' | 'motorcycle' {
+  return raw === 'motorcycle' ? 'motorcycle' : 'car'
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -34,6 +38,7 @@ export async function GET(request: NextRequest) {
       started_at, ended_at, origin_text, destination_text,
       gps_distance_m, selected_route_distance_m, odometer_distance_m,
       odometer_mode, final_distance_m, distance_source,
+      transport_type, vehicle_type,
       notes, created_at, updated_at
     `)
     .eq('org_id', org.org_id)
@@ -67,7 +72,7 @@ export async function POST(request: NextRequest) {
     .eq('id', user.id)
     .single()
 
-  const isAdmin = callerProfile?.role === 'ADMIN'
+  const isAdmin = ['SUPER_ADMIN', 'SUPPORT'].includes(callerProfile?.role ?? '')
   const { entitlements } = await loadTierAndEntitlements(supabase, org.org_id, isAdmin)
   const tripsLimit = limitForCounter(entitlements, 'trips_created')
   const periodKey = periodKeyForCurrentMonth()
@@ -76,7 +81,6 @@ export async function POST(request: NextRequest) {
 
   if (tripsLimit !== null && currentTripsUsed >= tripsLimit) {
     const periodEnd = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().slice(0, 10)
-
     return err(
       'LIMIT_REACHED',
       `You've reached your trip creation limit${entitlements.limit_label ? ` (${entitlements.limit_label})` : ''}.`,
@@ -101,6 +105,8 @@ export async function POST(request: NextRequest) {
     odometer_start_url?: string | null
     odometer_end_url?: string | null
     notes?: string
+    transport_type?: string
+    vehicle_type?: string   // 'car' | 'motorcycle'
   }
 
   const {
@@ -113,6 +119,8 @@ export async function POST(request: NextRequest) {
     odometer_start_url,
     odometer_end_url,
     notes,
+    transport_type,
+    vehicle_type,
   } = body
 
   if (!calculation_mode || !['GPS_TRACKING', 'SELECTED_ROUTE'].includes(calculation_mode)) {
@@ -132,6 +140,8 @@ export async function POST(request: NextRequest) {
   } else {
     resolvedStartedAt = new Date().toISOString()
   }
+
+  const resolvedVehicleType = normalizeVehicleType(vehicle_type)
 
   const isOdometerTrip =
     odometer_mode === 'OVERRIDE' &&
@@ -172,6 +182,8 @@ export async function POST(request: NextRequest) {
         odometer_end_url: odometer_end_url ?? null,
         final_distance_m,
         distance_source,
+        transport_type: transport_type ?? 'personal_car',
+        vehicle_type: resolvedVehicleType,
         notes: notes?.trim() ?? null,
       })
       .select()
@@ -202,6 +214,8 @@ export async function POST(request: NextRequest) {
       origin_text: origin_text?.trim() ?? null,
       destination_text: destination_text?.trim() ?? null,
       odometer_mode: 'NONE',
+      transport_type: transport_type ?? 'personal_car',
+      vehicle_type: resolvedVehicleType,
     })
     .select()
     .single()

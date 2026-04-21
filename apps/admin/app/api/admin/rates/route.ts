@@ -11,6 +11,12 @@ function num(value: unknown, fallback = 0) {
   return Number.isFinite(n) ? n : fallback
 }
 
+function numNullable(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
 function avgMeal(morning: number, noon: number, evening: number) {
   return Math.round((((morning + noon + evening) / 3) * 100)) / 100
 }
@@ -28,6 +34,7 @@ async function selectRate(db: ReturnType<typeof createServiceRoleClient>, id: st
       effective_from,
       currency,
       mileage_rate_per_km,
+      motorcycle_rate_per_km,
       meal_rate_default,
       meal_rate_per_session,
       meal_rate_full_day,
@@ -57,6 +64,7 @@ export async function GET() {
       effective_from,
       currency,
       mileage_rate_per_km,
+      motorcycle_rate_per_km,
       meal_rate_default,
       meal_rate_per_session,
       meal_rate_full_day,
@@ -91,6 +99,7 @@ export async function POST(req: Request) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(effective_from)) return err('VALIDATION_ERROR', 'effective_from must be YYYY-MM-DD', 400)
 
   const mileage = num(body.mileage_rate_per_km, NaN)
+  const motorcycle = numNullable(body.motorcycle_rate_per_km)   // ← NEW (nullable)
   const morning = num(body.meal_rate_morning, 20)
   const noon = num(body.meal_rate_noon, 30)
   const evening = num(body.meal_rate_evening, 30)
@@ -101,6 +110,7 @@ export async function POST(req: Request) {
   const mealPerSession = num(body.meal_rate_per_session, mealDefault)
 
   if (!Number.isFinite(mileage) || mileage <= 0) return err('VALIDATION_ERROR', 'mileage_rate_per_km must be > 0', 400)
+  if (motorcycle !== null && motorcycle < 0) return err('VALIDATION_ERROR', 'motorcycle_rate_per_km cannot be negative', 400)
   if ([morning, noon, evening, fullDay, lodging, perdiem, mealDefault, mealPerSession].some((v) => v < 0)) {
     return err('VALIDATION_ERROR', 'Rates cannot be negative', 400)
   }
@@ -124,6 +134,7 @@ export async function POST(req: Request) {
       effective_from,
       currency: 'MYR',
       mileage_rate_per_km: mileage,
+      motorcycle_rate_per_km: motorcycle,   // ← NEW
       meal_rate_default: mealDefault,
       meal_rate_per_session: mealPerSession,
       meal_rate_morning: morning,
@@ -158,6 +169,7 @@ export async function PATCH(req: Request) {
   if (!effective_from || !/^\d{4}-\d{2}-\d{2}$/.test(effective_from)) return err('VALIDATION_ERROR', 'effective_from must be YYYY-MM-DD', 400)
 
   const mileage = num(body.mileage_rate_per_km, NaN)
+  const motorcycle = numNullable(body.motorcycle_rate_per_km)   // ← NEW
   const morning = num(body.meal_rate_morning, 20)
   const noon = num(body.meal_rate_noon, 30)
   const evening = num(body.meal_rate_evening, 30)
@@ -168,6 +180,7 @@ export async function PATCH(req: Request) {
   const mealPerSession = num(body.meal_rate_per_session, mealDefault)
 
   if (!Number.isFinite(mileage) || mileage <= 0) return err('VALIDATION_ERROR', 'mileage_rate_per_km must be > 0', 400)
+  if (motorcycle !== null && motorcycle < 0) return err('VALIDATION_ERROR', 'motorcycle_rate_per_km cannot be negative', 400)
   if ([morning, noon, evening, fullDay, lodging, perdiem, mealDefault, mealPerSession].some((v) => v < 0)) {
     return err('VALIDATION_ERROR', 'Rates cannot be negative', 400)
   }
@@ -190,6 +203,7 @@ export async function PATCH(req: Request) {
       template_name,
       effective_from,
       mileage_rate_per_km: mileage,
+      motorcycle_rate_per_km: motorcycle,   // ← NEW
       meal_rate_default: mealDefault,
       meal_rate_per_session: mealPerSession,
       meal_rate_morning: morning,

@@ -1,7 +1,7 @@
 /**
  * apps/user/app/api/usage/current/route.ts
  *
- * Returns usage counters for the current org's active billing period.
+ * Returns usage counters + entitlements for the current org.
  * Used by the settings/billing page to display usage meters.
  *
  * GET /api/usage/current
@@ -12,8 +12,8 @@
  *     routes_calls:    number
  *     trips_created:   number
  *     exports_created: number
- *     period_start:    string   // ISO date e.g. "2026-04-01"
- *   } | null,
+ *     period_start:    string
+ *   },
  *   entitlements: {
  *     routeCalculationsPerMonth: number | null   // null = unlimited
  *     tripsPerMonth:             number | null
@@ -21,46 +21,38 @@
  *   }
  * }
  *
- * `counters` is null when no usage row exists yet for the current period
- * (org was created this period but has not performed any tracked action).
- *
- * `entitlements` is derived from subscription_status.plan_code →
- * billing_plans.entitlements so the UI can show the correct limit
- * for the user's current tier without a separate API call.
+ * 2026-04-21: Removed billing_plans dependency (table dropped in R1 migration).
+ *             Entitlements now read from platform_config (admin-editable Free limits)
+ *             and subscription_status.tier.
  */
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createServiceRoleClient } from '@/lib/supabase/service'
 import { getActiveOrg } from '@/lib/org'
-import { err } from '@/lib/billing/http'
 
-// ── Explicit type so TypeScript knows null fields are number | null ─────────
-// Without this, TypeScript infers the literal type `null` for null fields,
-// which causes "Type 'number' is not assignable to type 'null'" when the
-// billing_plans catalog value is later assigned to the entitlements object.
-type EntitlementsShape = {
-  routeCalculationsPerMonth: number | null
-  tripsPerMonth:             number | null
-  exportsPerMonth:           number | null
+function err(code: string, message: string, status: number) {
+  return NextResponse.json({ error: { code, message } }, { status })
 }
 
-// Default entitlements when no plan record is found.
-// Matches the seeded FREE plan: 2 route calculations / month.
-const FREE_ENTITLEMENTS: EntitlementsShape = {
-  routeCalculationsPerMonth: 2,
-  tripsPerMonth:             null,
-  exportsPerMonth:           null,
+type EntitlementsShape = {
+  routeCalculationsPerMonth: number | null
+  tripsPerMonth: number | null
+  exportsPerMonth: number | null
 }
 
 const PRO_ENTITLEMENTS: EntitlementsShape = {
-  routeCalculationsPerMonth: null,   // unlimited
-  tripsPerMonth:             null,
-  exportsPerMonth:           null,
+  routeCalculationsPerMonth: null,
+  tripsPerMonth: null,
+  exportsPerMonth: null,
+}
+
+const FALLBACK_FREE_ENTITLEMENTS: EntitlementsShape = {
+  routeCalculationsPerMonth: 2,
+  tripsPerMonth: null,
+  exportsPerMonth: null,
 }
 
 export async function GET() {
   const supabase = await createClient()
-  const db       = createServiceRoleClient()
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return err('UNAUTHENTICATED', 'Login required.', 401)
@@ -68,79 +60,67 @@ export async function GET() {
   const org = await getActiveOrg()
   if (!org) return err('NO_ORG', 'No organisation found.', 400)
 
-  // Current period start = first day of current month in YYYY-MM-DD
+  // Current period start = first day of current month
   const now = new Date()
   const periodStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
 
-  // Fetch usage counters and subscription status in parallel
-  const [usageRes, subscriptionRes] = await Promise.all([
-    db
+  // Fetch everything in parallel
+  const [usageRes, subscriptionRes, platformRes] = await Promise.all([
+    supabase
       .from('usage_counters')
       .select('routes_calls, trips_created, exports_created, period_start')
       .eq('org_id', org.org_id)
       .eq('period_start', periodStart)
       .maybeSingle(),
 
-    db
+    supabase
       .from('subscription_status')
-      .select('tier, plan_code')
+      .select('tier')
       .eq('org_id', org.org_id)
+      .maybeSingle(),
+
+    // platform_config: admin-editable Free tier baseline limits
+    supabase
+      .from('platform_config')
+      .select('free_routes_per_month, free_trips_per_month, free_exports_per_month')
+      .eq('id', true)
       .maybeSingle(),
   ])
 
-  if (usageRes.error) {
-    return err('SERVER_ERROR', usageRes.error.message, 500)
-  }
-  if (subscriptionRes.error) {
-    return err('SERVER_ERROR', subscriptionRes.error.message, 500)
-  }
+  if (usageRes.error) return err('SERVER_ERROR', usageRes.error.message, 500)
+  if (subscriptionRes.error) return err('SERVER_ERROR', subscriptionRes.error.message, 500)
 
-  const tier     = subscriptionRes.data?.tier     ?? 'FREE'
-  const planCode = subscriptionRes.data?.plan_code ?? null
+  const tier = subscriptionRes.data?.tier ?? 'FREE'
 
-  // Resolve entitlements from the billing_plans catalog if plan_code known
-  let entitlements: EntitlementsShape = tier === 'PRO' ? PRO_ENTITLEMENTS : FREE_ENTITLEMENTS
+  // Resolve entitlements from tier + platform_config
+  let entitlements: EntitlementsShape
 
-  if (planCode) {
-    const { data: plan } = await db
-      .from('billing_plans')
-      .select('entitlements')
-      .eq('code', planCode)
-      .eq('is_active', true)
-      .maybeSingle()
-
-    if (plan?.entitlements) {
-      const e = plan.entitlements as Record<string, unknown>
-      entitlements = {
-        routeCalculationsPerMonth: e.routeCalculationsPerMonth === undefined
-          ? entitlements.routeCalculationsPerMonth
-          : (e.routeCalculationsPerMonth as number | null),
-        tripsPerMonth: e.tripsPerMonth === undefined
-          ? entitlements.tripsPerMonth
-          : (e.tripsPerMonth as number | null),
-        exportsPerMonth: e.exportsPerMonth === undefined
-          ? entitlements.exportsPerMonth
-          : (e.exportsPerMonth as number | null),
-      }
+  if (tier === 'PRO') {
+    entitlements = PRO_ENTITLEMENTS
+  } else {
+    // FREE tier: use platform_config limits (admin-editable), fall back to hardcoded
+    const pc = platformRes.data
+    entitlements = {
+      routeCalculationsPerMonth: pc?.free_routes_per_month !== undefined
+        ? pc.free_routes_per_month
+        : FALLBACK_FREE_ENTITLEMENTS.routeCalculationsPerMonth,
+      tripsPerMonth: pc?.free_trips_per_month !== undefined
+        ? pc.free_trips_per_month
+        : FALLBACK_FREE_ENTITLEMENTS.tripsPerMonth,
+      exportsPerMonth: pc?.free_exports_per_month !== undefined
+        ? pc.free_exports_per_month
+        : FALLBACK_FREE_ENTITLEMENTS.exportsPerMonth,
     }
   }
 
   return NextResponse.json({
-    counters: usageRes.data
-      ? {
-          routes_calls:    usageRes.data.routes_calls    ?? 0,
-          trips_created:   usageRes.data.trips_created   ?? 0,
-          exports_created: usageRes.data.exports_created ?? 0,
-          period_start:    usageRes.data.period_start,
-        }
-      : {
-          // Return zeroed counters when no row exists yet — org hasn't
-          // used any tracked features this period
-          routes_calls:    0,
-          trips_created:   0,
-          exports_created: 0,
-          period_start:    periodStart,
-        },
+    counters: {
+      routes_calls: usageRes.data?.routes_calls ?? 0,
+      trips_created: usageRes.data?.trips_created ?? 0,
+      exports_created: usageRes.data?.exports_created ?? 0,
+      period_start: usageRes.data?.period_start ?? periodStart,
+    },
     entitlements,
+    tier,
   })
 }

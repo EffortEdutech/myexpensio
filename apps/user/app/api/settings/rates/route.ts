@@ -12,6 +12,7 @@ type RateRow = {
   effective_from?: string | null
   currency?: string | null
   mileage_rate_per_km?: number | null
+  motorcycle_rate_per_km?: number | null   // ← NEW
   meal_rate_default?: number | null
   meal_rate_per_session?: number | null
   meal_rate_full_day?: number | null
@@ -27,6 +28,7 @@ type RateRow = {
 
 export const DEFAULTS = {
   mileage_rate_per_km: 0.60,
+  motorcycle_rate_per_km: 0.30,           // ← NEW default (50% of car)
   meal_rate_morning: 20.00,
   meal_rate_noon: 30.00,
   meal_rate_evening: 30.00,
@@ -41,6 +43,15 @@ function numberOr(...values: Array<number | null | undefined>): number {
     if (!Number.isNaN(n)) return n
   }
   return 0
+}
+
+function numberOrNull(...values: Array<number | null | undefined>): number | null {
+  for (const value of values) {
+    if (value === null || value === undefined) continue
+    const n = Number(value)
+    if (!Number.isNaN(n)) return n
+  }
+  return null
 }
 
 function computeMealAverage(morning: number, noon: number, evening: number): number {
@@ -64,6 +75,7 @@ function normalizeRateRow(rate?: RateRow | null) {
     effective_from: rate?.effective_from ?? null,
     currency: 'MYR',
     mileage_rate_per_km: numberOr(rate?.mileage_rate_per_km, DEFAULTS.mileage_rate_per_km),
+    motorcycle_rate_per_km: numberOrNull(rate?.motorcycle_rate_per_km),  // ← NEW (nullable)
     meal_rate_default: mealDefault,
     meal_rate_per_session: perSession,
     meal_rate_morning: morning,
@@ -87,6 +99,13 @@ function numericInput(value: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined
 }
 
+function numericInputNullable(value: unknown): number | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : undefined
+}
+
 async function loadTemplateOptions(
   supabase: Awaited<ReturnType<typeof createClient>>,
 ) {
@@ -98,6 +117,7 @@ async function loadTemplateOptions(
       effective_from,
       currency,
       mileage_rate_per_km,
+      motorcycle_rate_per_km,
       meal_rate_default,
       meal_rate_per_session,
       meal_rate_full_day,
@@ -136,6 +156,7 @@ export async function GET() {
         effective_from,
         currency,
         mileage_rate_per_km,
+        motorcycle_rate_per_km,
         meal_rate_default,
         meal_rate_per_session,
         meal_rate_full_day,
@@ -181,6 +202,7 @@ export async function POST(request: NextRequest) {
     template_id?: string
     effective_from?: string
     mileage_rate_per_km?: number
+    motorcycle_rate_per_km?: number | null  // ← NEW (nullable allowed)
     meal_rate_default?: number
     meal_rate_per_session?: number
     meal_rate_full_day?: number
@@ -205,6 +227,7 @@ export async function POST(request: NextRequest) {
         effective_from,
         currency,
         mileage_rate_per_km,
+        motorcycle_rate_per_km,
         meal_rate_default,
         meal_rate_per_session,
         meal_rate_full_day,
@@ -243,6 +266,12 @@ export async function POST(request: NextRequest) {
     ?? template.meal_rate_default
     ?? mealRatePerSession
 
+  // motorcycle_rate_per_km: null is valid (means "not set — use car rate")
+  const motorcycleRate = numericInputNullable(body.motorcycle_rate_per_km)
+  const resolvedMotorcycleRate = motorcycleRate !== undefined
+    ? motorcycleRate
+    : template.motorcycle_rate_per_km
+
   const ratePayload = {
     org_id: org.org_id,
     user_id: user.id,
@@ -252,6 +281,7 @@ export async function POST(request: NextRequest) {
       numericInput(body.mileage_rate_per_km)
       ?? template.mileage_rate_per_km
       ?? DEFAULTS.mileage_rate_per_km,
+    motorcycle_rate_per_km: resolvedMotorcycleRate,   // ← NEW
     meal_rate_default: mealRateDefault,
     meal_rate_per_session: mealRatePerSession,
     meal_rate_full_day:
@@ -278,6 +308,9 @@ export async function POST(request: NextRequest) {
 
   if (ratePayload.mileage_rate_per_km <= 0) {
     return err('VALIDATION_ERROR', 'Mileage rate must be > 0.', 400)
+  }
+  if (ratePayload.motorcycle_rate_per_km !== null && (ratePayload.motorcycle_rate_per_km ?? 0) < 0) {
+    return err('VALIDATION_ERROR', 'Motorcycle rate cannot be negative.', 400)
   }
   if (
     ratePayload.meal_rate_morning < 0
@@ -320,6 +353,7 @@ export async function POST(request: NextRequest) {
       effective_from,
       currency,
       mileage_rate_per_km,
+      motorcycle_rate_per_km,
       meal_rate_default,
       meal_rate_per_session,
       meal_rate_full_day,

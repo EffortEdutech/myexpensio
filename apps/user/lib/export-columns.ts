@@ -30,6 +30,7 @@ export type ExportColumnKey =
   | 'distance_km'
   | 'distance_source'
   | 'mileage_rate'
+  | 'vehicle_type'          // ← NEW: 'car' | 'motorcycle'
   | 'transport_type'
   | 'odometer_mode'
   // ── Transport / TNG ──────────────────────────────────────
@@ -83,7 +84,8 @@ export const ALL_COLUMNS: ColumnDef[] = [
   { key: 'distance_km',         label: 'Distance (KM)',       description: 'Final distance in kilometres (2 decimals)',      presets: ['STANDARD', 'COMPLETE'], group: 'Mileage' },
   { key: 'distance_source',     label: 'Distance Source',     description: 'ROUTE_API / GPS / ODOMETER / MANUAL',           presets: ['COMPLETE'],            group: 'Mileage' },
   { key: 'mileage_rate',        label: 'Mileage Rate (MYR/km)', description: 'Rate per km at time of claim',               presets: ['STANDARD', 'COMPLETE'], group: 'Mileage' },
-  { key: 'transport_type',      label: 'Transport Type',      description: 'CAR / MOTORCYCLE / VAN / etc',                  presets: ['COMPLETE'],            group: 'Mileage' },
+  { key: 'vehicle_type',        label: 'Vehicle Type',        description: 'Car or Motorcycle (MILEAGE items only)',         presets: ['STANDARD', 'COMPLETE'], group: 'Mileage' },  // ← NEW
+  { key: 'transport_type',      label: 'Transport Type',      description: 'personal_car / grab / taxi / train / etc',      presets: ['COMPLETE'],            group: 'Mileage' },
   { key: 'odometer_mode',       label: 'Odometer Mode',       description: 'NONE / EVIDENCE_ONLY / OVERRIDE',              presets: ['COMPLETE'],            group: 'Mileage' },
 
   // TNG

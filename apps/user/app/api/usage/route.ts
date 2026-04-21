@@ -23,7 +23,7 @@ export async function GET() {
     .eq('id', user.id)
     .single()
 
-  const is_admin = profile?.role === 'ADMIN'
+  const is_admin = ['SUPER_ADMIN', 'SUPPORT'].includes(profile?.role ?? '')
 
   const { data: sub } = await supabase
     .from('subscription_status')

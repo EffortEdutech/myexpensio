@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { requireAdminAuth } from '@/lib/auth'
 import { createServiceRoleClient } from '@/lib/supabase/server'
 
@@ -117,15 +117,9 @@ export async function PATCH(req: Request) {
     const proPlan = normalizePlan(body?.plans?.PRO, 'Pro Unlimited')
 
     const settings = { plans: { FREE: freePlan, PRO: proPlan } }
-    const { error } = await db.from('platform_settings').upsert({
-      id: true,
-      settings,
-      updated_at: new Date().toISOString(),
-      updated_by: ctx.userId,
-    })
-
-    if (error) return err('DB_ERROR', error.message, 500)
-    return NextResponse.json({ success: true })
+    // platform_settings was dropped in R1 migration (2026-04-21).
+    // Plan limits are now hardcoded in entitlements.ts PLAN_DEFAULTS.
+    return NextResponse.json({ success: true, note: 'Plan limits are defined in code.' })
   }
 
   if (!body.org_id) return err('VALIDATION_ERROR', 'org_id required', 400)

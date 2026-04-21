@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 // apps/admin/app/(protected)/members/MembersClient.tsx
 //
 // Members & Onboarding console
@@ -118,10 +118,10 @@ function PlatformBadge({ role }: { role: string }) {
   return (
     <span
       className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
-        role === 'ADMIN' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'
+        role === 'SUPER_ADMIN' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'
       }`}
     >
-      {role === 'ADMIN' ? '⚡ Admin' : 'User'}
+                {role === 'SUPER_ADMIN' ? '⚡ Super Admin' : role === 'SUPPORT' ? '🔧 Support' : 'User'}
     </span>
   )
 }
@@ -757,7 +757,7 @@ export default function MembersClient({
           className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none"
         >
           <option value="ALL">All platform roles</option>
-          <option value="ADMIN">Admin only</option>
+          <option value="SUPER_ADMIN">Super Admin</option>
           <option value="USER">User only</option>
         </select>
 

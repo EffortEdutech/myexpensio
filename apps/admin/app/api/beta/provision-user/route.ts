@@ -74,7 +74,7 @@ async function resolveActor() {
     .eq('id', user.id)
     .single()
 
-  if (profileError || !profile || profile.role !== 'ADMIN') {
+  if (profileError || !profile || !['SUPER_ADMIN', 'SUPPORT'].includes(profile.role)) {
     return { error: err('FORBIDDEN', 'Admin access required.', 403) as NextResponse }
   }
 

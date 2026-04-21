@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
     .eq('id', user.id)
     .single()
 
-  const isAdmin = callerProfile?.role === 'ADMIN'
+  const isAdmin = ['SUPER_ADMIN', 'SUPPORT'].includes(callerProfile?.role ?? '')
   const { entitlements } = await loadTierAndEntitlements(supabase, org.org_id, isAdmin)
   const routesLimit = limitForCounter(entitlements, 'routes_calls')
 
