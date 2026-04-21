@@ -52,12 +52,13 @@ export async function POST(req: Request) {
   const { name, description, preset, columns, pdf_layout } = body
   if (!name?.trim()) return err('VALIDATION_ERROR', 'name required', 400)
 
-  const validPresets: ColumnPreset[] = ['STANDARD', 'COMPLETE', 'ORIGINAL_HIGHLIGHT']
-  const resolvedPreset: ColumnPreset = validPresets.includes(preset) ? preset : 'STANDARD'
+  const validPresets: ColumnPreset[] = ['STANDARD', 'COMPLETE']
+  const resolvedPreset: ColumnPreset =
+    validPresets.includes(preset as ColumnPreset) ? (preset as ColumnPreset) : 'STANDARD'
 
   const resolvedColumns: ExportColumnKey[] = columns?.length > 0
     ? resolveColumns({ preset: resolvedPreset, columns })
-    : PRESET_COLUMNS[resolvedPreset === 'ORIGINAL_HIGHLIGHT' ? 'COMPLETE' : resolvedPreset]
+    : PRESET_COLUMNS[resolvedPreset]
 
   const resolvedPdfLayout = { ...DEFAULT_PDF_LAYOUT, ...(pdf_layout ?? {}) }
 

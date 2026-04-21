@@ -1,7 +1,8 @@
 // apps/admin/app/api/admin/members/route.ts
 //
-// GET  /api/admin/members         → list all org members with profiles
-// POST /api/admin/members/invite  → create invitation (separate route below)
+// GET /api/admin/members
+// Platform-wide member listing for admin app.
+// Optional ?org_id=... filter.
 
 import { NextResponse } from 'next/server'
 import { requireAdminAuth } from '@/lib/auth'
@@ -11,15 +12,15 @@ function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
 }
 
-// ── GET /api/admin/members ────────────────────────────────────────────────────
-export async function GET() {
+export async function GET(req: Request) {
   const ctx = await requireAdminAuth('api')
   if (!ctx) return err('UNAUTHORIZED', 'Access denied', 403)
-  if (!ctx.orgId) return err('MISSING_ORG', 'org_id required', 400)
 
   const db = createServiceRoleClient()
+  const { searchParams } = new URL(req.url)
+  const orgId = searchParams.get('org_id')?.trim() || null
 
-  const { data, error } = await db
+  let query = db
     .from('org_members')
     .select(`
       org_id,
@@ -27,19 +28,25 @@ export async function GET() {
       org_role,
       status,
       created_at,
-      profiles (
+      organizations(name),
+      profiles:user_id (
         id,
         email,
         display_name
       )
     `)
-    .eq('org_id', ctx.orgId)
     .order('created_at', { ascending: true })
+
+  if (orgId) {
+    query = query.eq('org_id', orgId)
+  }
+
+  const { data, error } = await query
 
   if (error) {
     console.error('[admin/members] GET error:', error)
     return err('DB_ERROR', 'Failed to fetch members', 500)
   }
 
-  return NextResponse.json({ members: data })
+  return NextResponse.json({ members: data ?? [] })
 }

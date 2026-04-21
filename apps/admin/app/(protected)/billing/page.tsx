@@ -14,7 +14,7 @@ import Link from 'next/link'
 import KpiCard from '@/components/billing/KpiCard'
 import StatusChip from '@/components/billing/StatusChip'
 import MoneyCell, { formatMYR } from '@/components/billing/MoneyCell'
-import type { BillingStats } from '@/app/api/admin/billing/stats/route'
+import type { BillingStats } from '@/lib/types'
 
 // ---------------------------------------------------------------------------
 // Types

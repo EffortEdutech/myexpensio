@@ -10,6 +10,8 @@ const nextConfig: NextConfig = {
   // All three must be excluded from Turbopack/webpack server bundling.
   serverExternalPackages: ['pdfkit', 'pdf-parse', 'pdfjs-dist'],
 
+  transpilePackages: ['@myexpensio/domain'],
+
   // Always read version from package.json at Vercel build time.
   // standard-version bumps package.json → Vercel builds → correct version baked in.
   // Do NOT set NEXT_PUBLIC_APP_VERSION in the Vercel dashboard — it will override this.

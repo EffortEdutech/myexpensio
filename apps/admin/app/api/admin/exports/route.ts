@@ -1,27 +1,56 @@
 // apps/admin/app/api/admin/exports/route.ts
-// GET /api/admin/exports — all org export jobs (admin view)
+// GET /api/admin/exports — platform-wide export jobs for admin view
+
 import { NextResponse } from 'next/server'
 import { requireAdminAuth } from '@/lib/auth'
 import { createServiceRoleClient } from '@/lib/supabase/server'
 
-export async function GET() {
+export async function GET(req: Request) {
   const ctx = await requireAdminAuth('api')
-  if (!ctx) return NextResponse.json({ error: { code: 'UNAUTHORIZED' } }, { status: 403 })
-  if (!ctx.orgId) return NextResponse.json({ error: { code: 'MISSING_ORG' } }, { status: 400 })
+  if (!ctx) {
+    return NextResponse.json({ error: { code: 'UNAUTHORIZED' } }, { status: 403 })
+  }
 
   const db = createServiceRoleClient()
+  const { searchParams } = new URL(req.url)
 
-  const { data, error } = await db
+  const orgId = searchParams.get('org_id')?.trim() || null
+  const pageSize = Math.min(Number(searchParams.get('page_size') ?? '100') || 100, 200)
+
+  let query = db
     .from('export_jobs')
     .select(`
-      id, format, status, file_url, row_count, created_at, completed_at,
-      profiles ( display_name, email )
+      id,
+      org_id,
+      user_id,
+      format,
+      status,
+      file_url,
+      row_count,
+      error_message,
+      filters,
+      template_id,
+      created_at,
+      completed_at,
+      profiles:user_id ( display_name, email ),
+      organizations:org_id ( name, display_name ),
+      report_templates:template_id ( name )
     `)
-    .eq('org_id', ctx.orgId)
     .order('created_at', { ascending: false })
-    .limit(100)
+    .limit(pageSize)
 
-  if (error) return NextResponse.json({ error: { code: 'DB_ERROR' } }, { status: 500 })
+  if (orgId) {
+    query = query.eq('org_id', orgId)
+  }
 
-  return NextResponse.json({ jobs: data })
+  const { data, error } = await query
+
+  if (error) {
+    return NextResponse.json(
+      { error: { code: 'DB_ERROR', message: error.message } },
+      { status: 500 },
+    )
+  }
+
+  return NextResponse.json({ jobs: data ?? [] })
 }

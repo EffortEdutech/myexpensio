@@ -26,6 +26,13 @@ type RateTemplateRow = {
   perdiem_rate_myr: number | null
 }
 
+
+type EnsureDefaultUserRateResult = {
+  seeded: boolean
+  reason: 'EXISTS' | 'CREATED' | 'CREATED_FROM_GLOBAL_TEMPLATE'
+  template_name: string | null
+}
+
 function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
 }
@@ -248,7 +255,7 @@ async function ensureDefaultUserRate(params: {
   userId: string
   actorUserId: string
   sourceRateVersionId: string
-}) {
+}): Promise<EnsureDefaultUserRateResult> {
   const { service, orgId, userId, actorUserId, sourceRateVersionId } = params
 
   const { data: existing, error: existingError } = await service
@@ -266,7 +273,11 @@ async function ensureDefaultUserRate(params: {
   }
 
   if (existing) {
-    return { seeded: false, reason: 'EXISTS' as const }
+    return {
+      seeded: false,
+      reason: 'EXISTS' as const,
+      template_name: null,
+    }
   }
 
   const template = await resolveRateTemplate(service, sourceRateVersionId)
@@ -306,7 +317,10 @@ async function ensureDefaultUserRate(params: {
 
   return {
     seeded: true,
-    reason: matchedSourceRateVersionId ? 'CREATED' as const : 'CREATED_FROM_GLOBAL_TEMPLATE' as const,
+    reason: matchedSourceRateVersionId
+      ? 'CREATED' as const
+      : 'CREATED_FROM_GLOBAL_TEMPLATE' as const,
+    template_name: template.template_name ?? null,
   }
 }
 

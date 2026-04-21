@@ -10,7 +10,7 @@
 //   - This prevents the redirect loop where a non-admin user bounces
 //     between /login?error=unauthorized and /dashboard indefinitely.
 
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { type NextRequest, NextResponse } from 'next/server'
 
 const PUBLIC_PATHS = ['/login', '/auth']
@@ -28,14 +28,22 @@ export async function middleware(request: NextRequest) {
 
   let response = NextResponse.next({ request: { headers: request.headers } })
 
+  type CookieToSet = {
+    name: string
+    value: string
+    options?: CookieOptions
+  }
+
   // Build Supabase client that reads/writes cookies
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() { return request.cookies.getAll() },
-        setAll(cookiesToSet) {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet: CookieToSet[]) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           response = NextResponse.next({ request: { headers: request.headers } })
           cookiesToSet.forEach(({ name, value, options }) =>
@@ -47,7 +55,9 @@ export async function middleware(request: NextRequest) {
   )
 
   // Always refresh session
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
   if (isPublic) {
     // On /login: only redirect to /dashboard if user is actually authorised.

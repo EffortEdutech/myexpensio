@@ -1,6 +1,16 @@
 // apps/admin/lib/types.ts
-// TypeScript types for the admin app.
-// Updated for global rate templates + personal user rates.
+// Admin app types.
+// Shared domain/business types come from @myexpensio/domain.
+// Keep only app-facing composite types here.
+
+import type {
+  AuditLog,
+  MembershipTier,
+  PlatformRole,
+  RateTemplate as RateVersion,
+  UserRateVersion,
+  WorkspaceRole,
+} from '@myexpensio/domain'
 
 export type Org = {
   id: string
@@ -13,11 +23,11 @@ export type Profile = {
   id: string
   email: string | null
   display_name: string | null
-  role: 'USER' | 'SUPPORT' | 'SUPER_ADMIN'
+  role: PlatformRole
   created_at: string
 }
 
-export type OrgRole = 'OWNER' | 'MANAGER' | 'MEMBER'
+export type OrgRole = WorkspaceRole
 export type MemberStatus = 'ACTIVE' | 'REMOVED'
 
 export type OrgMember = {
@@ -47,49 +57,7 @@ export type Invitation = {
   created_at: string
 }
 
-// Global template library row
-export type RateVersion = {
-  id: string
-  template_name: string
-  effective_from: string
-  currency: 'MYR' | string
-  mileage_rate_per_km: number
-  meal_rate_default: number | null
-  meal_rate_per_session: number | null
-  meal_rate_full_day: number | null
-  meal_rate_morning: number | null
-  meal_rate_noon: number | null
-  meal_rate_evening: number | null
-  perdiem_rate_myr: number
-  lodging_rate_default: number | null
-  created_by_user_id: string | null
-  created_at: string
-  updated_at: string
-}
-
-// Personal user-owned rate snapshot row
-export type UserRateVersion = {
-  id: string
-  org_id: string
-  user_id: string
-  source_rate_version_id: string | null
-  effective_from: string
-  currency: 'MYR' | string
-  mileage_rate_per_km: number
-  meal_rate_default: number | null
-  meal_rate_per_session: number | null
-  meal_rate_full_day: number | null
-  meal_rate_morning: number | null
-  meal_rate_noon: number | null
-  meal_rate_evening: number | null
-  perdiem_rate_myr: number
-  lodging_rate_default: number | null
-  rate_label: string | null
-  notes: string | null
-  created_by_user_id: string | null
-  created_at: string
-  updated_at: string
-}
+export type { RateVersion, UserRateVersion, AuditLog }
 
 export type ClaimStatus = 'DRAFT' | 'SUBMITTED'
 
@@ -115,9 +83,17 @@ export type ClaimWithUser = Claim & {
 }
 
 export type ClaimItemType =
-  | 'MILEAGE' | 'MEAL' | 'LODGING'
-  | 'TOLL' | 'PARKING' | 'TAXI' | 'GRAB'
-  | 'TRAIN' | 'FLIGHT' | 'BUS' | 'PER_DIEM'
+  | 'MILEAGE'
+  | 'MEAL'
+  | 'LODGING'
+  | 'TOLL'
+  | 'PARKING'
+  | 'TAXI'
+  | 'GRAB'
+  | 'TRAIN'
+  | 'FLIGHT'
+  | 'BUS'
+  | 'PER_DIEM'
   | 'MISC'
 
 export type ClaimItem = {
@@ -164,7 +140,7 @@ export type ExportJobWithUser = ExportJob & {
   profiles: Pick<Profile, 'id' | 'email' | 'display_name'>
 }
 
-export type TemplatePreset = 'STANDARD' | 'COMPLETE' | 'ORIGINAL_HIGHLIGHT' | 'CUSTOM'
+export type TemplatePreset = 'STANDARD' | 'COMPLETE' | 'CUSTOM'
 
 export type ReportTemplate = {
   id: string
@@ -189,17 +165,6 @@ export type OrgTemplateAssignment = {
   assigned_at: string
 }
 
-export type AuditLog = {
-  id: string
-  org_id: string | null
-  actor_user_id: string | null
-  entity_type: string
-  entity_id: string | null
-  action: string
-  metadata: Record<string, unknown>
-  created_at: string
-}
-
 export type DashboardStats = {
   totalMembers: number
   activeMembers: number
@@ -208,13 +173,39 @@ export type DashboardStats = {
   exportsThisMonth: number
   routeCallsUsed: number
   routeCallsLimit: number | null
-  subscriptionTier: 'FREE' | 'PRO'
+  subscriptionTier: MembershipTier
 }
 
 export type SubscriptionStatus = {
   org_id: string
-  tier: 'FREE' | 'PRO'
+  tier: MembershipTier
   period_start: string | null
   period_end: string | null
   updated_at: string
+}
+
+export type BillingStats = {
+  subscriptions: {
+    active: number
+    trialing: number
+    past_due: number
+    unpaid: number
+    cancel_at_period_end: number
+    total: number
+  }
+  mrr_estimate: number
+  arr_estimate: number
+  invoices: {
+    paid_this_month: number
+    paid_amount_this_month: number
+    failed_this_month: number
+  }
+  agents: {
+    active: number
+    pending: number
+  }
+  commission: {
+    pending_amount: number
+    pending_count: number
+  }
 }

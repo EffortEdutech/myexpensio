@@ -1,19 +1,19 @@
 'use client'
 // apps/admin/app/login/page.tsx
 
-import { useState, useEffect } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabaseBrowser } from '@/lib/supabase/browser'
 
-export default function LoginPage() {
+function LoginPageInner() {
   const router = useRouter()
   const params = useSearchParams()
 
-  const [email,        setEmail]        = useState('')
-  const [password,     setPassword]     = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [loading,      setLoading]      = useState(false)
-  const [error,        setError]        = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const errParam = params.get('error')
@@ -30,7 +30,7 @@ export default function LoginPage() {
     setError(null)
 
     const { error: signInError } = await supabaseBrowser.auth.signInWithPassword({
-      email:    email.trim().toLowerCase(),
+      email: email.trim().toLowerCase(),
       password,
     })
 
@@ -64,7 +64,7 @@ export default function LoginPage() {
                 autoComplete="email"
                 required
                 value={email}
-                onChange={e => setEmail(e.target.value)}
+                onChange={(e) => setEmail(e.target.value)}
                 disabled={loading}
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm
                            focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
@@ -81,7 +81,7 @@ export default function LoginPage() {
                   autoComplete="current-password"
                   required
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(e.target.value)}
                   disabled={loading}
                   className="w-full px-3 py-2 pr-12 rounded-lg border border-gray-300 text-sm
                              focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
@@ -90,7 +90,7 @@ export default function LoginPage() {
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPassword(v => !v)}
+                  onClick={() => setShowPassword((v) => !v)}
                   disabled={loading}
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                   className="absolute inset-y-0 right-0 px-3 text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50"
@@ -123,5 +123,25 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+function LoginFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+      <div className="w-full max-w-sm">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+          <p className="text-sm text-gray-500">Loading…</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginFallback />}>
+      <LoginPageInner />
+    </Suspense>
   )
 }
