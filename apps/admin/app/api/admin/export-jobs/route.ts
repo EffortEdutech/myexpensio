@@ -1,8 +1,7 @@
-// apps/admin/app/api/admin/claims/route.ts
+// apps/admin/app/api/admin/export-jobs/route.ts
 //
-// GET /api/admin/claims
-// Returns all claims across all orgs (SUPER_ADMIN) or own org only (OWNER/MANAGER).
-// Supports filter by org_id, user_id, status, date range, search.
+// GET /api/admin/export-jobs
+// Returns all export jobs across all orgs. Filter by status, org, user, format.
 
 import { NextResponse } from 'next/server'
 import { requireAdminAuth } from '@/lib/auth'
@@ -19,33 +18,33 @@ export async function GET(req: Request) {
   const db = createServiceRoleClient()
   const url = new URL(req.url)
 
-  const status    = url.searchParams.get('status')    // DRAFT | SUBMITTED
+  const status    = url.searchParams.get('status')
   const org_id    = url.searchParams.get('org_id')
   const user_id   = url.searchParams.get('user_id')
-  const from      = url.searchParams.get('from')       // YYYY-MM-DD
-  const to        = url.searchParams.get('to')         // YYYY-MM-DD
-  const search    = url.searchParams.get('search')     // matches title or user name
+  const format    = url.searchParams.get('format')
   const page      = Math.max(1, parseInt(url.searchParams.get('page') ?? '1'))
   const page_size = Math.min(100, Math.max(1, parseInt(url.searchParams.get('page_size') ?? '50')))
   const offset    = (page - 1) * page_size
 
   let query = db
-    .from('claims')
+    .from('export_jobs')
     .select(`
       id,
       org_id,
       user_id,
+      format,
       status,
-      title,
-      total_amount,
-      currency,
-      period_start,
-      period_end,
-      submitted_at,
+      file_url,
+      row_count,
+      error_message,
+      filters,
+      template_id,
+      pdf_layout,
       created_at,
-      updated_at,
-      organizations ( name, display_name ),
-      profiles:user_id ( display_name, email )
+      completed_at,
+      profiles:user_id ( display_name, email ),
+      organizations:org_id ( name, display_name ),
+      report_templates:template_id ( name )
     `, { count: 'exact' })
     .order('created_at', { ascending: false })
     .range(offset, offset + page_size - 1)
@@ -53,19 +52,17 @@ export async function GET(req: Request) {
   if (status)  query = query.eq('status', status)
   if (org_id)  query = query.eq('org_id', org_id)
   if (user_id) query = query.eq('user_id', user_id)
-  if (from)    query = query.gte('period_start', from)
-  if (to)      query = query.lte('period_end', to)
-  if (search)  query = query.ilike('title', `%${search}%`)
+  if (format)  query = query.eq('format', format)
 
   const { data, error, count } = await query
 
   if (error) {
-    console.error('[GET /api/admin/claims]', error.message)
+    console.error('[GET /api/admin/export-jobs]', error.message)
     return err('DB_ERROR', error.message, 500)
   }
 
   return NextResponse.json({
-    claims: data ?? [],
+    jobs: data ?? [],
     total: count ?? 0,
     page,
     page_size,
