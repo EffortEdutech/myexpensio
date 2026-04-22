@@ -13,7 +13,7 @@
     "@myexpensio/domain": "workspace:*",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.49.1",
-    "next": "15.2.2",
+    "next": "16.2.4",
     "nodemailer": "^8.0.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
@@ -25,7 +25,7 @@
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.27",
     "eslint": "^9",
-    "eslint-config-next": "15.2.2",
+    "eslint-config-next": "16.2.4",
     "postcss": "^8.5.8",
     "tailwindcss": "3.4.17",
     "typescript": "^5"
