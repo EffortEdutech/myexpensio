@@ -1,11 +1,7 @@
 {
-  "version": "0.2.0",
+  "version": "0.3.0",
   "changelog": [
-    "add cleanup and stabilization validation",
-    "add cleanup and stabilization validation ()",
-    "upgrade next.config.js to remove eslint ()",
-    "admin apps build ()",
-    "build admin ()",
-    "rate for car & bike ()"
+    "migrate middleware to proxy and inventory refactor debris",
+    "migrate middleware to proxy and inventory refactor debris ()"
   ]
 }
