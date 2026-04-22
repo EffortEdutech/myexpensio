@@ -1,0 +1,404 @@
+﻿{
+    "generated_at":  "2026-04-22T14:54:45",
+    "repo_root":  "C:\\Users\\user\\Documents\\00 Reimbursement Assistant\\myexpensio",
+    "scanned_file_count":  50,
+    "candidates":  [
+                       {
+                           "table":  "agents",
+                           "hit_count":  11,
+                           "type_residue_count":  1,
+                           "sql_or_schema_count":  10,
+                           "matches":  [
+                                           {
+                                               "table":  "agents",
+                                               "category":  "type_residue",
+                                               "relativePath":  "apps/admin/lib/types.ts",
+                                               "lineNumber":  203,
+                                               "line":  "agents: {"
+                                           },
+                                           {
+                                               "table":  "agents",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  7,
+                                               "line":  "--   agents"
+                                           },
+                                           {
+                                               "table":  "agents",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  20,
+                                               "line":  "\u0027agents\u0027,"
+                                           },
+                                           {
+                                               "table":  "agents",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  47,
+                                               "line":  "\u0027agents\u0027,"
+                                           },
+                                           {
+                                               "table":  "agents",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  64,
+                                               "line":  "\u0027agents\u0027,"
+                                           },
+                                           {
+                                               "table":  "agents",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  83,
+                                               "line":  "\u0027agents\u0027,"
+                                           },
+                                           {
+                                               "table":  "agents",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  104,
+                                               "line":  "\u0027agents\u0027,"
+                                           },
+                                           {
+                                               "table":  "agents",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  121,
+                                               "line":  "\u0027agents\u0027,"
+                                           },
+                                           {
+                                               "table":  "agents",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  138,
+                                               "line":  "lower(pg_get_functiondef(p.oid)) like \u0027%agents%\u0027"
+                                           },
+                                           {
+                                               "table":  "agents",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  156,
+                                               "line":  "--     lower(pg_get_functiondef(p.oid)) like \u0027%agents%\u0027"
+                                           },
+                                           {
+                                               "table":  "agents",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  165,
+                                               "line":  "-- select \u0027agents\u0027 as table_name, count(*) from public.agents"
+                                           }
+                                       ]
+                       },
+                       {
+                           "table":  "commission_plans",
+                           "hit_count":  10,
+                           "type_residue_count":  0,
+                           "sql_or_schema_count":  10,
+                           "matches":  [
+                                           {
+                                               "table":  "commission_plans",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  8,
+                                               "line":  "--   commission_plans"
+                                           },
+                                           {
+                                               "table":  "commission_plans",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  21,
+                                               "line":  "\u0027commission_plans\u0027,"
+                                           },
+                                           {
+                                               "table":  "commission_plans",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  48,
+                                               "line":  "\u0027commission_plans\u0027,"
+                                           },
+                                           {
+                                               "table":  "commission_plans",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  65,
+                                               "line":  "\u0027commission_plans\u0027,"
+                                           },
+                                           {
+                                               "table":  "commission_plans",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  84,
+                                               "line":  "\u0027commission_plans\u0027,"
+                                           },
+                                           {
+                                               "table":  "commission_plans",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  105,
+                                               "line":  "\u0027commission_plans\u0027,"
+                                           },
+                                           {
+                                               "table":  "commission_plans",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  122,
+                                               "line":  "\u0027commission_plans\u0027,"
+                                           },
+                                           {
+                                               "table":  "commission_plans",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  139,
+                                               "line":  "or lower(pg_get_functiondef(p.oid)) like \u0027%commission_plans%\u0027"
+                                           },
+                                           {
+                                               "table":  "commission_plans",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  157,
+                                               "line":  "--     or lower(pg_get_functiondef(p.oid)) like \u0027%commission_plans%\u0027"
+                                           },
+                                           {
+                                               "table":  "commission_plans",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  167,
+                                               "line":  "-- select \u0027commission_plans\u0027, count(*) from public.commission_plans"
+                                           }
+                                       ]
+                       },
+                       {
+                           "table":  "commission_ledger",
+                           "hit_count":  10,
+                           "type_residue_count":  0,
+                           "sql_or_schema_count":  10,
+                           "matches":  [
+                                           {
+                                               "table":  "commission_ledger",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  9,
+                                               "line":  "--   commission_ledger"
+                                           },
+                                           {
+                                               "table":  "commission_ledger",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  22,
+                                               "line":  "\u0027commission_ledger\u0027,"
+                                           },
+                                           {
+                                               "table":  "commission_ledger",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  49,
+                                               "line":  "\u0027commission_ledger\u0027,"
+                                           },
+                                           {
+                                               "table":  "commission_ledger",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  66,
+                                               "line":  "\u0027commission_ledger\u0027,"
+                                           },
+                                           {
+                                               "table":  "commission_ledger",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  85,
+                                               "line":  "\u0027commission_ledger\u0027,"
+                                           },
+                                           {
+                                               "table":  "commission_ledger",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  106,
+                                               "line":  "\u0027commission_ledger\u0027,"
+                                           },
+                                           {
+                                               "table":  "commission_ledger",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  123,
+                                               "line":  "\u0027commission_ledger\u0027,"
+                                           },
+                                           {
+                                               "table":  "commission_ledger",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  140,
+                                               "line":  "or lower(pg_get_functiondef(p.oid)) like \u0027%commission_ledger%\u0027"
+                                           },
+                                           {
+                                               "table":  "commission_ledger",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  158,
+                                               "line":  "--     or lower(pg_get_functiondef(p.oid)) like \u0027%commission_ledger%\u0027"
+                                           },
+                                           {
+                                               "table":  "commission_ledger",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  169,
+                                               "line":  "-- select \u0027commission_ledger\u0027, count(*) from public.commission_ledger"
+                                           }
+                                       ]
+                       },
+                       {
+                           "table":  "referral_attributions",
+                           "hit_count":  10,
+                           "type_residue_count":  0,
+                           "sql_or_schema_count":  10,
+                           "matches":  [
+                                           {
+                                               "table":  "referral_attributions",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  10,
+                                               "line":  "--   referral_attributions"
+                                           },
+                                           {
+                                               "table":  "referral_attributions",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  23,
+                                               "line":  "\u0027referral_attributions\u0027,"
+                                           },
+                                           {
+                                               "table":  "referral_attributions",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  50,
+                                               "line":  "\u0027referral_attributions\u0027,"
+                                           },
+                                           {
+                                               "table":  "referral_attributions",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  67,
+                                               "line":  "\u0027referral_attributions\u0027,"
+                                           },
+                                           {
+                                               "table":  "referral_attributions",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  86,
+                                               "line":  "\u0027referral_attributions\u0027,"
+                                           },
+                                           {
+                                               "table":  "referral_attributions",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  107,
+                                               "line":  "\u0027referral_attributions\u0027,"
+                                           },
+                                           {
+                                               "table":  "referral_attributions",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  124,
+                                               "line":  "\u0027referral_attributions\u0027,"
+                                           },
+                                           {
+                                               "table":  "referral_attributions",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  141,
+                                               "line":  "or lower(pg_get_functiondef(p.oid)) like \u0027%referral_attributions%\u0027"
+                                           },
+                                           {
+                                               "table":  "referral_attributions",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  159,
+                                               "line":  "--     or lower(pg_get_functiondef(p.oid)) like \u0027%referral_attributions%\u0027"
+                                           },
+                                           {
+                                               "table":  "referral_attributions",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  171,
+                                               "line":  "-- select \u0027referral_attributions\u0027, count(*) from public.referral_attributions"
+                                           }
+                                       ]
+                       },
+                       {
+                           "table":  "referral_visits",
+                           "hit_count":  10,
+                           "type_residue_count":  0,
+                           "sql_or_schema_count":  10,
+                           "matches":  [
+                                           {
+                                               "table":  "referral_visits",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  11,
+                                               "line":  "--   referral_visits"
+                                           },
+                                           {
+                                               "table":  "referral_visits",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  24,
+                                               "line":  "\u0027referral_visits\u0027"
+                                           },
+                                           {
+                                               "table":  "referral_visits",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  51,
+                                               "line":  "\u0027referral_visits\u0027"
+                                           },
+                                           {
+                                               "table":  "referral_visits",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  68,
+                                               "line":  "\u0027referral_visits\u0027"
+                                           },
+                                           {
+                                               "table":  "referral_visits",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  87,
+                                               "line":  "\u0027referral_visits\u0027"
+                                           },
+                                           {
+                                               "table":  "referral_visits",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  108,
+                                               "line":  "\u0027referral_visits\u0027"
+                                           },
+                                           {
+                                               "table":  "referral_visits",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  125,
+                                               "line":  "\u0027referral_visits\u0027"
+                                           },
+                                           {
+                                               "table":  "referral_visits",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  142,
+                                               "line":  "or lower(pg_get_functiondef(p.oid)) like \u0027%referral_visits%\u0027"
+                                           },
+                                           {
+                                               "table":  "referral_visits",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  160,
+                                               "line":  "--     or lower(pg_get_functiondef(p.oid)) like \u0027%referral_visits%\u0027"
+                                           },
+                                           {
+                                               "table":  "referral_visits",
+                                               "category":  "sql_or_schema",
+                                               "relativePath":  "supabase/migrations/db-object-dependency-audit.sql",
+                                               "lineNumber":  173,
+                                               "line":  "-- select \u0027referral_visits\u0027, count(*) from public.referral_visits;"
+                                           }
+                                       ]
+                       }
+                   ]
+}

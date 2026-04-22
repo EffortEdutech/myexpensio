@@ -1,0 +1,1731 @@
+﻿{
+    "generated_at":  "2026-04-22T21:38:48",
+    "scanned_file_count":  267,
+    "residue_file_count":  24,
+    "runtime_hit_file_count":  14,
+    "likely_type_file_count":  1,
+    "docs_only_file_count":  10,
+    "legacy_terms":  [
+                         "agents",
+                         "commission_plans",
+                         "commission_ledger",
+                         "referral_attributions",
+                         "referral_visits",
+                         "v_partner_commission_summary",
+                         "commission_plan_id"
+                     ],
+    "summary_by_term":  [
+                            {
+                                "term":  "agents",
+                                "match_count":  57
+                            },
+                            {
+                                "term":  "commission_plans",
+                                "match_count":  51
+                            },
+                            {
+                                "term":  "commission_ledger",
+                                "match_count":  55
+                            },
+                            {
+                                "term":  "referral_attributions",
+                                "match_count":  57
+                            },
+                            {
+                                "term":  "referral_visits",
+                                "match_count":  51
+                            },
+                            {
+                                "term":  "v_partner_commission_summary",
+                                "match_count":  8
+                            },
+                            {
+                                "term":  "commission_plan_id",
+                                "match_count":  19
+                            }
+                        ],
+    "files":  [
+                  {
+                      "file":  "install-db-runtime-audit-fix.ps1",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  false,
+                      "matchCount":  12,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  27,
+                                          "line":  "table = \u0027agents\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  28,
+                                          "line":  "keywords = @(\u0027agents\u0027, \u0027agent_code\u0027, \u0027commission_plan_id\u0027, \u0027parent_agent_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  28,
+                                          "line":  "keywords = @(\u0027agents\u0027, \u0027agent_code\u0027, \u0027commission_plan_id\u0027, \u0027parent_agent_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  31,
+                                          "line":  "table = \u0027commission_plans\u0027"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  32,
+                                          "line":  "keywords = @(\u0027commission_plans\u0027, \u0027commission plan\u0027, \u0027commission_plan_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  32,
+                                          "line":  "keywords = @(\u0027commission_plans\u0027, \u0027commission plan\u0027, \u0027commission_plan_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  35,
+                                          "line":  "table = \u0027commission_ledger\u0027"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  36,
+                                          "line":  "keywords = @(\u0027commission_ledger\u0027, \u0027ledger_entry_type\u0027, \u0027commission_amount\u0027, \u0027payout_batch_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  39,
+                                          "line":  "table = \u0027referral_attributions\u0027"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  40,
+                                          "line":  "keywords = @(\u0027referral_attributions\u0027, \u0027attributed_agent_id\u0027, \u0027referred_user_id\u0027, \u0027referred_org_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  43,
+                                          "line":  "table = \u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  44,
+                                          "line":  "keywords = @(\u0027referral_visits\u0027, \u0027visit_source\u0027, \u0027utm_source\u0027, \u0027utm_medium\u0027, \u0027utm_campaign\u0027)"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "type-sync-schema-residue-audit-fixed-v2.ps1",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  false,
+                      "matchCount":  7,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  19,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  20,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  21,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  22,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  23,
+                                          "line":  "\u0027referral_visits\u0027,"
+                                      },
+                                      {
+                                          "term":  "v_partner_commission_summary",
+                                          "lineNumber":  24,
+                                          "line":  "\u0027v_partner_commission_summary\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  25,
+                                          "line":  "\u0027commission_plan_id\u0027"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "type-sync-schema-residue-audit-fixed-v3.ps1",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  false,
+                      "matchCount":  7,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  19,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  20,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  21,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  22,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  23,
+                                          "line":  "\u0027referral_visits\u0027,"
+                                      },
+                                      {
+                                          "term":  "v_partner_commission_summary",
+                                          "lineNumber":  24,
+                                          "line":  "\u0027v_partner_commission_summary\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  25,
+                                          "line":  "\u0027commission_plan_id\u0027"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "type-sync-schema-residue-audit-fixed.ps1",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  false,
+                      "matchCount":  7,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  19,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  20,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  21,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  22,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  23,
+                                          "line":  "\u0027referral_visits\u0027,"
+                                      },
+                                      {
+                                          "term":  "v_partner_commission_summary",
+                                          "lineNumber":  24,
+                                          "line":  "\u0027v_partner_commission_summary\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  25,
+                                          "line":  "\u0027commission_plan_id\u0027"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "apps\\admin\\lib\\types.ts",
+                      "likelyTypeFile":  true,
+                      "docsOnlyPath":  false,
+                      "matchCount":  1,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  203,
+                                          "line":  "agents: {"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "docs\\db-audit\\CANDIDATE_DROP_ORDER_TEMPLATE.md",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  true,
+                      "matchCount":  13,
+                      "matches":  [
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  17,
+                                          "line":  "1. `referral_visits`"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  18,
+                                          "line":  "2. `referral_attributions`"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  19,
+                                          "line":  "3. `commission_ledger`"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  23,
+                                          "line":  "4. `agents`"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  24,
+                                          "line":  "5. `commission_plans`"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  29,
+                                          "line":  "- `agents` may reference `commission_plans`"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  29,
+                                          "line":  "- `agents` may reference `commission_plans`"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  30,
+                                          "line":  "- `commission_ledger` may reference both `agents` and `commission_plans`"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  30,
+                                          "line":  "- `commission_ledger` may reference both `agents` and `commission_plans`"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  30,
+                                          "line":  "- `commission_ledger` may reference both `agents` and `commission_plans`"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  31,
+                                          "line":  "- `referral_attributions` may reference `agents` and user/org entities"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  31,
+                                          "line":  "- `referral_attributions` may reference `agents` and user/org entities"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  32,
+                                          "line":  "- `referral_visits` may be standalone analytics/logging"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "docs\\db-audit\\DB_OBJECT_AUDIT_REPORT_TEMPLATE.md",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  true,
+                      "matchCount":  5,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  18,
+                                          "line":  "| agents | low | TBD | TBD | TBD | TBD | TBD | TBD | TBD | |"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  19,
+                                          "line":  "| commission_plans | none/low | TBD | TBD | TBD | TBD | TBD | TBD | TBD | |"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  20,
+                                          "line":  "| commission_ledger | none/low | TBD | TBD | TBD | TBD | TBD | TBD | TBD | |"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  21,
+                                          "line":  "| referral_attributions | none/low | TBD | TBD | TBD | TBD | TBD | TBD | TBD | |"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  22,
+                                          "line":  "| referral_visits | none/low | TBD | TBD | TBD | TBD | TBD | TBD | TBD | |"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "docs\\db-audit\\DB_OBJECT_DEPENDENCY_CHECKLIST.md",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  true,
+                      "matchCount":  5,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  21,
+                                          "line":  "- `agents`"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  22,
+                                          "line":  "- `commission_plans`"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  23,
+                                          "line":  "- `commission_ledger`"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  24,
+                                          "line":  "- `referral_attributions`"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  25,
+                                          "line":  "- `referral_visits`"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "docs\\db-audit\\DB_RUNTIME_AUDIT_CHECKLIST.md",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  true,
+                      "matchCount":  5,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  7,
+                                          "line":  "- `agents`"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  8,
+                                          "line":  "- `commission_plans`"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  9,
+                                          "line":  "- `commission_ledger`"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  10,
+                                          "line":  "- `referral_attributions`"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  11,
+                                          "line":  "- `referral_visits`"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "docs\\db-audit\\INITIAL_FINDINGS.md",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  true,
+                      "matchCount":  10,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  16,
+                                          "line":  "- `agents`"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  17,
+                                          "line":  "- `commission_plans`"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  18,
+                                          "line":  "- `commission_ledger`"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  19,
+                                          "line":  "- `referral_attributions`"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  20,
+                                          "line":  "- `referral_visits`"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  41,
+                                          "line":  "- `agents`"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  42,
+                                          "line":  "- `commission_plans`"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  43,
+                                          "line":  "- `commission_ledger`"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  44,
+                                          "line":  "- `referral_attributions`"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  45,
+                                          "line":  "- `referral_visits`"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "docs\\db-audit\\LEGACY_TABLE_CANDIDATES_REPORT_TEMPLATE.md",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  true,
+                      "matchCount":  10,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  7,
+                                          "line":  "| agents | Yes | No | TBD | TBD | TBD | |"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  8,
+                                          "line":  "| commission_plans | Yes | No | TBD | TBD | TBD | |"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  9,
+                                          "line":  "| commission_ledger | Yes | No | TBD | TBD | TBD | |"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  10,
+                                          "line":  "| referral_attributions | Yes | No | TBD | TBD | TBD | |"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  11,
+                                          "line":  "| referral_visits | Yes | No | TBD | TBD | TBD | |"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  22,
+                                          "line":  "### agents"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  25,
+                                          "line":  "### commission_plans"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  28,
+                                          "line":  "### commission_ledger"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  31,
+                                          "line":  "### referral_attributions"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  34,
+                                          "line":  "### referral_visits"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "docs\\db-audit\\MIGRATION_DRAFT_LEGACY_MONETIZATION.md",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  true,
+                      "matchCount":  1,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  11,
+                                          "line":  "- the only notable code residue was a generated-type style hit for `agents` in `apps/admin/lib/types.ts`"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "docs\\db-audit\\RESIDUE_SEARCH_TERMS.md",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  true,
+                      "matchCount":  7,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  5,
+                                          "line":  "- `agents`"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  6,
+                                          "line":  "- `commission_plans`"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  7,
+                                          "line":  "- `commission_ledger`"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  8,
+                                          "line":  "- `referral_attributions`"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  9,
+                                          "line":  "- `referral_visits`"
+                                      },
+                                      {
+                                          "term":  "v_partner_commission_summary",
+                                          "lineNumber":  10,
+                                          "line":  "- `v_partner_commission_summary`"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  11,
+                                          "line":  "- `commission_plan_id`"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "docs\\db-audit\\TYPE_SYNC_MANUAL_REPLACEMENT_GUIDE.md",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  true,
+                      "matchCount":  7,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  40,
+                                          "line":  "- `agents`"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  41,
+                                          "line":  "- `commission_plans`"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  42,
+                                          "line":  "- `commission_ledger`"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  43,
+                                          "line":  "- `referral_attributions`"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  44,
+                                          "line":  "- `referral_visits`"
+                                      },
+                                      {
+                                          "term":  "v_partner_commission_summary",
+                                          "lineNumber":  47,
+                                          "line":  "- `v_partner_commission_summary`"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  50,
+                                          "line":  "- `organizations.commission_plan_id`"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "docs\\refactor\\DB_ALIGNMENT_LOCK.md",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  true,
+                      "matchCount":  5,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  37,
+                                          "line":  "- `agents`"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  38,
+                                          "line":  "- `commission_plans`"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  39,
+                                          "line":  "- `commission_ledger`"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  40,
+                                          "line":  "- `referral_attributions`"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  41,
+                                          "line":  "- `referral_visits`"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "scripts\\db-object-dependency-audit.ps1",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  false,
+                      "matchCount":  5,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  15,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  16,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  17,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  18,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  19,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "scripts\\db-runtime-audit-fixed.ps1",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  false,
+                      "matchCount":  12,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  16,
+                                          "line":  "table = \u0027agents\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  17,
+                                          "line":  "keywords = @(\u0027agents\u0027, \u0027agent_code\u0027, \u0027commission_plan_id\u0027, \u0027parent_agent_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  17,
+                                          "line":  "keywords = @(\u0027agents\u0027, \u0027agent_code\u0027, \u0027commission_plan_id\u0027, \u0027parent_agent_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  20,
+                                          "line":  "table = \u0027commission_plans\u0027"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  21,
+                                          "line":  "keywords = @(\u0027commission_plans\u0027, \u0027commission plan\u0027, \u0027commission_plan_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  21,
+                                          "line":  "keywords = @(\u0027commission_plans\u0027, \u0027commission plan\u0027, \u0027commission_plan_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  24,
+                                          "line":  "table = \u0027commission_ledger\u0027"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  25,
+                                          "line":  "keywords = @(\u0027commission_ledger\u0027, \u0027ledger_entry_type\u0027, \u0027commission_amount\u0027, \u0027payout_batch_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  28,
+                                          "line":  "table = \u0027referral_attributions\u0027"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  29,
+                                          "line":  "keywords = @(\u0027referral_attributions\u0027, \u0027attributed_agent_id\u0027, \u0027referred_user_id\u0027, \u0027referred_org_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  32,
+                                          "line":  "table = \u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  33,
+                                          "line":  "keywords = @(\u0027referral_visits\u0027, \u0027visit_source\u0027, \u0027utm_source\u0027, \u0027utm_medium\u0027, \u0027utm_campaign\u0027)"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "scripts\\db-runtime-audit.ps1",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  false,
+                      "matchCount":  12,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  17,
+                                          "line":  "table = \u0027agents\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  18,
+                                          "line":  "keywords = @(\u0027agents\u0027, \u0027agent_code\u0027, \u0027commission_plan_id\u0027, \u0027parent_agent_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  18,
+                                          "line":  "keywords = @(\u0027agents\u0027, \u0027agent_code\u0027, \u0027commission_plan_id\u0027, \u0027parent_agent_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  21,
+                                          "line":  "table = \u0027commission_plans\u0027"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  22,
+                                          "line":  "keywords = @(\u0027commission_plans\u0027, \u0027commission plan\u0027, \u0027commission_plan_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  22,
+                                          "line":  "keywords = @(\u0027commission_plans\u0027, \u0027commission plan\u0027, \u0027commission_plan_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  25,
+                                          "line":  "table = \u0027commission_ledger\u0027"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  26,
+                                          "line":  "keywords = @(\u0027commission_ledger\u0027, \u0027ledger_entry_type\u0027, \u0027commission_amount\u0027, \u0027payout_batch_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  29,
+                                          "line":  "table = \u0027referral_attributions\u0027"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  30,
+                                          "line":  "keywords = @(\u0027referral_attributions\u0027, \u0027attributed_agent_id\u0027, \u0027referred_user_id\u0027, \u0027referred_org_id\u0027)"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  33,
+                                          "line":  "table = \u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  34,
+                                          "line":  "keywords = @(\u0027referral_visits\u0027, \u0027visit_source\u0027, \u0027utm_source\u0027, \u0027utm_medium\u0027, \u0027utm_campaign\u0027)"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "scripts\\type-sync-schema-residue-audit.ps1",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  false,
+                      "matchCount":  7,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  19,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  20,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  21,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  22,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  23,
+                                          "line":  "\u0027referral_visits\u0027,"
+                                      },
+                                      {
+                                          "term":  "v_partner_commission_summary",
+                                          "lineNumber":  24,
+                                          "line":  "\u0027v_partner_commission_summary\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  25,
+                                          "line":  "\u0027commission_plan_id\u0027"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "scripts\\x type-sync-schema-residue-audit.ps1",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  false,
+                      "matchCount":  7,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  19,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  20,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  21,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  22,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  23,
+                                          "line":  "\u0027referral_visits\u0027,"
+                                      },
+                                      {
+                                          "term":  "v_partner_commission_summary",
+                                          "lineNumber":  24,
+                                          "line":  "\u0027v_partner_commission_summary\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  25,
+                                          "line":  "\u0027commission_plan_id\u0027"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "supabase\\migrations\\20260423_legacy_monetization_db_cleanup.sql",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  false,
+                      "matchCount":  33,
+                      "matches":  [
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  7,
+                                          "line":  "--   - organizations.commission_plan_id still references commission_plans"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  7,
+                                          "line":  "--   - organizations.commission_plan_id still references commission_plans"
+                                      },
+                                      {
+                                          "term":  "v_partner_commission_summary",
+                                          "lineNumber":  17,
+                                          "line":  "drop view if exists public.v_partner_commission_summary;"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  21,
+                                          "line":  "drop constraint if exists organizations_commission_plan_id_fkey;"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  24,
+                                          "line":  "drop column if exists commission_plan_id;"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  27,
+                                          "line":  "alter table if exists public.commission_ledger"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  28,
+                                          "line":  "drop constraint if exists commission_ledger_referral_attribution_id_fkey;"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  30,
+                                          "line":  "alter table if exists public.commission_ledger"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  31,
+                                          "line":  "drop constraint if exists commission_ledger_agent_id_fkey;"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  33,
+                                          "line":  "alter table if exists public.commission_ledger"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  34,
+                                          "line":  "drop constraint if exists commission_ledger_commission_plan_id_fkey;"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  34,
+                                          "line":  "drop constraint if exists commission_ledger_commission_plan_id_fkey;"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  36,
+                                          "line":  "alter table if exists public.referral_attributions"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  37,
+                                          "line":  "drop constraint if exists referral_attributions_agent_id_fkey;"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  39,
+                                          "line":  "alter table if exists public.referral_attributions"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  40,
+                                          "line":  "drop constraint if exists referral_attributions_commission_plan_id_fkey;"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  40,
+                                          "line":  "drop constraint if exists referral_attributions_commission_plan_id_fkey;"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  42,
+                                          "line":  "alter table if exists public.referral_attributions"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  43,
+                                          "line":  "drop constraint if exists referral_attributions_first_visit_id_fkey;"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  45,
+                                          "line":  "alter table if exists public.referral_attributions"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  46,
+                                          "line":  "drop constraint if exists referral_attributions_last_visit_id_fkey;"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  48,
+                                          "line":  "alter table if exists public.referral_visits"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  49,
+                                          "line":  "drop constraint if exists referral_visits_agent_id_fkey;"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  51,
+                                          "line":  "alter table if exists public.agents"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  52,
+                                          "line":  "drop constraint if exists agents_parent_agent_id_fkey;"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  54,
+                                          "line":  "alter table if exists public.agents"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  55,
+                                          "line":  "drop constraint if exists agents_commission_plan_id_fkey;"
+                                      },
+                                      {
+                                          "term":  "commission_plan_id",
+                                          "lineNumber":  55,
+                                          "line":  "drop constraint if exists agents_commission_plan_id_fkey;"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  58,
+                                          "line":  "drop table if exists public.commission_ledger;"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  59,
+                                          "line":  "drop table if exists public.referral_attributions;"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  60,
+                                          "line":  "drop table if exists public.referral_visits;"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  63,
+                                          "line":  "drop table if exists public.agents;"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  64,
+                                          "line":  "drop table if exists public.commission_plans;"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "supabase\\migrations\\db-object-dependency-audit-fixed.sql",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  false,
+                      "matchCount":  35,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  11,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  12,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  13,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  14,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  15,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  38,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  39,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  40,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  41,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  42,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  55,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  56,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  57,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  58,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  59,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  74,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  75,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  76,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  77,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  78,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  104,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  105,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  106,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  107,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  108,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  121,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  122,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  123,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  124,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  125,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  138,
+                                          "line":  "lower(pg_get_functiondef(p.oid)) like \u0027%agents%\u0027"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  139,
+                                          "line":  "or lower(pg_get_functiondef(p.oid)) like \u0027%commission_plans%\u0027"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  140,
+                                          "line":  "or lower(pg_get_functiondef(p.oid)) like \u0027%commission_ledger%\u0027"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  141,
+                                          "line":  "or lower(pg_get_functiondef(p.oid)) like \u0027%referral_attributions%\u0027"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  142,
+                                          "line":  "or lower(pg_get_functiondef(p.oid)) like \u0027%referral_visits%\u0027"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "supabase\\migrations\\db-object-dependency-audit-minimal.sql",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  false,
+                      "matchCount":  35,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  14,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  15,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  16,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  17,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  18,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  38,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  39,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  40,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  41,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  42,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  65,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  66,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  67,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  68,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  69,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  85,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  86,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  87,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  88,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  89,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  114,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  115,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  116,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  117,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  118,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  134,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  135,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  136,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  137,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  138,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  151,
+                                          "line":  "lower(pg_get_functiondef(p.oid)) like \u0027%agents%\u0027"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  152,
+                                          "line":  "or lower(pg_get_functiondef(p.oid)) like \u0027%commission_plans%\u0027"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  153,
+                                          "line":  "or lower(pg_get_functiondef(p.oid)) like \u0027%commission_ledger%\u0027"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  154,
+                                          "line":  "or lower(pg_get_functiondef(p.oid)) like \u0027%referral_attributions%\u0027"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  155,
+                                          "line":  "or lower(pg_get_functiondef(p.oid)) like \u0027%referral_visits%\u0027"
+                                      }
+                                  ]
+                  },
+                  {
+                      "file":  "supabase\\migrations\\db-object-dependency-audit.sql",
+                      "likelyTypeFile":  false,
+                      "docsOnlyPath":  false,
+                      "matchCount":  50,
+                      "matches":  [
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  7,
+                                          "line":  "--   agents"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  8,
+                                          "line":  "--   commission_plans"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  9,
+                                          "line":  "--   commission_ledger"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  10,
+                                          "line":  "--   referral_attributions"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  11,
+                                          "line":  "--   referral_visits"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  20,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  21,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  22,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  23,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  24,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  47,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  48,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  49,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  50,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  51,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  64,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  65,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  66,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  67,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  68,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  83,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  84,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  85,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  86,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  87,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  104,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  105,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  106,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  107,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  108,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  121,
+                                          "line":  "\u0027agents\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  122,
+                                          "line":  "\u0027commission_plans\u0027,"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  123,
+                                          "line":  "\u0027commission_ledger\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  124,
+                                          "line":  "\u0027referral_attributions\u0027,"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  125,
+                                          "line":  "\u0027referral_visits\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  138,
+                                          "line":  "lower(pg_get_functiondef(p.oid)) like \u0027%agents%\u0027"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  139,
+                                          "line":  "or lower(pg_get_functiondef(p.oid)) like \u0027%commission_plans%\u0027"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  140,
+                                          "line":  "or lower(pg_get_functiondef(p.oid)) like \u0027%commission_ledger%\u0027"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  141,
+                                          "line":  "or lower(pg_get_functiondef(p.oid)) like \u0027%referral_attributions%\u0027"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  142,
+                                          "line":  "or lower(pg_get_functiondef(p.oid)) like \u0027%referral_visits%\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  156,
+                                          "line":  "--     lower(pg_get_functiondef(p.oid)) like \u0027%agents%\u0027"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  157,
+                                          "line":  "--     or lower(pg_get_functiondef(p.oid)) like \u0027%commission_plans%\u0027"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  158,
+                                          "line":  "--     or lower(pg_get_functiondef(p.oid)) like \u0027%commission_ledger%\u0027"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  159,
+                                          "line":  "--     or lower(pg_get_functiondef(p.oid)) like \u0027%referral_attributions%\u0027"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  160,
+                                          "line":  "--     or lower(pg_get_functiondef(p.oid)) like \u0027%referral_visits%\u0027"
+                                      },
+                                      {
+                                          "term":  "agents",
+                                          "lineNumber":  165,
+                                          "line":  "-- select \u0027agents\u0027 as table_name, count(*) from public.agents"
+                                      },
+                                      {
+                                          "term":  "commission_plans",
+                                          "lineNumber":  167,
+                                          "line":  "-- select \u0027commission_plans\u0027, count(*) from public.commission_plans"
+                                      },
+                                      {
+                                          "term":  "commission_ledger",
+                                          "lineNumber":  169,
+                                          "line":  "-- select \u0027commission_ledger\u0027, count(*) from public.commission_ledger"
+                                      },
+                                      {
+                                          "term":  "referral_attributions",
+                                          "lineNumber":  171,
+                                          "line":  "-- select \u0027referral_attributions\u0027, count(*) from public.referral_attributions"
+                                      },
+                                      {
+                                          "term":  "referral_visits",
+                                          "lineNumber":  173,
+                                          "line":  "-- select \u0027referral_visits\u0027, count(*) from public.referral_visits;"
+                                      }
+                                  ]
+                  }
+              ]
+}

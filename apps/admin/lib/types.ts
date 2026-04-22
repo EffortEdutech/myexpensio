@@ -183,29 +183,3 @@ export type SubscriptionStatus = {
   period_end: string | null
   updated_at: string
 }
-
-export type BillingStats = {
-  subscriptions: {
-    active: number
-    trialing: number
-    past_due: number
-    unpaid: number
-    cancel_at_period_end: number
-    total: number
-  }
-  mrr_estimate: number
-  arr_estimate: number
-  invoices: {
-    paid_this_month: number
-    paid_amount_this_month: number
-    failed_this_month: number
-  }
-  agents: {
-    active: number
-    pending: number
-  }
-  commission: {
-    pending_amount: number
-    pending_count: number
-  }
-}
