@@ -1,0 +1,55 @@
+name: Validate
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    name: build-${{ matrix.app }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app:
+          - user
+          - admin
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: test-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: test-service-role-key
+      NEXT_PUBLIC_APP_VERSION: ci
+      NEXT_PUBLIC_APP_URL: http://localhost:3100
+      GMAIL_SMTP_USER: ci@example.com
+      GMAIL_SMTP_APP_PASSWORD: dummy-password
+      MAIL_FROM_NAME: myexpensio CI
+      STRIPE_SECRET_KEY: sk_test_dummy
+      STRIPE_WEBHOOK_SECRET: whsec_dummy
+      TOYYIBPAY_SECRET_KEY: dummy-secret
+      TOYYIBPAY_CATEGORY_CODE: dummy-category
+      TOYYIBPAY_BASE_URL: https://dev.toyyibpay.com
+      TOYYIBPAY_CALLBACK_URL: http://localhost:3101/api/admin/webhooks/billing/toyyibpay
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build
+        run: pnpm build:${{ matrix.app }}

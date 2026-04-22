@@ -1,18 +1,19 @@
 {
   "name": "myexpensio",
+  "private": true,
   "version": "1.0.0",
-  "description": "Initial scaffold.",
-  "main": "index.js",
+  "description": "myexpensio monorepo (user app, admin app, and shared domain package).",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev:user": "pnpm -C apps/user dev",
+    "dev:admin": "pnpm -C apps/admin dev",
+    "build:user": "pnpm -C apps/user build",
+    "build:admin": "pnpm -C apps/admin build",
+    "validate": "pnpm build:user && pnpm build:admin"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/EffortEdutech/myexpensio.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "bugs": {
     "url": "https://github.com/EffortEdutech/myexpensio/issues"
   },
