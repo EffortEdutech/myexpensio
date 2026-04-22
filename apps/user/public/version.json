@@ -1,6 +1,11 @@
 {
-  "version": "0.1.14",
+  "version": "0.2.0",
   "changelog": [
-    "Improvements and bug fixes"
+    "add cleanup and stabilization validation",
+    "add cleanup and stabilization validation ()",
+    "upgrade next.config.js to remove eslint ()",
+    "admin apps build ()",
+    "build admin ()",
+    "rate for car & bike ()"
   ]
 }
