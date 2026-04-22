@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.4.0](https://github.com/EffortEdutech/myexpensio/compare/v0.3.0...v0.4.0) (2026-04-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* restore shared admin http helper after billing deletion
+
+### Bug Fixes
+
+* restore shared admin http helper after billing deletion ([cbe16af](https://github.com/EffortEdutech/myexpensio/commit/cbe16af048761dcd24dcc45a3730fe0f4aec6191))
+
 ## [0.3.0](https://github.com/EffortEdutech/myexpensio/compare/v0.2.0...v0.3.0) (2026-04-22)
 
 
