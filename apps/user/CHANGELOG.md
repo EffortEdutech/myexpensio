@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.3.0](https://github.com/EffortEdutech/myexpensio/compare/v0.2.0...v0.3.0) (2026-04-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* migrate middleware to proxy and inventory refactor debris
+
+### Features
+
+* migrate middleware to proxy and inventory refactor debris ([bb16981](https://github.com/EffortEdutech/myexpensio/commit/bb1698141c2dca5316564afc6eb8303982dd0947))
+
 ## [0.2.0](https://github.com/EffortEdutech/myexpensio/compare/v0.1.14...v0.2.0) (2026-04-22)
 
 
