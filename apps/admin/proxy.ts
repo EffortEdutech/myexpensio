@@ -1,4 +1,4 @@
-// apps/admin/middleware.ts
+// apps/admin/proxy.ts
 //
 // Two jobs:
 //   1. Refresh Supabase session cookie on every request
@@ -22,7 +22,7 @@ function isAllowedRole(role: string | null | undefined): role is AllowedRole {
   return ALLOWED_ROLES.includes(role as AllowedRole)
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p))
 
@@ -34,7 +34,6 @@ export async function middleware(request: NextRequest) {
     options?: CookieOptions
   }
 
-  // Build Supabase client that reads/writes cookies
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -54,15 +53,11 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // Always refresh session
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
   if (isPublic) {
-    // On /login: only redirect to /dashboard if user is actually authorised.
-    // If they are logged in but not authorised, leave them on /login so the
-    // error message displays — do NOT redirect or the loop starts.
     if (user && pathname === '/login') {
       const { data: profile } = await supabase
         .from('profiles')
@@ -73,19 +68,16 @@ export async function middleware(request: NextRequest) {
       if (isAllowedRole(profile?.role)) {
         return NextResponse.redirect(new URL('/dashboard', request.url))
       }
-      // Not authorised — fall through, stay on /login
     }
     return response
   }
 
-  // Protected routes — must be authenticated
   if (!user) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('next', pathname)
     return NextResponse.redirect(loginUrl)
   }
 
-  // Must be SUPER_ADMIN or SUPPORT
   const { data: profile } = await supabase
     .from('profiles')
     .select('role')
