@@ -1,12 +1,11 @@
 /**
  * apps/admin/app/api/admin/orgs/route.ts
  *
- * Returns a flat list of all organisations for use in dropdowns/pickers
- * across billing and partner admin screens.
+ * Returns a flat list of all organisations for use in dropdowns/pickers.
  */
 import { requireAdminAuth } from '@/lib/auth'
+import { err, ok } from '@/lib/http'
 import { createServiceRoleClient } from '@/lib/supabase/server'
-import { err, ok } from '@/lib/billing/http'
 
 export async function GET(request: Request) {
   const ctx = await requireAdminAuth('api')
@@ -28,6 +27,5 @@ export async function GET(request: Request) {
   const { data, error, count } = await query
   if (error) return err('SERVER_ERROR', error.message, 500)
 
-  // Return as `data` array (matches the shape the pages expect: `orgsData.data`)
   return ok({ data: data ?? [], total: count ?? 0 })
 }

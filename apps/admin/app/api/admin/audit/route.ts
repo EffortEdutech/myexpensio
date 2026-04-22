@@ -1,10 +1,9 @@
 /**
  * apps/admin/app/api/admin/audit/route.ts
- * Already exists — verify this version matches. Replace if needed.
  */
 import { requireAdminAuth } from '@/lib/auth'
+import { err, ok, parsePaging } from '@/lib/http'
 import { createServiceRoleClient } from '@/lib/supabase/server'
-import { err, ok, parsePaging } from '@/lib/billing/http'
 
 export async function GET(request: Request) {
   const ctx = await requireAdminAuth('api')

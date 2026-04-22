@@ -63,62 +63,6 @@ const NAV_GROUPS: NavGroup[] = [
       },
     ],
   },
-  {
-    group: 'Billing',
-    items: [
-      {
-        label: 'Overview',
-        href: '/billing',
-        exact: true,
-        icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
-      },
-      {
-        label: 'Plans & Pricing',
-        href: '/billing/plans',
-        icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10',
-      },
-      {
-        label: 'Subscriptions',
-        href: '/billing/subscriptions',
-        icon: 'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z',
-      },
-      {
-        label: 'Invoices',
-        href: '/billing/invoices',
-        icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
-      },
-      {
-        label: 'Webhook events',
-        href: '/billing/events',
-        icon: 'M13 10V3L4 14h7v7l9-11h-7z',
-      },
-    ],
-  },
-  {
-    group: 'Partners',
-    items: [
-      {
-        label: 'Partner orgs',
-        href: '/referrals/agents',
-        icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4',
-      },
-      {
-        label: 'Commission plans',
-        href: '/referrals/commission-plans',
-        icon: 'M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z',
-      },
-      {
-        label: 'Commission ledger',
-        href: '/referrals/ledger',
-        icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
-      },
-      {
-        label: 'Payout runs',
-        href: '/referrals/payout-runs',
-        icon: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12',
-      },
-    ],
-  },
 ]
 
 export default function AdminNav({ onNavigate }: { onNavigate?: () => void }) {

@@ -1,12 +1,3 @@
-// apps/admin/lib/billing/http.ts
-//
-// Minimal response helpers re-created after billing table cleanup.
-// This file was deleted during the R1 billing simplification but
-// is still imported by some admin routes (commission-plans, orgs).
-//
-// DO NOT add billing domain logic here.
-// This file only contains generic JSON response helpers.
-
 import { NextResponse } from 'next/server'
 
 export function err(code: string, message: string, status: number) {
@@ -21,4 +12,29 @@ export function ok(data: unknown, status = 200) {
     { ok: true, data, error: null },
     { status }
   )
+}
+
+export function parsePaging(url: URL) {
+  const pageParam =
+    url.searchParams.get('page') ??
+    '1'
+
+  const pageSizeParam =
+    url.searchParams.get('page_size') ??
+    url.searchParams.get('pageSize') ??
+    '20'
+
+  const page = Number.isFinite(Number(pageParam))
+    ? Math.max(1, Number(pageParam))
+    : 1
+
+  const pageSizeRaw = Number.isFinite(Number(pageSizeParam))
+    ? Number(pageSizeParam)
+    : 20
+
+  const pageSize = Math.min(100, Math.max(1, pageSizeRaw))
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+
+  return { page, pageSize, from, to }
 }

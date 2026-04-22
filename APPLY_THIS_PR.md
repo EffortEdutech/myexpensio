@@ -1,34 +1,22 @@
-# Next PR Pack — proxy rename + dead-file inventory
+# Post-deletion fix pack
 
-This pack is intentionally limited to two safe goals:
+The deletion PR worked, but 4 survivors still referenced the deleted helper
+`@/lib/billing/http`.
 
-1. align both apps with the Next 16 `proxy.ts` convention
-2. produce an inventory report for refactor debris before any deletions
+This pack fixes that by:
+- restoring the tiny generic HTTP helper as `apps/admin/lib/http.ts`
+- repointing `audit` and `orgs` to `@/lib/http`
+- deleting the now-orphaned `apps/admin/app/api/admin/partners` API
 
-## Files in this pack
-- `apps/admin/proxy.ts`
-- `apps/user/proxy.ts`
-- `scripts/inventory-refactor-debris.ps1`
+## Apply
 
-## Manual actions
-After copying the files into repo root, run:
+1. Copy these files into repo root.
+2. Run:
 
 ```powershell
-Remove-Item .\apps\admin\middleware.ts
-Remove-Item .\apps\user\middleware.ts
-powershell -ExecutionPolicy Bypass -File .\scripts\inventory-refactor-debris.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\fix-post-deletion-imports.ps1
 pnpm validate
 ```
 
-## Expected result
-- Next 16 middleware deprecation warning should be removed
-- `.\reports\proxy-middleware-files.txt` will show remaining proxy/middleware files
-- `.\reports\admin-refactor-candidates.txt` will list billing/referral/subscription candidates for the later deletion PR
-
 ## Recommended commit message
-`chore: migrate middleware to proxy and inventory refactor debris`
-
-## Not included on purpose
-- no route deletions yet
-- no billing deletions yet
-- no database changes
+`fix: restore shared admin http helper after billing deletion`
