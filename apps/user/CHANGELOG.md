@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.2.0](https://github.com/EffortEdutech/myexpensio/compare/v0.1.14...v0.2.0) (2026-04-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* add cleanup and stabilization validation
+
+### Features
+
+* add cleanup and stabilization validation ([41b0f48](https://github.com/EffortEdutech/myexpensio/commit/41b0f4808233d2746fe6c230b9c13cbf7a80c25d))
+
 ### [0.1.14](https://github.com/EffortEdutech/myexpensio/compare/v0.1.13...v0.1.14) (2026-04-22)
 
 
