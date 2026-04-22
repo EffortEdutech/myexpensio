@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.14](https://github.com/EffortEdutech/myexpensio/compare/v0.1.13...v0.1.14) (2026-04-22)
+
+
+### Features
+
+* upgrade next.config.js to remove eslint ([7db4aca](https://github.com/EffortEdutech/myexpensio/commit/7db4aca41dc894ad0672870b72aa4f1edf7b4d2e))
+
 ### [0.1.13](https://github.com/EffortEdutech/myexpensio/compare/v0.1.12...v0.1.13) (2026-04-22)
 
 ### [0.1.12](https://github.com/EffortEdutech/myexpensio/compare/v0.1.11...v0.1.12) (2026-04-22)
