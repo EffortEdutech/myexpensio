@@ -1,5 +1,5 @@
 {
-  "version": "0.4.0",
+  "version": "0.4.1",
   "changelog": [
     "restore shared admin http helper after billing deletion",
     "restore shared admin http helper after billing deletion ()"
