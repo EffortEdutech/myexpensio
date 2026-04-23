@@ -2,13 +2,17 @@
   "name": "myexpensio",
   "private": true,
   "version": "1.0.0",
-  "description": "myexpensio monorepo (user app, admin app, and shared domain package).",
+  "description": "myexpensio monorepo (user app, admin app, and shared packages).",
   "scripts": {
     "dev:user": "pnpm -C apps/user dev",
     "dev:admin": "pnpm -C apps/admin dev",
     "build:user": "pnpm -C apps/user build",
     "build:admin": "pnpm -C apps/admin build",
-    "validate": "pnpm build:user && pnpm build:admin"
+    "validate": "pnpm build:user && pnpm build:admin",
+    "audit:db-runtime": "powershell -ExecutionPolicy Bypass -File .\\scripts\\db-runtime-audit.ps1",
+    "audit:db-runtime:strict": "powershell -ExecutionPolicy Bypass -File .\\scripts\\db-runtime-audit.ps1 -FailOnHits",
+    "validate:guardrails": "powershell -ExecutionPolicy Bypass -File .\\scripts\\release-lock-check.ps1 && pnpm audit:db-runtime:strict",
+    "validate:full": "pnpm validate && pnpm validate:guardrails"
   },
   "repository": {
     "type": "git",
