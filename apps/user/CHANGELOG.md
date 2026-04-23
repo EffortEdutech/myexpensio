@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.5.0](https://github.com/EffortEdutech/myexpensio/compare/v0.4.1...v0.5.0) (2026-04-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* first stable v2 release for MyExpensio user app
+
+### Features
+
+* release v2 stable ([2ec7e3e](https://github.com/EffortEdutech/myexpensio/commit/2ec7e3ec98b46aade5ffdd9c47ec61ca5c25c037))
+
 ### [0.4.1](https://github.com/EffortEdutech/myexpensio/compare/v0.4.0...v0.4.1) (2026-04-22)
 
 ## [0.4.0](https://github.com/EffortEdutech/myexpensio/compare/v0.3.0...v0.4.0) (2026-04-22)
