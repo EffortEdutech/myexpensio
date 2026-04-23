@@ -2,6 +2,7 @@
 // apps/admin/app/(protected)/exports/ExportsClient.tsx
 
 import { useMemo, useState } from 'react'
+import { Fragment } from 'react';
 
 type Org = { id: string; name: string; display_name: string | null }
 
@@ -225,8 +226,8 @@ export default function ExportsClient({
                 const isExpanded = expandedId === job.id
 
                 return (
-                  <>
-                    <tr key={job.id} className="hover:bg-gray-50">
+                    <Fragment key={job.id}>
+                    <tr className="hover:bg-gray-50">
                       <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">
                         {fmtDateTime(job.created_at)}
                       </td>
@@ -285,7 +286,9 @@ export default function ExportsClient({
                         </td>
                       </tr>
                     )}
-                  </>
+                  
+
+                    </Fragment>
                 )
               })}
             </tbody>
