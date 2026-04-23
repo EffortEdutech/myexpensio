@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.0.1](https://github.com/EffortEdutech/myexpensio/compare/v1.0.0...v1.0.1) (2026-04-23)
+
+
+### Bug Fixes
+
+* ExportsClient use fragment ([d716624](https://github.com/EffortEdutech/myexpensio/commit/d716624622928f52ce3c24cb4d2a921539318a61))
+
 ## [1.0.0](https://github.com/EffortEdutech/myexpensio/compare/v0.4.1...v1.0.0) (2026-04-23)
 
 
