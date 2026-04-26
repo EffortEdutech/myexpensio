@@ -1,8 +1,11 @@
 // apps/admin/app/(protected)/layout.tsx
-import { requireAdminAuth } from '@/lib/auth'
-import AdminShell from '@/components/AdminShell'
+// Switches from requireAdminAuth (Console-only) to requireWorkspaceAuth
+// which admits both internal staff AND customer workspace admins.
+
+import { requireWorkspaceAuth } from '@/lib/workspace-auth'
+import WorkspaceShell from '@/components/WorkspaceShell'
 
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
-  const ctx = await requireAdminAuth('page')
-  return <AdminShell ctx={ctx!}>{children}</AdminShell>
+  const ctx = await requireWorkspaceAuth('page')
+  return <WorkspaceShell ctx={ctx!}>{children}</WorkspaceShell>
 }
