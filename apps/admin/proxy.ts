@@ -1,26 +1,31 @@
 // apps/admin/proxy.ts
 //
+// Expensio Workspace middleware.
+//
 // Two jobs:
 //   1. Refresh Supabase session cookie on every request
-//   2. Protect all routes — only profiles.role IN ('SUPER_ADMIN','SUPPORT') may enter
+//   2. Ensure only authenticated users with workspace access can enter
 //
-// Login page rule:
-//   - If user is logged in AND is SUPER_ADMIN/SUPPORT → redirect to /dashboard
-//   - If user is logged in but NOT authorised → stay on /login (show error)
-//   - This prevents the redirect loop where a non-admin user bounces
-//     between /login?error=unauthorized and /dashboard indefinitely.
+// WHO CAN ENTER:
+//   SUPER_ADMIN / SUPPORT  → internal staff, always allowed
+//   USER with workspace management role (OWNER/ADMIN/MANAGER/SALES/FINANCE) → allowed
+//   USER with only EMPLOYEE role → redirected to user app (MyExpensio)
+//   Not logged in → redirected to /login
+//
+// NOTE: The lightweight check here only verifies session + profiles.role.
+// The detailed workspace-level role check (which org, which role) happens in
+// requireWorkspaceAuth() inside each protected layout/route handler.
 
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { type NextRequest, NextResponse } from 'next/server'
 
 const PUBLIC_PATHS = ['/login', '/auth']
 
-const ALLOWED_ROLES = ['SUPER_ADMIN', 'SUPPORT'] as const
-type AllowedRole = typeof ALLOWED_ROLES[number]
+// Roles that can access Workspace App directly (internal staff)
+const INTERNAL_ROLES = ['SUPER_ADMIN', 'SUPPORT'] as const
 
-function isAllowedRole(role: string | null | undefined): role is AllowedRole {
-  return ALLOWED_ROLES.includes(role as AllowedRole)
-}
+// Workspace org_roles that are allowed into this app
+const WORKSPACE_MANAGEMENT_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'SALES', 'FINANCE'] as const
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -28,49 +33,62 @@ export async function proxy(request: NextRequest) {
 
   let response = NextResponse.next({ request: { headers: request.headers } })
 
-  type CookieToSet = {
-    name: string
-    value: string
-    options?: CookieOptions
-  }
+  type CookieToSet = { name: string; value: string; options?: CookieOptions }
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
+        getAll() { return request.cookies.getAll() },
         setAll(cookiesToSet: CookieToSet[]) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           response = NextResponse.next({ request: { headers: request.headers } })
           cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
+            response.cookies.set(name, value, options),
           )
         },
       },
-    }
+    },
   )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // ── Public paths ────────────────────────────────────────────────────────────
 
   if (isPublic) {
     if (user && pathname === '/login') {
+      // Already logged in → check if they should be redirected to dashboard
       const { data: profile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single()
 
-      if (isAllowedRole(profile?.role)) {
+      if (profile?.role && INTERNAL_ROLES.includes(profile.role as typeof INTERNAL_ROLES[number])) {
         return NextResponse.redirect(new URL('/dashboard', request.url))
+      }
+
+      // For USER role: check if they have any workspace management membership
+      if (profile?.role === 'USER') {
+        const { data: membership } = await supabase
+          .from('org_members')
+          .select('org_role')
+          .eq('user_id', user.id)
+          .eq('status', 'ACTIVE')
+          .in('org_role', [...WORKSPACE_MANAGEMENT_ROLES])
+          .limit(1)
+          .maybeSingle()
+
+        if (membership) {
+          return NextResponse.redirect(new URL('/dashboard', request.url))
+        }
       }
     }
     return response
   }
+
+  // ── Protected paths ─────────────────────────────────────────────────────────
 
   if (!user) {
     const loginUrl = new URL('/login', request.url)
@@ -78,17 +96,47 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl)
   }
 
+  // Get user's platform role
   const { data: profile } = await supabase
     .from('profiles')
     .select('role')
     .eq('id', user.id)
     .single()
 
-  if (!isAllowedRole(profile?.role)) {
-    return NextResponse.redirect(new URL('/login?error=unauthorized', request.url))
+  const platformRole = profile?.role
+
+  // ── SUPER_ADMIN / SUPPORT: always allowed ───────────────────────────────────
+
+  if (platformRole && INTERNAL_ROLES.includes(platformRole as typeof INTERNAL_ROLES[number])) {
+    return response
   }
 
-  return response
+  // ── USER: check for workspace management membership ─────────────────────────
+
+  if (platformRole === 'USER') {
+    const { data: membership } = await supabase
+      .from('org_members')
+      .select('org_role')
+      .eq('user_id', user.id)
+      .eq('status', 'ACTIVE')
+      .in('org_role', [...WORKSPACE_MANAGEMENT_ROLES])
+      .limit(1)
+      .maybeSingle()
+
+    if (membership) {
+      // Has at least one workspace management role → allow through
+      // requireWorkspaceAuth in the layout will do the fine-grained check
+      return response
+    }
+
+    // USER with no workspace management role (pure EMPLOYEE / subscriber)
+    // → redirect to MyExpensio (the user app)
+    const userAppUrl = process.env.NEXT_PUBLIC_USER_APP_URL ?? 'http://localhost:3100'
+    return NextResponse.redirect(new URL(userAppUrl))
+  }
+
+  // Any other profile state → send to login
+  return NextResponse.redirect(new URL('/login?error=unauthorized', request.url))
 }
 
 export const config = {

@@ -1,8 +1,11 @@
 // apps/cs/app/api/console/workspaces/[orgId]/members/route.ts
 //
 // GET    — list all members of a workspace
-// POST   — add member directly. For INTERNAL workspace, accepts optional
-//          platform_role (SUPPORT | SUPER_ADMIN) to set profiles.role.
+// POST   — add member directly (Console staff, no approval queue)
+//          Role-aware redirect URLs:
+//            EMPLOYEE → USER_APP_URL (MyExpensio)
+//            OWNER/ADMIN/MANAGER/SALES/FINANCE → WORKSPACE_APP_URL (Expensio Workspace)
+//            SUPPORT/SUPER_ADMIN (INTERNAL) → CS_APP_URL (Expensio Console)
 // PATCH  — change org_role
 // DELETE — remove member (SUPER_ADMIN only)
 
@@ -14,6 +17,25 @@ type Params = { params: Promise<{ orgId: string }> }
 
 function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
+}
+
+// Role-aware redirect URL
+function getRedirectUrl(orgRole: string, workspaceType: string, platformRole?: string): string {
+  const workspaceAppUrl = process.env.NEXT_PUBLIC_WORKSPACE_APP_URL ?? 'http://localhost:3101'
+  const userAppUrl      = process.env.NEXT_PUBLIC_USER_APP_URL      ?? 'http://localhost:3100'
+  const consoleAppUrl   = process.env.NEXT_PUBLIC_CS_APP_URL        ?? 'http://localhost:3102'
+
+  // Internal workspace: staff log into Console
+  if (workspaceType === 'INTERNAL') return consoleAppUrl
+
+  // Platform-level staff → Console
+  if (platformRole === 'SUPPORT' || platformRole === 'SUPER_ADMIN') return consoleAppUrl
+
+  // EMPLOYEE (Team employee or Agent subscriber) → MyExpensio user app
+  if (orgRole === 'EMPLOYEE') return userAppUrl
+
+  // All other workspace management roles → Workspace App
+  return workspaceAppUrl
 }
 
 // ── GET ────────────────────────────────────────────────────────────────────────
@@ -46,7 +68,7 @@ export async function GET(_req: Request, { params }: Params) {
   return NextResponse.json({ members })
 }
 
-// ── POST — add member (with optional platform_role for INTERNAL workspace) ────
+// ── POST — add member ──────────────────────────────────────────────────────────
 
 export async function POST(req: Request, { params }: Params) {
   const ctx = await requireConsoleAuth('api')
@@ -64,7 +86,7 @@ export async function POST(req: Request, { params }: Params) {
   const cleanEmail = email.trim().toLowerCase()
   const db = createServiceRoleClient()
 
-  // Fetch org to get workspace_type
+  // Fetch org
   const { data: org } = await db
     .from('organizations')
     .select('id, name, workspace_type, status')
@@ -95,7 +117,7 @@ export async function POST(req: Request, { params }: Params) {
     )
   }
 
-  // Validate platform_role only for INTERNAL workspace
+  // Validate platform_role for INTERNAL workspace
   const VALID_PLATFORM_ROLES = ['SUPPORT', 'SUPER_ADMIN']
   if (platform_role && !VALID_PLATFORM_ROLES.includes(platform_role)) {
     return err('VALIDATION_ERROR', 'platform_role must be SUPPORT or SUPER_ADMIN', 400)
@@ -106,13 +128,17 @@ export async function POST(req: Request, { params }: Params) {
   if (org.workspace_type === 'INTERNAL' && !platform_role) {
     return err('VALIDATION_ERROR', 'platform_role is required when adding to INTERNAL workspace', 400)
   }
-
-  // SUPER_ADMIN only can elevate to SUPER_ADMIN
   if (platform_role === 'SUPER_ADMIN' && ctx.role !== 'SUPER_ADMIN') {
     return err('FORBIDDEN', 'Only SUPER_ADMIN can grant SUPER_ADMIN role', 403)
   }
 
-  const workspaceAppUrl = process.env.NEXT_PUBLIC_WORKSPACE_APP_URL ?? 'http://localhost:3101'
+  // Determine profiles.role
+  const profilesRole =
+    org.workspace_type === 'INTERNAL' && platform_role ? platform_role : 'USER'
+
+  // Determine redirect URL based on role
+  const redirectBase = getRedirectUrl(org_role, org.workspace_type, profilesRole)
+  const redirectTo   = `${redirectBase}/auth/callback`
 
   // Check if user already exists
   const { data: existingUsers } = await db.auth.admin.listUsers()
@@ -143,11 +169,10 @@ export async function POST(req: Request, { params }: Params) {
       )
     }
   } else {
-    // Invite new user
     const { data: inviteData, error: inviteError } = await db.auth.admin.inviteUserByEmail(
       cleanEmail,
       {
-        redirectTo: `${workspaceAppUrl}/auth/callback`,
+        redirectTo,
         data: {
           display_name:   display_name?.trim() || cleanEmail,
           workspace_name: org.name,
@@ -162,13 +187,6 @@ export async function POST(req: Request, { params }: Params) {
 
     userId = inviteData.user.id
   }
-
-  // Determine the profiles.role to set
-  // INTERNAL workspace: use platform_role (SUPPORT or SUPER_ADMIN)
-  // All other workspaces: USER
-  const profilesRole = org.workspace_type === 'INTERNAL' && platform_role
-    ? platform_role
-    : 'USER'
 
   // Upsert profile
   await db.from('profiles').upsert(
@@ -199,39 +217,36 @@ export async function POST(req: Request, { params }: Params) {
     entity_id:     userId,
     action:        'MEMBER_ADDED_BY_CONSOLE',
     metadata:      {
-      email: cleanEmail,
+      email:          cleanEmail,
       org_role,
-      platform_role: profilesRole,
-      user_existed: userExisted,
+      platform_role:  profilesRole,
+      user_existed:   userExisted,
       workspace_type: org.workspace_type,
-      added_by: ctx.email,
+      redirect_to:    redirectTo,
+      added_by:       ctx.email,
     },
   })
 
-  const messageMap: Record<string, string> = {
-    EMPLOYEE: org.workspace_type === 'AGENT'
-      ? `${cleanEmail} added as Individual Subscriber`
-      : `${cleanEmail} added as Employee`,
-    OWNER:   `${cleanEmail} added as Owner`,
-    MANAGER: `${cleanEmail} added as Manager`,
-    ADMIN:   `${cleanEmail} added as Admin`,
-    SALES:   `${cleanEmail} added as Sales staff`,
-    FINANCE: `${cleanEmail} added as Finance staff`,
-    MEMBER:  `${cleanEmail} added as Member`,
+  // Human-readable result message
+  const roleLabel: Record<string, string> = {
+    EMPLOYEE: org.workspace_type === 'AGENT' ? 'Individual Subscriber' : 'Employee',
+    OWNER: 'Owner', ADMIN: 'Admin', MANAGER: 'Manager',
+    SALES: 'Sales', FINANCE: 'Finance', MEMBER: 'Member',
   }
-
+  const appLabel = org_role === 'EMPLOYEE' ? 'MyExpensio (user app)' : 'Expensio Workspace'
   const inviteNote = userExisted
-    ? ' (already registered — added immediately)'
-    : ' — invite email sent'
+    ? ' — added immediately (already registered)'
+    : ` — invite sent, will log in via ${appLabel}`
 
   return NextResponse.json(
     {
-      success: true,
-      user_id: userId,
+      success:      true,
+      user_id:      userId,
       user_existed: userExisted,
       org_role,
       platform_role: profilesRole,
-      message: (messageMap[org_role] ?? `${cleanEmail} added as ${org_role}`) + inviteNote,
+      redirect_to:  redirectTo,
+      message:      `${cleanEmail} added as ${roleLabel[org_role] ?? org_role}${inviteNote}`,
     },
     { status: 201 },
   )
@@ -285,7 +300,7 @@ export async function PATCH(req: Request, { params }: Params) {
   return NextResponse.json({ success: true })
 }
 
-// ── DELETE — remove member (SUPER_ADMIN only) ──────────────────────────────────
+// ── DELETE — remove member ─────────────────────────────────────────────────────
 
 export async function DELETE(req: Request, { params }: Params) {
   const ctx = await requireConsoleAuth('api')
@@ -298,7 +313,6 @@ export async function DELETE(req: Request, { params }: Params) {
 
   const db = createServiceRoleClient()
 
-  // Prevent removing last OWNER
   const { data: member } = await db
     .from('org_members')
     .select('org_role')

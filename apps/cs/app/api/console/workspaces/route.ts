@@ -192,9 +192,12 @@ export async function POST(req: Request) {
   }
 
   // Step 5: Create subscription_status (non-fatal)
-  await db.from('subscription_status').insert({
-    org_id: orgId, tier: initial_tier, billing_status: 'INACTIVE', provider: 'MANUAL',
-  }).catch(() => {})
+  // Non-fatal — wrap in try/catch since Supabase builders don't support .catch()
+  try {
+    await db.from('subscription_status').insert({
+      org_id: orgId, tier: initial_tier, billing_status: 'INACTIVE', provider: 'MANUAL',
+    })
+  } catch { /* non-fatal — workspace is usable without subscription row */ }
 
   // Step 6: Audit log
   await db.from('audit_logs').insert({

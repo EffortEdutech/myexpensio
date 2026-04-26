@@ -4,8 +4,12 @@
 // POST — submit a new invitation request
 //
 // Auto-approve: if platform_config.auto_approve_invitations = true,
-// the POST immediately creates the user + sends invite email (EXECUTED).
+// immediately creates the user + sends invite email (EXECUTED).
 // Otherwise, status = PENDING for Console staff to review.
+//
+// REDIRECT URL LOGIC (FIX):
+//   EMPLOYEE role → USER_APP_URL  (MyExpensio — they don't use Workspace App)
+//   All other roles → WORKSPACE_APP_URL (Expensio Workspace)
 
 import { NextResponse } from 'next/server'
 import { requireWorkspaceAuth, resolveOrgScope } from '@/lib/workspace-auth'
@@ -13,6 +17,17 @@ import { createServiceRoleClient } from '@/lib/supabase/server'
 
 function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
+}
+
+// Roles that use Workspace App (apps/admin)
+const WORKSPACE_APP_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'SALES', 'FINANCE']
+
+function getRedirectUrl(orgRole: string): string {
+  const workspaceAppUrl = process.env.NEXT_PUBLIC_WORKSPACE_APP_URL ?? 'http://localhost:3101'
+  const userAppUrl      = process.env.NEXT_PUBLIC_USER_APP_URL      ?? 'http://localhost:3100'
+
+  // EMPLOYEE (Team member or Agent subscriber) → MyExpensio user app
+  return WORKSPACE_APP_ROLES.includes(orgRole) ? workspaceAppUrl : userAppUrl
 }
 
 // ── GET ────────────────────────────────────────────────────────────────────────
@@ -100,7 +115,7 @@ export async function POST(req: Request) {
   const cleanEmail = requested_email.toLowerCase().trim()
   const db = createServiceRoleClient()
 
-  // Check for duplicate pending/approved request
+  // Check for duplicate
   const { data: existing } = await db
     .from('invitation_requests')
     .select('id, status')
@@ -110,10 +125,10 @@ export async function POST(req: Request) {
     .maybeSingle()
 
   if (existing) {
-    return err('CONFLICT', 'A pending or approved invitation request already exists for this email', 409)
+    return err('CONFLICT', 'A pending or approved invitation already exists for this email', 409)
   }
 
-  // Check platform_config auto_approve flag
+  // Check auto-approve flag
   const { data: config } = await db
     .from('platform_config')
     .select('auto_approve_invitations')
@@ -122,7 +137,7 @@ export async function POST(req: Request) {
 
   const autoApprove = config?.auto_approve_invitations === true
 
-  // Insert the invitation_request row
+  // Insert the request
   const { data: created, error: insertError } = await db
     .from('invitation_requests')
     .insert({
@@ -143,11 +158,13 @@ export async function POST(req: Request) {
   }
 
   // ── Auto-approve: execute immediately ──────────────────────────────────────
+
   if (autoApprove) {
     try {
-      const workspaceAppUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3100'
+      // Role-aware redirect: EMPLOYEE → user app, others → workspace app
+      const redirectTo = `${getRedirectUrl(requested_role)}/auth/callback`
 
-      // Get workspace name
+      // Get workspace name for the invite email
       const { data: org } = await db
         .from('organizations')
         .select('name')
@@ -166,14 +183,12 @@ export async function POST(req: Request) {
       if (existingUser) {
         userId = existingUser.id
         userExisted = true
-        await db.auth.admin.inviteUserByEmail(cleanEmail, {
-          redirectTo: `${workspaceAppUrl}/auth/callback`,
-        })
+        await db.auth.admin.inviteUserByEmail(cleanEmail, { redirectTo })
       } else {
         const { data: inviteData, error: inviteError } = await db.auth.admin.inviteUserByEmail(
           cleanEmail,
           {
-            redirectTo: `${workspaceAppUrl}/auth/callback`,
+            redirectTo,
             data: {
               workspace_name: org?.name,
               workspace_type: workspaceType,
@@ -202,7 +217,11 @@ export async function POST(req: Request) {
       // Mark EXECUTED
       await db
         .from('invitation_requests')
-        .update({ status: 'EXECUTED', executed_at: new Date().toISOString(), approved_at: new Date().toISOString() })
+        .update({
+          status:       'EXECUTED',
+          executed_at:  new Date().toISOString(),
+          approved_at:  new Date().toISOString(),
+        })
         .eq('id', created.id)
 
       // Audit log
@@ -212,22 +231,30 @@ export async function POST(req: Request) {
         entity_type:   'invitation_request',
         entity_id:     created.id,
         action:        'INVITATION_REQUEST_AUTO_EXECUTED',
-        metadata:      { email: cleanEmail, role: requested_role, user_id: userId, user_existed: userExisted },
+        metadata:      {
+          email:         cleanEmail,
+          role:          requested_role,
+          user_id:       userId,
+          user_existed:  userExisted,
+          redirect_to:   redirectTo,
+        },
       })
 
+      const isEmployee = requested_role === 'EMPLOYEE'
       return NextResponse.json(
         {
-          request:         { ...created, status: 'EXECUTED' },
-          auto_executed:   true,
-          user_existed:    userExisted,
-          message:         userExisted
-            ? `${cleanEmail} has been added to your workspace immediately.`
-            : `Invite email sent to ${cleanEmail}. They will join your workspace after accepting.`,
+          request:       { ...created, status: 'EXECUTED' },
+          auto_executed: true,
+          user_existed:  userExisted,
+          message: isEmployee
+            ? `Invite sent to ${cleanEmail}. They will log in via MyExpensio (user app) after accepting.`
+            : userExisted
+              ? `${cleanEmail} has been added to your workspace. They can log in to Expensio Workspace.`
+              : `Invite sent to ${cleanEmail}. They can log in to Expensio Workspace after accepting.`,
         },
         { status: 201 },
       )
     } catch (autoErr) {
-      // Auto-execute failed — mark as FAILED, fall through (request still created)
       console.error('[workspace/invitations] auto-execute failed:', autoErr)
       await db
         .from('invitation_requests')
@@ -243,19 +270,19 @@ export async function POST(req: Request) {
         metadata:      { email: cleanEmail, error: String(autoErr) },
       })
 
-      // Return as PENDING so Console staff can manually fix
       return NextResponse.json(
         {
           request:       { ...created, status: 'FAILED' },
           auto_executed: false,
-          message:       'Auto-invite failed. The request has been sent to Console staff for manual processing.',
+          message:       'Auto-invite failed. Sent to Console staff for manual processing.',
         },
         { status: 201 },
       )
     }
   }
 
-  // ── Manual mode: just save as PENDING ─────────────────────────────────────
+  // ── Manual: save as PENDING ─────────────────────────────────────────────────
+
   await db.from('audit_logs').insert({
     org_id:        workspaceId,
     actor_user_id: ctx.userId,
@@ -269,7 +296,7 @@ export async function POST(req: Request) {
     {
       request:       created,
       auto_executed: false,
-      message:       'Your request has been sent to the platform team. You will be notified once it is processed.',
+      message:       'Your request has been sent to the platform team for review.',
     },
     { status: 201 },
   )
