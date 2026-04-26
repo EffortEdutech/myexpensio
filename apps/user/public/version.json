@@ -1,8 +1,7 @@
 {
-  "version": "2.0.0",
+  "version": "3.0.0",
   "changelog": [
-    "3 apps -user, admin, console",
-    "3 apps -user, admin, console ()",
-    "ExportsClient use fragment ()"
+    "upgrade with 3 apps -user, admin, console",
+    "upgrade with 3 apps -user, admin, console ()"
   ]
 }
