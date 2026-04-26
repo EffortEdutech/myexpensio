@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.0.0](https://github.com/EffortEdutech/myexpensio/compare/v2.0.0...v3.0.0) (2026-04-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* upgrade with 3 apps -user, admin, console
+
+### Features
+
+* upgrade with 3 apps -user, admin, console ([831ad33](https://github.com/EffortEdutech/myexpensio/commit/831ad3392f26325256ecb6e990bbee44b4d8e5ae))
+
 ## [2.0.0](https://github.com/EffortEdutech/myexpensio/compare/v1.0.1...v2.0.0) (2026-04-26)
 
 
