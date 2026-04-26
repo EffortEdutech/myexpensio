@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+    <defs><linearGradient id="bgagpConsole1024" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#22201e"></stop><stop offset="100%" stop-color="#1a1816"></stop></linearGradient></defs>
+    <rect width="1024" height="1024" rx="225" fill="url(#bgagpConsole1024)"></rect>
+    <circle cx="389.12" cy="552.96" r="14.336" fill="#f5f0e8" opacity="0.15"></circle><circle cx="389.12" cy="651.264" r="14.336" fill="#f5f0e8" opacity="0.15"></circle><circle cx="512" cy="552.96" r="14.336" fill="#f5f0e8" opacity="0.15"></circle><circle cx="512" cy="651.264" r="14.336" fill="#f5f0e8" opacity="0.15"></circle><circle cx="634.88" cy="552.96" r="14.336" fill="#f5f0e8" opacity="0.15"></circle><circle cx="634.88" cy="651.264" r="14.336" fill="#f5f0e8" opacity="0.15"></circle>
+    <path d="M512,209.92 L622.592,302.08 L512,394.24 L401.408,302.08 Z" fill="#c47a3a" opacity="0.92"></path>
+    <circle cx="512" cy="302.08" r="28.672" fill="#22201e" opacity="0.7"></circle>
+    <text x="512" y="757.76" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="430" fill="#f5f0e8" letter-spacing="-15">⌥</text>
+  </svg>
