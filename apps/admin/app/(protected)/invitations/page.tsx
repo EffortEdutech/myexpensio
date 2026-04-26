@@ -1,11 +1,5 @@
 'use client'
 // apps/admin/app/(protected)/invitations/page.tsx
-//
-// Workspace admin submits invitation requests.
-// Two tabs: Active/Completed/Rejected history + Submit New Request.
-//
-// If auto_approve is ON: request executes immediately → user invited.
-// If auto_approve is OFF: request queued → Console staff reviews.
 
 import { useEffect, useState, useCallback } from 'react'
 
@@ -26,20 +20,24 @@ type InvitationRequest = {
   profiles: { display_name: string | null; email: string | null } | null
 }
 
-// ── Role options per workspace type ───────────────────────────────────────────
+// ── FIX: explicit type so TypeScript knows `group` is optional ────────────────
+type RoleOption = { value: string; label: string; desc: string }
+type RoleGroup  = { group?: string; roles: RoleOption[] }
 
-const TEAM_ROLES = [
+// ── Role definitions ──────────────────────────────────────────────────────────
+
+const TEAM_ROLES: RoleOption[] = [
   { value: 'MANAGER',  label: 'Manager',  desc: 'Can view all team claims and manage members' },
   { value: 'ADMIN',    label: 'Admin',    desc: 'Finance / HR — configures rates, exports' },
   { value: 'EMPLOYEE', label: 'Employee', desc: 'Submits own claims via MyExpensio' },
 ]
 
-const AGENT_STAFF_ROLES = [
+const AGENT_STAFF_ROLES: RoleOption[] = [
   { value: 'SALES',   label: 'Sales',   desc: 'Invites customers, tracks referrals' },
   { value: 'FINANCE', label: 'Finance', desc: 'Views commission and payout dashboard' },
 ]
 
-const AGENT_SUBSCRIBER_ROLES = [
+const AGENT_SUBSCRIBER_ROLES: RoleOption[] = [
   { value: 'EMPLOYEE', label: 'Individual Subscriber', desc: 'Pays own subscription, uses MyExpensio for personal claims' },
 ]
 
@@ -53,11 +51,11 @@ function fmt(val: string | null) {
 }
 
 const STATUS_CFG: Record<string, { label: string; cls: string; description: string }> = {
-  PENDING:  { label: 'Pending',    cls: 'bg-yellow-50 text-yellow-700',  description: 'Awaiting review by platform team' },
-  APPROVED: { label: 'Approved',   cls: 'bg-blue-50 text-blue-700',      description: 'Approved — being processed' },
-  REJECTED: { label: 'Rejected',   cls: 'bg-red-50 text-red-700',        description: 'Request was declined' },
-  EXECUTED: { label: 'Completed',  cls: 'bg-green-50 text-green-700',    description: 'User account created and invite sent' },
-  FAILED:   { label: 'Failed',     cls: 'bg-red-50 text-red-600',        description: 'Technical error — Console staff notified' },
+  PENDING:  { label: 'Pending',   cls: 'bg-yellow-50 text-yellow-700', description: 'Awaiting review by platform team' },
+  APPROVED: { label: 'Approved',  cls: 'bg-blue-50 text-blue-700',     description: 'Approved — being processed' },
+  REJECTED: { label: 'Rejected',  cls: 'bg-red-50 text-red-700',       description: 'Request was declined' },
+  EXECUTED: { label: 'Completed', cls: 'bg-green-50 text-green-700',   description: 'User account created and invite sent' },
+  FAILED:   { label: 'Failed',    cls: 'bg-red-50 text-red-600',       description: 'Technical error — Console staff notified' },
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -84,15 +82,15 @@ function SubmitForm({
   const [loading, setLoading] = useState(false)
   const [error, setError]   = useState<string | null>(null)
 
-  const isTeam  = workspaceType === 'TEAM'
   const isAgent = workspaceType === 'AGENT'
 
-  const roleGroups = isTeam
-    ? [{ roles: TEAM_ROLES }]
-    : [
-        { group: 'Agency Staff',          roles: AGENT_STAFF_ROLES },
-        { group: 'Individual Subscriber', roles: AGENT_SUBSCRIBER_ROLES },
+  // Typed as RoleGroup[] — TypeScript now knows group is optional
+  const roleGroups: RoleGroup[] = isAgent
+    ? [
+        { group: 'Agency Staff',           roles: AGENT_STAFF_ROLES },
+        { group: 'Individual Subscriber',  roles: AGENT_SUBSCRIBER_ROLES },
       ]
+    : [{ roles: TEAM_ROLES }]
 
   async function handleSubmit() {
     if (!email.trim() || !role) return
@@ -116,7 +114,6 @@ function SubmitForm({
 
   return (
     <div className="space-y-5 max-w-lg">
-
       {/* Email */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -137,6 +134,7 @@ function SubmitForm({
         <div className="space-y-2">
           {roleGroups.map((group, gi) => (
             <div key={gi}>
+              {/* group.group is now typed as string | undefined — no TS error */}
               {group.group && (
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
                   {group.group}
@@ -144,7 +142,7 @@ function SubmitForm({
               )}
               {group.roles.map((r) => {
                 const isSubscriber = isAgent && r.value === 'EMPLOYEE'
-                const accent = isSubscriber ? 'border-purple-500 bg-purple-50' : 'border-blue-600 bg-blue-50'
+                const accent    = isSubscriber ? 'border-purple-500 bg-purple-50' : 'border-blue-600 bg-blue-50'
                 const textColor = isSubscriber ? 'text-purple-700' : 'text-blue-700'
                 return (
                   <label key={r.value}
@@ -170,11 +168,11 @@ function SubmitForm({
       {/* Notes */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          Notes for platform team <span className="text-xs text-gray-400">(optional)</span>
+          Notes <span className="text-xs text-gray-400">(optional)</span>
         </label>
         <textarea
           value={notes} onChange={(e) => setNotes(e.target.value)}
-          placeholder="Any context that might help the platform team process this request…"
+          placeholder="Any context for the platform team…"
           rows={3}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
         />
@@ -227,22 +225,19 @@ function RequestRow({ req }: { req: InvitationRequest }) {
 
 type TabKey = 'new' | 'active' | 'completed' | 'rejected'
 
-const HISTORY_TABS: { key: TabKey; label: string; statuses: string[] }[] = [
-  { key: 'active',    label: 'Active',    statuses: ['PENDING', 'APPROVED'] },
-  { key: 'completed', label: 'Completed', statuses: ['EXECUTED'] },
-  { key: 'rejected',  label: 'Rejected',  statuses: ['REJECTED', 'FAILED'] },
-]
-
 export default function InvitationsPage() {
   const [tab, setTab]             = useState<TabKey>('new')
-  const [historyTab, setHistoryTab] = useState<TabKey>('active')
   const [requests, setRequests]   = useState<InvitationRequest[]>([])
   const [total, setTotal]         = useState(0)
   const [loading, setLoading]     = useState(true)
   const [workspaceType, setWorkspaceType] = useState<string>('TEAM')
   const [submitResult, setSubmitResult]   = useState<{ auto_executed: boolean; message: string } | null>(null)
 
-  const currentHistoryTab = HISTORY_TABS.find((t) => t.key === historyTab)!
+  const HISTORY_STATUS: Record<string, string[]> = {
+    active:    ['PENDING', 'APPROVED'],
+    completed: ['EXECUTED'],
+    rejected:  ['REJECTED', 'FAILED'],
+  }
 
   const fetchRequests = useCallback(async () => {
     setLoading(true)
@@ -267,12 +262,19 @@ export default function InvitationsPage() {
     setTimeout(() => setSubmitResult(null), 8000)
   }
 
-  const filteredRequests = requests.filter((r) =>
-    currentHistoryTab.statuses.includes(r.status),
-  )
+  const filteredRequests = tab !== 'new'
+    ? requests.filter((r) => (HISTORY_STATUS[tab] ?? []).includes(r.status))
+    : []
 
-  const pendingCount   = requests.filter((r) => r.status === 'PENDING' || r.status === 'APPROVED').length
+  const pendingCount   = requests.filter((r) => ['PENDING', 'APPROVED'].includes(r.status)).length
   const completedCount = requests.filter((r) => r.status === 'EXECUTED').length
+
+  const TABS: { key: TabKey; label: string }[] = [
+    { key: 'new',       label: '+ New Request' },
+    { key: 'active',    label: `Active${pendingCount > 0 ? ` (${pendingCount})` : ''}` },
+    { key: 'completed', label: `Completed${completedCount > 0 ? ` (${completedCount})` : ''}` },
+    { key: 'rejected',  label: 'Rejected' },
+  ]
 
   return (
     <div className="space-y-5">
@@ -307,15 +309,10 @@ export default function InvitationsPage() {
         </div>
       )}
 
-      {/* Main tabs */}
+      {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200">
-        {[
-          { key: 'new' as const,      label: '+ New Request' },
-          { key: 'active' as const,   label: `Active${pendingCount > 0 ? ` (${pendingCount})` : ''}` },
-          { key: 'completed' as const, label: `Completed${completedCount > 0 ? ` (${completedCount})` : ''}` },
-          { key: 'rejected' as const, label: 'Rejected' },
-        ].map((t) => (
-          <button key={t.key} onClick={() => { setTab(t.key); if (t.key !== 'new') setHistoryTab(t.key) }}
+        {TABS.map((t) => (
+          <button key={t.key} onClick={() => setTab(t.key)}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               tab === t.key
                 ? 'border-blue-600 text-blue-700'
@@ -326,20 +323,20 @@ export default function InvitationsPage() {
         ))}
       </div>
 
-      {/* New request tab */}
+      {/* New request form */}
       {tab === 'new' && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="mb-5">
             <h2 className="text-sm font-semibold text-gray-900">New Invitation Request</h2>
             <p className="text-xs text-gray-500 mt-1">
-              Submit a request to add a new user to your workspace. You will be notified when it is processed.
+              Submit a request to add a new user to your workspace.
             </p>
           </div>
           <SubmitForm workspaceType={workspaceType} onSubmitted={handleSubmitted} />
         </div>
       )}
 
-      {/* History tabs */}
+      {/* History table */}
       {tab !== 'new' && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           {loading ? (
@@ -350,8 +347,8 @@ export default function InvitationsPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                   d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
-              No {currentHistoryTab.label.toLowerCase()} requests
-              <button onClick={() => setTab('new')} className="text-blue-600 hover:text-blue-800 text-xs font-medium">
+              No {tab} requests
+              <button onClick={() => setTab('new')} className="text-blue-600 text-xs font-medium">
                 Submit a new request →
               </button>
             </div>
@@ -359,7 +356,7 @@ export default function InvitationsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Email','Role','Status','Submitted','Info'].map((h) => (
+                  {['Email', 'Role', 'Status', 'Submitted', 'Info'].map((h) => (
                     <th key={h} className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{h}</th>
                   ))}
                 </tr>
