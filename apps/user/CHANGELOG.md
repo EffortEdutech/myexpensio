@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.0.1](https://github.com/EffortEdutech/myexpensio/compare/v3.0.0...v3.0.1) (2026-04-26)
+
+
+### Bug Fixes
+
+* onboarding flow gap ([c8002cf](https://github.com/EffortEdutech/myexpensio/commit/c8002cf2437835bf82f5915a0f40ea1465e8537a))
+
 ## [3.0.0](https://github.com/EffortEdutech/myexpensio/compare/v2.0.0...v3.0.0) (2026-04-26)
 
 
