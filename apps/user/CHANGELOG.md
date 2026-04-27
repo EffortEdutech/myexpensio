@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.0.3](https://github.com/EffortEdutech/myexpensio/compare/v3.0.2...v3.0.3) (2026-04-27)
+
+
+### Bug Fixes
+
+* billing, claim, rates, templates ([f5710e0](https://github.com/EffortEdutech/myexpensio/commit/f5710e0578a7585cc59b64aaea7592417112bbba))
+
 ### [3.0.2](https://github.com/EffortEdutech/myexpensio/compare/v3.0.1...v3.0.2) (2026-04-26)
 
 
