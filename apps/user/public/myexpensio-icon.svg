@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+    <rect width="1024" height="1024" rx="174" fill="#f9f8f5"></rect>
+    <text x="512" y="430" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="195" fill="#2a2a28" letter-spacing="-8">my</text>
+    <path d="M102 563 Q450.56 481.08 512 563 T922 563" stroke="#4a8fd4" stroke-width="18" stroke-linecap="round" fill="none"></path>
+    <circle cx="102" cy="563" r="29" fill="#4a8fd4"></circle>
+    <circle cx="922" cy="563" r="29" fill="#4aad7a"></circle>
+    <text x="512" y="758" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="148" fill="#2a2a28" letter-spacing="-6">expensio</text>
+  </svg>
