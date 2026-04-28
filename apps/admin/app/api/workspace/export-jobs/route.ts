@@ -1,8 +1,8 @@
 // apps/admin/app/api/workspace/export-jobs/route.ts
 //
 // GET /api/workspace/export-jobs
-// Returns paginated export_jobs for the caller's workspace.
-// Internal staff can filter by org_id; workspace admins see own org only.
+// Defensive version: selects * to avoid missing-column 500s.
+// Profiles fetched in a second query (no FK join).
 
 import { NextResponse } from 'next/server'
 import { requireWorkspaceAuth, resolveOrgScope } from '@/lib/workspace-auth'
@@ -31,44 +31,52 @@ export async function GET(req: Request) {
 
   let query = db
     .from('export_jobs')
-    .select(
-      `
-      id,
-      org_id,
-      user_id,
-      format,
-      status,
-      row_count,
-      error_message,
-      created_at,
-      completed_at,
-      file_path,
-      template_id,
-      profiles:user_id (
-        id, email, display_name
-      )
-    `,
-      { count: 'exact' },
-    )
+    .select('*', { count: 'exact' })
     .order('created_at', { ascending: false })
     .range(from, from + pageSize - 1)
 
   if (orgId)   query = query.eq('org_id', orgId)
   if (format)  query = query.eq('format', format)
-  if (status && ['PENDING','PROCESSING','DONE','FAILED'].includes(status))
+  if (status && ['PENDING', 'PROCESSING', 'DONE', 'FAILED'].includes(status))
     query = query.eq('status', status)
 
-  const { data, error, count } = await query
+  const { data: jobs, error, count } = await query
 
   if (error) {
-    console.error('[workspace/export-jobs] GET error:', error)
-    return err('SERVER_ERROR', 'Failed to fetch export jobs', 500)
+    console.error('[workspace/export-jobs] DB error:', JSON.stringify(error))
+    return err('SERVER_ERROR', error.message, 500)
   }
 
-  const jobs = (data ?? []).map(row => ({
-    ...row,
-    profiles: Array.isArray(row.profiles) ? row.profiles[0] ?? null : row.profiles,
+  if (!jobs || jobs.length === 0) {
+    return NextResponse.json({ jobs: [], total: count ?? 0, page, pageSize })
+  }
+
+  const userIds = [...new Set(
+    jobs.map((j: Record<string, unknown>) => j.user_id as string).filter(Boolean)
+  )]
+
+  const { data: profiles } = userIds.length > 0
+    ? await db.from('profiles').select('id, email, display_name').in('id', userIds)
+    : { data: [] }
+
+  const profileMap = Object.fromEntries(
+    (profiles ?? []).map(p => [p.id, p])
+  )
+
+  const result = jobs.map((job: Record<string, unknown>) => ({
+    id:            job.id ?? null,
+    org_id:        job.org_id ?? null,
+    user_id:       job.user_id ?? null,
+    format:        job.format ?? job.export_format ?? null,
+    status:        job.status ?? null,
+    row_count:     job.row_count ?? job.rows_count ?? null,
+    error_message: job.error_message ?? job.error ?? null,
+    created_at:    job.created_at ?? null,
+    completed_at:  job.completed_at ?? job.finished_at ?? null,
+    file_path:     job.file_path ?? job.output_path ?? null,
+    template_id:   job.template_id ?? null,
+    profiles:      profileMap[job.user_id as string] ?? null,
   }))
 
-  return NextResponse.json({ jobs, total: count ?? 0, page, pageSize })
+  return NextResponse.json({ jobs: result, total: count ?? 0, page, pageSize })
 }

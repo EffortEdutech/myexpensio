@@ -1,0 +1,52 @@
+PATCH: apps/user/app/(app)/settings/page.tsx
+Surgical edit — find and replace ONLY the summaryRes handling inside loadAll().
+
+────────────────────────────────────────────────────────────────
+FIND (the summaryRes json parse — may look slightly different):
+────────────────────────────────────────────────────────────────
+
+        fetch('/api/billing/summary').catch(() => null),
+      ])
+
+      ...
+
+        if (summaryRes) {
+          const summaryJson = await summaryRes.json()
+          setTier(summaryJson?.subscription?.tier ?? 'FREE')
+          setBillingStatus(summaryJson?.subscription?.billing_status ?? null)
+          setPeriodEnd(summaryJson?.subscription?.period_end ?? null)
+        }
+
+────────────────────────────────────────────────────────────────
+REPLACE WITH:
+────────────────────────────────────────────────────────────────
+
+        fetch('/api/billing/summary').catch(() => null),
+      ])
+
+      ...
+
+        // ── Billing summary — safe parse (guard against 404 HTML or parse errors)
+        if (summaryRes?.ok) {
+          try {
+            const summaryJson = await summaryRes.json()
+            setTier(summaryJson?.subscription?.tier ?? 'FREE')
+            setBillingStatus(summaryJson?.subscription?.billing_status ?? null)
+            setPeriodEnd(summaryJson?.subscription?.period_end ?? null)
+          } catch { /* non-fatal — billing section shows defaults */ }
+        }
+
+────────────────────────────────────────────────────────────────
+ALSO: find the outer try/catch in loadAll and make sure
+the billing fetch failure doesn't kill the whole page load.
+The Promise.all should have .catch(() => null) on billing:
+
+  fetch('/api/billing/summary').catch(() => null),
+
+If it doesn't have .catch(() => null), add it.
+────────────────────────────────────────────────────────────────
+
+The settings page also calls /api/usage/current in the same Promise.all.
+Same pattern — ensure:
+  fetch('/api/usage/current').catch(() => null),
+and the usageRes handler checks usageRes?.ok before calling .json().
