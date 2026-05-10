@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.1.0](https://github.com/EffortEdutech/myexpensio/compare/v3.0.4...v3.1.0) (2026-05-10)
+
+
+### Features
+
+* finish Sprint 1 work (auth gating, org management, rate policy, team rates editor, settings/billing separation) ([a9bb208](https://github.com/EffortEdutech/myexpensio/commit/a9bb20865c3998a3bf4e421a8bdfe901bcce8c54))
+
 ### [3.0.4](https://github.com/EffortEdutech/myexpensio/compare/v3.0.3...v3.0.4) (2026-04-28)
 
 
