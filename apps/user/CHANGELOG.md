@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.1.1](https://github.com/EffortEdutech/myexpensio/compare/v3.1.0...v3.1.1) (2026-05-10)
+
+
+### Bug Fixes
+
+* workspace build errors + add stripe dependency ([38f60ce](https://github.com/EffortEdutech/myexpensio/commit/38f60cedfb181563faa07ae634462938152effd6))
+
 ## [3.1.0](https://github.com/EffortEdutech/myexpensio/compare/v3.0.4...v3.1.0) (2026-05-10)
 
 
