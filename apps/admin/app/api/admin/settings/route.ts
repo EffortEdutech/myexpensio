@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { requireAdminAuth } from '@/lib/auth'
 import { createServiceRoleClient } from '@/lib/supabase/server'
 
@@ -116,9 +116,9 @@ export async function PATCH(req: Request) {
     const freePlan = normalizePlan(body?.plans?.FREE, 'Free')
     const proPlan = normalizePlan(body?.plans?.PRO, 'Pro Unlimited')
 
-    const settings = { plans: { FREE: freePlan, PRO: proPlan } }
     // platform_settings was dropped in R1 migration (2026-04-21).
     // Plan limits are now hardcoded in entitlements.ts PLAN_DEFAULTS.
+    void freePlan; void proPlan
     return NextResponse.json({ success: true, note: 'Plan limits are defined in code.' })
   }
 
@@ -159,7 +159,7 @@ export async function PATCH(req: Request) {
     if (error) return err('DB_ERROR', error.message, 500)
   }
 
-  if (body.scope === 'org' || body.limits_override !== undefined) {
+  if (body.scope === 'org' || body.limits_override !== undefined || 'rate_template_name' in body) {
     const { data: existing } = await db
       .from('admin_settings')
       .select('settings')
@@ -171,7 +171,12 @@ export async function PATCH(req: Request) {
       : {}
 
     const limits = normalizeOverride(body.limits_override)
-    const merged = { ...current, limits }
+    const merged: Record<string, unknown> = { ...current, limits }
+
+    // rate_template_name - reference template assigned to this workspace
+    if ('rate_template_name' in body) {
+      merged.rate_template_name = body.rate_template_name?.trim() || null
+    }
 
     const { error } = await db.from('admin_settings').upsert({
       org_id: body.org_id,

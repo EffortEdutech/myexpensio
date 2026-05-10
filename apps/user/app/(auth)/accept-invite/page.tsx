@@ -137,7 +137,7 @@ function AcceptInviteContent() {
 
     if (!res.ok) {
       setPageState('valid')
-      setFormError(json.error?.message ?? 'Failed to join organisation. Please try again.')
+      setFormError(json.error?.message ?? 'Failed to join workspace. Please try again.')
       return
     }
 
@@ -244,7 +244,7 @@ function AcceptInviteContent() {
           style={{ ...S.primaryBtn, opacity: isSubmitting ? 0.65 : 1 }}
           disabled={isSubmitting}
         >
-          {isSubmitting ? 'Joining…' : `Join ${invite?.org_name ?? 'Organisation'}`}
+          {isSubmitting ? 'Joining…' : `Join ${invite?.org_name ?? 'Workspace'}`}
         </button>
       </form>
 

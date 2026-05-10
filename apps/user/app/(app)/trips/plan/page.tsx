@@ -240,7 +240,7 @@ function LimitReachedPanel({
       <p style={S.limitText}>
         {info?.limit !== null
           ? `You've used ${info?.used ?? 0} of ${info?.limit ?? 0} this month${info?.label ? ` (${info.label})` : ''}.`
-          : 'This organisation has reached its current policy.'}
+          : 'This workspace has reached its current policy.'}
         {info?.period_end && <> Resets on <strong>{fmtMonthEnd(info.period_end)}</strong>.</>}
       </p>
       {info?.preset && (

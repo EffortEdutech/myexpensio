@@ -110,7 +110,7 @@ export default function ClaimsClient({
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold text-gray-900">Claims</h1>
-        <p className="text-sm text-gray-500 mt-0.5">All claims across all organisations. Read-only in Phase 1.</p>
+        <p className="text-sm text-gray-500 mt-0.5">All claims across all workspaces. Read-only in Phase 1.</p>
       </div>
 
       {/* Summary cards */}
@@ -148,13 +148,13 @@ export default function ClaimsClient({
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Organisation</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Workspace</label>
             <select
               value={orgFilter}
               onChange={e => setOrgFilter(e.target.value)}
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none"
             >
-              <option value="">All orgs</option>
+              <option value="">All workspaces</option>
               {orgs.map(o => (
                 <option key={o.id} value={o.id}>{o.display_name ?? o.name}</option>
               ))}
@@ -207,7 +207,7 @@ export default function ClaimsClient({
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Staff</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Organisation</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Workspace</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Title</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Period</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>

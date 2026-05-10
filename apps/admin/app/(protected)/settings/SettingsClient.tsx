@@ -1,9 +1,16 @@
 'use client'
-/**
-* apps/admin/app/(protected)/settings/
-*/
+// apps/admin/app/(protected)/settings/SettingsClient.tsx
+//
+// Three views depending on the viewer's authority level:
+//
+//   'internal'  Internal staff — platform limits + searchable workspace table + edit drawer
+//   'team'      Team workspace OWNER/ADMIN — profile + plan summary (rates on /rates)
+//   'agent'     Agent workspace OWNER/ADMIN — profile only + plan summary
 
-import { useEffect, useMemo, useState } from 'react'
+import { useState, useMemo } from 'react'
+import Link from 'next/link'
+
+// ── Shared types ───────────────────────────────────────────────────────────────
 
 type Org = {
   id: string
@@ -14,14 +21,141 @@ type Org = {
   address: string | null
   notes: string | null
   status: string
+  workspace_type: string | null
   created_at: string
   updated_at: string | null
 }
-type Sub = { org_id: string; tier: 'FREE' | 'PRO'; period_start: string | null; period_end: string | null; updated_at: string }
-type OrgSettingRow = { org_id: string; settings: unknown; updated_at: string }
 
-// Hardcoded PRO limits (always unlimited — not editable)
-const PRO_DEFAULTS = { routes_per_month: null as number | null, trips_per_month: null as number | null, exports_per_month: null as number | null }
+type Sub = {
+  org_id: string
+  tier: 'FREE' | 'PRO'
+  billing_status: string | null
+  period_start: string | null
+  period_end: string | null
+  updated_at: string
+}
+
+type OrgSettingRow = {
+  org_id: string
+  settings: unknown
+  updated_at: string
+}
+
+type Props =
+  | {
+      viewMode: 'internal'
+      orgs: Org[]
+      subscriptions: Sub[]
+      orgSettings: OrgSettingRow[]
+      templateNames: string[]
+      orgRole: null
+      org?: never
+      subscription?: never
+      adminSetting?: never
+    }
+  | {
+      viewMode: 'team' | 'agent'
+      org: Org | null
+      subscription: Sub | null
+      orgRole: string | null
+      orgs?: never
+      subscriptions?: never
+      orgSettings?: never
+      adminSetting?: never
+      templateNames?: never
+    }
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function fmtDate(iso: string | null) {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function getSettings(raw: unknown): Record<string, unknown> {
+  return raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+}
+
+function getLimits(settings: Record<string, unknown>): Record<string, unknown> {
+  const l = settings.limits
+  return l && typeof l === 'object' ? l as Record<string, unknown> : {}
+}
+
+function toInput(v: unknown) { return v == null ? '' : String(v) }
+
+const TYPE_CFG: Record<string, { label: string; cls: string }> = {
+  TEAM:     { label: 'Team',     cls: 'bg-blue-50 text-blue-700' },
+  AGENT:    { label: 'Partner',  cls: 'bg-purple-50 text-purple-700' },
+  INTERNAL: { label: 'Internal', cls: 'bg-amber-50 text-amber-700' },
+}
+
+const TIER_CFG: Record<string, { label: string; cls: string }> = {
+  PRO:  { label: 'Pro',  cls: 'bg-blue-50 text-blue-700 font-semibold' },
+  FREE: { label: 'Free', cls: 'bg-gray-100 text-gray-500' },
+}
+
+const STATUS_CFG: Record<string, { label: string; cls: string }> = {
+  ACTIVE:    { label: 'Active',    cls: 'bg-green-50 text-green-700' },
+  INACTIVE:  { label: 'Inactive',  cls: 'bg-gray-100 text-gray-500' },
+  SUSPENDED: { label: 'Suspended', cls: 'bg-red-50 text-red-600' },
+}
+
+// ── Reusable UI ────────────────────────────────────────────────────────────────
+
+function Card({ children }: { children: React.ReactNode }) {
+  return <div className="bg-white rounded-xl border border-gray-200">{children}</div>
+}
+
+function CardHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div className="px-5 py-4 border-b border-gray-100">
+      <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+      {subtitle && <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>}
+    </div>
+  )
+}
+
+function CardBody({ children }: { children: React.ReactNode }) {
+  return <div className="px-5 py-4 space-y-4">{children}</div>
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 mb-1.5">{label}</label>
+      {children}
+    </div>
+  )
+}
+
+const INPUT = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+const SELECT = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500'
+
+function Toast({ toast }: { toast: { type: 'ok' | 'err'; msg: string } | null }) {
+  if (!toast) return null
+  return (
+    <div className={`fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium border transition-all ${
+      toast.type === 'ok'
+        ? 'bg-green-50 text-green-700 border-green-200'
+        : 'bg-red-50 text-red-700 border-red-200'
+    }`}>
+      {toast.msg}
+    </div>
+  )
+}
+
+function useToast() {
+  const [toast, setToast] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
+  function show(type: 'ok' | 'err', msg: string) {
+    setToast({ type, msg })
+    setTimeout(() => setToast(null), 3200)
+  }
+  return { toast, show }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INTERNAL VIEW — searchable table + slide-in drawer
+// ─────────────────────────────────────────────────────────────────────────────
 
 type PlatformConfig = {
   free_routes_per_month: number | null
@@ -29,15 +163,17 @@ type PlatformConfig = {
   free_exports_per_month: number | null
 }
 
-type OrgPolicyForm = {
+type DrawerState = {
+  org: Org
   tier: 'FREE' | 'PRO'
   preset: 'DEFAULT' | 'BETA_UNLIMITED' | 'CUSTOM'
-  routes_per_month: string
-  trips_per_month: string
-  exports_per_month: string
+  routes: string
+  trips: string
+  exports: string
   label: string
   expires_at: string
-  notes: string
+  policy_notes: string
+  rate_template_name: string
   org_name: string
   org_display_name: string
   contact_email: string
@@ -46,398 +182,635 @@ type OrgPolicyForm = {
   org_notes: string
 }
 
-function fmtDate(iso: string | null) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-function toInput(value: number | null | undefined) {
-  return value == null ? '' : String(value)
-}
-
-function trimOrNull(value: string) {
-  const v = value.trim()
-  return v ? v : null
-}
-
-function parseOrgLimits(raw: unknown) {
-  const obj = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
-  const limits = obj.limits && typeof obj.limits === 'object' ? obj.limits as Record<string, unknown> : {}
-  const presetRaw = String(limits.preset ?? 'DEFAULT').trim().toUpperCase()
-
+function buildDrawer(org: Org, sub: Sub | undefined, row: OrgSettingRow | undefined): DrawerState {
+  const settings = getSettings(row?.settings)
+  const limits = getLimits(settings)
+  const preset = String(limits.preset ?? 'DEFAULT').trim().toUpperCase()
   return {
-    preset: (presetRaw === 'CUSTOM' || presetRaw === 'BETA_UNLIMITED') ? presetRaw : 'DEFAULT',
-    routes_per_month: typeof limits.routes_per_month === 'number' ? limits.routes_per_month : null,
-    trips_per_month: typeof limits.trips_per_month === 'number' ? limits.trips_per_month : null,
-    exports_per_month: typeof limits.exports_per_month === 'number' ? limits.exports_per_month : null,
+    org,
+    tier: sub?.tier ?? 'FREE',
+    preset: (preset === 'CUSTOM' || preset === 'BETA_UNLIMITED') ? preset as DrawerState['preset'] : 'DEFAULT',
+    routes: toInput(limits.routes_per_month),
+    trips:  toInput(limits.trips_per_month),
+    exports: toInput(limits.exports_per_month),
     label: typeof limits.label === 'string' ? limits.label : '',
     expires_at: typeof limits.expires_at === 'string' ? limits.expires_at : '',
-    notes: typeof limits.notes === 'string' ? limits.notes : '',
-  } as const
+    policy_notes: typeof limits.notes === 'string' ? limits.notes : '',
+    rate_template_name: typeof settings.rate_template_name === 'string' ? settings.rate_template_name : '',
+    org_name: org.name ?? '',
+    org_display_name: org.display_name ?? org.name ?? '',
+    contact_email: org.contact_email ?? '',
+    contact_phone: org.contact_phone ?? '',
+    address: org.address ?? '',
+    org_notes: org.notes ?? '',
+  }
 }
 
-function buildOrgInitialState(orgs: Org[], subscriptions: Sub[], rows: OrgSettingRow[]) {
-  const byOrg = new Map(rows.map((row) => [row.org_id, row]))
-  return Object.fromEntries(
-    orgs.map((org) => {
-      const sub = subscriptions.find((s) => s.org_id === org.id)
-      const limits = parseOrgLimits(byOrg.get(org.id)?.settings)
-      return [org.id, {
-        tier: (sub?.tier ?? 'FREE') as 'FREE' | 'PRO',
-        preset: limits.preset,
-        routes_per_month: toInput(limits.routes_per_month),
-        trips_per_month: toInput(limits.trips_per_month),
-        exports_per_month: toInput(limits.exports_per_month),
-        label: limits.label,
-        expires_at: limits.expires_at,
-        notes: limits.notes,
-        org_name: org.name ?? '',
-        org_display_name: org.display_name ?? org.name ?? '',
-        contact_email: org.contact_email ?? '',
-        contact_phone: org.contact_phone ?? '',
-        address: org.address ?? '',
-        org_notes: org.notes ?? '',
-      } satisfies OrgPolicyForm]
-    }),
-  ) as Record<string, OrgPolicyForm>
-}
-
-// effectiveRouteText now uses platform_config state (fetched from API)
-function effectiveRouteText(form: OrgPolicyForm, freeConfig: PlatformConfig) {
-  if (form.preset === 'BETA_UNLIMITED') return form.label || 'Beta Unlimited'
-  if (form.preset === 'CUSTOM') return form.routes_per_month ? `${form.routes_per_month} / month` : 'Unlimited'
-  if (form.tier === 'PRO') return 'Pro Unlimited'
-  const r = freeConfig.free_routes_per_month
-  return r == null ? 'Free — Unlimited' : `Free — ${r} / month`
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <div className="text-xs font-medium text-gray-500 mb-1.5">{label}</div>
-      {children}
-    </label>
-  )
-}
-
-export default function SettingsClient({
-  orgs, subscriptions, orgSettings,
+function InternalView({
+  orgs, subscriptions, orgSettings, templateNames,
 }: {
   orgs: Org[]
   subscriptions: Sub[]
   orgSettings: OrgSettingRow[]
+  templateNames: string[]
 }) {
-  const [toast, setToast] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
-  const [busy, setBusy] = useState<string | null>(null)
-  const [showNew, setShowNew] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [creating, setCreating] = useState(false)
+  const { toast, show } = useToast()
 
-  // ── Platform config state (fetched from /api/admin/platform-config) ─────────
-  const [platformConfig, setPlatformConfig] = useState<PlatformConfig>({
-    free_routes_per_month: 2,
-    free_trips_per_month: null,
-    free_exports_per_month: null,
-  })
-  const [freeForm, setFreeForm] = useState({
-    routes: '2',
-    trips: '',
-    exports: '',
-  })
-  const [configLoaded, setConfigLoaded] = useState(false)
+  const [platformConfig, setPlatformConfig] = useState<PlatformConfig>({ free_routes_per_month: 2, free_trips_per_month: null, free_exports_per_month: null })
+  const [freeForm, setFreeForm] = useState({ routes: '2', trips: '', exports: '' })
+  const [platformLoaded, setPlatformLoaded] = useState(false)
+  const [platformBusy, setPlatformBusy] = useState(false)
+  const [showPlatform, setShowPlatform] = useState(false)
 
-  useEffect(() => {
+  function loadPlatformConfig() {
+    if (platformLoaded) return
     fetch('/api/admin/platform-config')
       .then(r => r.json())
-      .then(json => {
-        if (json.config) {
-          const c: PlatformConfig = json.config
+      .then(j => {
+        if (j.config) {
+          const c: PlatformConfig = j.config
           setPlatformConfig(c)
           setFreeForm({
-            routes: toInput(c.free_routes_per_month),
-            trips: toInput(c.free_trips_per_month),
-            exports: toInput(c.free_exports_per_month),
+            routes:  c.free_routes_per_month  != null ? String(c.free_routes_per_month)  : '',
+            trips:   c.free_trips_per_month   != null ? String(c.free_trips_per_month)   : '',
+            exports: c.free_exports_per_month != null ? String(c.free_exports_per_month) : '',
           })
         }
       })
-      .catch(() => {/* fail silently — defaults stay */})
-      .finally(() => setConfigLoaded(true))
-  }, [])
+      .catch(() => {})
+      .finally(() => setPlatformLoaded(true))
+  }
 
-  async function saveFreeLimits() {
-    setBusy('platform')
+  async function savePlatformLimits() {
+    setPlatformBusy(true)
     try {
-      const payload = {
-        free_routes_per_month: freeForm.routes.trim() === '' ? null : Number(freeForm.routes),
-        free_trips_per_month: freeForm.trips.trim() === '' ? null : Number(freeForm.trips),
-        free_exports_per_month: freeForm.exports.trim() === '' ? null : Number(freeForm.exports),
-      }
       const res = await fetch('/api/admin/platform-config', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          free_routes_per_month:  freeForm.routes.trim()  ? Number(freeForm.routes)  : null,
+          free_trips_per_month:   freeForm.trips.trim()   ? Number(freeForm.trips)   : null,
+          free_exports_per_month: freeForm.exports.trim() ? Number(freeForm.exports) : null,
+        }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error?.message ?? 'Failed')
       setPlatformConfig(json.config)
-      toast_('ok', 'Free tier limits updated')
-    } catch (e: unknown) {
-      toast_('err', e instanceof Error ? e.message : 'Failed')
+      show('ok', 'Free tier limits updated')
+    } catch (e) {
+      show('err', e instanceof Error ? e.message : 'Failed')
     } finally {
-      setBusy(null)
+      setPlatformBusy(false)
     }
   }
 
-  const [orgForms, setOrgForms] = useState<Record<string, OrgPolicyForm>>(buildOrgInitialState(orgs, subscriptions, orgSettings))
+  const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
 
-  function toast_(type: 'ok' | 'err', msg: string) {
-    setToast({ type, msg })
-    setTimeout(() => setToast(null), 3500)
+  const filtered = useMemo(() => {
+    return orgs.filter(o => {
+      const matchSearch = !search || (o.display_name ?? o.name).toLowerCase().includes(search.toLowerCase())
+      const matchType = !typeFilter || o.workspace_type === typeFilter
+      return matchSearch && matchType
+    })
+  }, [orgs, search, typeFilter])
+
+  const [drawer, setDrawer] = useState<DrawerState | null>(null)
+  const [drawerBusy, setDrawerBusy] = useState(false)
+
+  function openDrawer(org: Org) {
+    const sub = subscriptions.find(s => s.org_id === org.id)
+    const row = orgSettings.find(r => r.org_id === org.id)
+    setDrawer(buildDrawer(org, sub, row))
   }
 
-  async function createOrg(e: React.FormEvent) {
-    e.preventDefault()
-    if (!newName.trim()) return
-    setCreating(true)
-    try {
-      const res = await fetch('/api/admin/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create_org', name: newName.trim(), display_name: newName.trim() }),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error?.message ?? 'Failed')
-      window.location.reload()
-    } catch (e: unknown) {
-      toast_('err', e instanceof Error ? e.message : 'Failed')
-    } finally {
-      setCreating(false)
-    }
+  function closeDrawer() { setDrawer(null) }
+
+  function setD(patch: Partial<DrawerState>) {
+    setDrawer(prev => prev ? { ...prev, ...patch } : prev)
   }
 
-  async function toggleOrgStatus(org: Org) {
-    const newStatus = org.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE'
-    if (!confirm(`${newStatus === 'SUSPENDED' ? 'Suspend' : 'Reactivate'} "${org.display_name ?? org.name}"?`)) return
-    setBusy(`status-${org.id}`)
-    try {
-      const res = await fetch('/api/admin/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ org_id: org.id, status: newStatus }),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error?.message ?? 'Failed')
-      window.location.reload()
-    } catch (e: unknown) {
-      toast_('err', e instanceof Error ? e.message : 'Failed')
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function saveOrg(orgId: string) {
-    const form = orgForms[orgId]
-    setBusy(`org-${orgId}`)
+  async function saveDrawer() {
+    if (!drawer) return
+    if (!drawer.org_name.trim()) { show('err', 'Workspace name is required'); return }
+    setDrawerBusy(true)
     try {
       const res = await fetch('/api/admin/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           scope: 'org',
-          org_id: orgId,
-          tier: form.tier,
+          org_id: drawer.org.id,
+          tier: drawer.tier,
           org_profile: {
-            name: form.org_name,
-            display_name: form.org_display_name,
-            contact_email: trimOrNull(form.contact_email),
-            contact_phone: trimOrNull(form.contact_phone),
-            address: trimOrNull(form.address),
-            notes: trimOrNull(form.org_notes),
+            name:          drawer.org_name,
+            display_name:  drawer.org_display_name,
+            contact_email: drawer.contact_email || null,
+            contact_phone: drawer.contact_phone || null,
+            address:       drawer.address || null,
+            notes:         drawer.org_notes || null,
           },
           limits_override: {
-            preset: form.preset,
-            routes_per_month: trimOrNull(form.routes_per_month) ? Number(form.routes_per_month) : null,
-            trips_per_month: trimOrNull(form.trips_per_month) ? Number(form.trips_per_month) : null,
-            exports_per_month: trimOrNull(form.exports_per_month) ? Number(form.exports_per_month) : null,
-            label: trimOrNull(form.label),
-            expires_at: trimOrNull(form.expires_at),
-            notes: trimOrNull(form.notes),
+            preset:            drawer.preset,
+            routes_per_month:  drawer.routes.trim()  ? Number(drawer.routes)  : null,
+            trips_per_month:   drawer.trips.trim()   ? Number(drawer.trips)   : null,
+            exports_per_month: drawer.exports.trim() ? Number(drawer.exports) : null,
+            label:             drawer.label || null,
+            expires_at:        drawer.expires_at || null,
+            notes:             drawer.policy_notes || null,
+          },
+          rate_template_name: drawer.rate_template_name || null,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed')
+      show('ok', 'Workspace saved')
+      setDrawer(null)
+    } catch (e) {
+      show('err', e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setDrawerBusy(false)
+    }
+  }
+
+  async function toggleStatus() {
+    if (!drawer) return
+    const next = drawer.org.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE'
+    if (!confirm(`${next === 'SUSPENDED' ? 'Suspend' : 'Reactivate'} "${drawer.org.display_name ?? drawer.org.name}"?`)) return
+    setDrawerBusy(true)
+    try {
+      const res = await fetch('/api/admin/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: drawer.org.id, status: next }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed')
+      show('ok', `Workspace ${next === 'SUSPENDED' ? 'suspended' : 'reactivated'}`)
+      setDrawer(null)
+    } catch (e) {
+      show('err', e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setDrawerBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <Toast toast={toast} />
+
+      {/* Page header */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-lg font-semibold text-gray-900">Platform Settings</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Manage platform limits and all workspace profiles.</p>
+        </div>
+        <Link href="/orgs/new"
+          className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 flex-shrink-0">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          New Workspace
+        </Link>
+      </div>
+
+      {/* Platform free tier limits */}
+      <Card>
+        <button
+          onClick={() => { setShowPlatform(v => !v); if (!showPlatform) loadPlatformConfig() }}
+          className="w-full flex items-center justify-between px-5 py-4 text-left"
+        >
+          <div>
+            <span className="text-sm font-semibold text-gray-900">Free Tier Limits</span>
+            <span className="ml-3 text-xs text-gray-400">
+              Routes {platformConfig.free_routes_per_month ?? 'unlimited'} · Trips {platformConfig.free_trips_per_month ?? 'unlimited'} · Exports {platformConfig.free_exports_per_month ?? 'unlimited'} / month
+            </span>
+          </div>
+          <svg className={`w-4 h-4 text-gray-400 transition-transform ${showPlatform ? 'rotate-180' : ''}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {showPlatform && (
+          <div className="border-t border-gray-100 px-5 py-4 space-y-4">
+            <p className="text-xs text-gray-400">Default monthly limits for all FREE workspaces on DEFAULT preset. Leave blank for unlimited. PRO tier is always unlimited.</p>
+            {!platformLoaded ? (
+              <p className="text-xs text-gray-400">Loading...</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-4">
+                  {([
+                    { key: 'routes',  label: 'Routes / month' },
+                    { key: 'trips',   label: 'Trips / month' },
+                    { key: 'exports', label: 'Exports / month' },
+                  ] as { key: keyof typeof freeForm; label: string }[]).map(({ key, label }) => (
+                    <Field key={key} label={label}>
+                      <input type="number" min="0" step="1" placeholder="blank = unlimited"
+                        value={freeForm[key]}
+                        onChange={e => setFreeForm(f => ({ ...f, [key]: e.target.value }))}
+                        className={INPUT} />
+                    </Field>
+                  ))}
+                </div>
+                <div className="flex justify-end">
+                  <button onClick={savePlatformLimits} disabled={platformBusy}
+                    className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-700 disabled:opacity-50">
+                    {platformBusy ? 'Saving...' : 'Save Free Tier Limits'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </Card>
+
+      {/* Workspace table */}
+      <Card>
+        <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-100">
+          <input
+            type="text" value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search workspaces..."
+            className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">All types</option>
+            <option value="TEAM">Team</option>
+            <option value="AGENT">Partner</option>
+          </select>
+          <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0">
+            {filtered.length} / {orgs.length}
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-100">
+                {['Workspace', 'Type', 'Tier', 'Status', 'Created', ''].map(h => (
+                  <th key={h} className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-400">
+                    No workspaces match your search
+                  </td>
+                </tr>
+              ) : filtered.map(org => {
+                const sub = subscriptions.find(s => s.org_id === org.id)
+                const tier = sub?.tier ?? 'FREE'
+                const typeCfg   = TYPE_CFG[org.workspace_type ?? 'TEAM'] ?? TYPE_CFG.TEAM
+                const tierCfg   = TIER_CFG[tier]
+                const statusCfg = STATUS_CFG[org.status] ?? STATUS_CFG.INACTIVE
+                return (
+                  <tr key={org.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-gray-900">{org.display_name ?? org.name}</div>
+                      <div className="text-xs text-gray-400 font-mono mt-0.5">{org.id.slice(0, 8)}...</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${typeCfg.cls}`}>{typeCfg.label}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs ${tierCfg.cls}`}>{tierCfg.label}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${statusCfg.cls}`}>{statusCfg.label}</span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{fmtDate(org.created_at)}</td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => openDrawer(org)}
+                        className="px-3 py-1 text-xs font-medium border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors">
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* Edit drawer */}
+      {drawer && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/25" onClick={closeDrawer} />
+          <div className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md bg-white border-l border-gray-200 shadow-2xl flex flex-col">
+
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">{drawer.org.display_name ?? drawer.org.name}</h2>
+                <p className="text-xs text-gray-400 font-mono mt-0.5">{drawer.org.id.slice(0, 12)}...</p>
+              </div>
+              <button onClick={closeDrawer}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+
+              {/* Profile section */}
+              <section className="space-y-3">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Profile</p>
+                <Field label="Name">
+                  <input value={drawer.org_name} onChange={e => setD({ org_name: e.target.value })} className={INPUT} />
+                </Field>
+                <Field label="Display name">
+                  <input value={drawer.org_display_name} onChange={e => setD({ org_display_name: e.target.value })} className={INPUT} />
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Contact email">
+                    <input type="email" value={drawer.contact_email} onChange={e => setD({ contact_email: e.target.value })} className={INPUT} />
+                  </Field>
+                  <Field label="Contact phone">
+                    <input value={drawer.contact_phone} onChange={e => setD({ contact_phone: e.target.value })} className={INPUT} />
+                  </Field>
+                </div>
+                <Field label="Address">
+                  <textarea value={drawer.address} onChange={e => setD({ address: e.target.value })} rows={2} className={INPUT} />
+                </Field>
+                <Field label="Internal notes">
+                  <textarea value={drawer.org_notes} onChange={e => setD({ org_notes: e.target.value })} rows={2} className={INPUT} />
+                </Field>
+              </section>
+
+              {/* Plan section */}
+              <section className="space-y-3">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Plan</p>
+                <Field label="Subscription tier">
+                  <select value={drawer.tier} onChange={e => setD({ tier: e.target.value as 'FREE' | 'PRO' })} className={SELECT}>
+                    <option value="FREE">Free</option>
+                    <option value="PRO">Pro</option>
+                  </select>
+                </Field>
+                <Field label="Rate template reference">
+                  <select value={drawer.rate_template_name} onChange={e => setD({ rate_template_name: e.target.value })} className={SELECT}>
+                    <option value="">-- None assigned --</option>
+                    {templateNames.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </Field>
+              </section>
+
+              {/* Policy override section */}
+              <section className="space-y-3">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Policy Override</p>
+                <Field label="Preset">
+                  <select value={drawer.preset} onChange={e => setD({ preset: e.target.value as DrawerState['preset'] })} className={SELECT}>
+                    <option value="DEFAULT">Default (uses platform limits)</option>
+                    <option value="BETA_UNLIMITED">Beta Unlimited</option>
+                    <option value="CUSTOM">Custom</option>
+                  </select>
+                </Field>
+                {drawer.preset === 'CUSTOM' && (
+                  <div className="grid grid-cols-3 gap-3">
+                    <Field label="Routes / mo">
+                      <input type="number" min="0" value={drawer.routes} onChange={e => setD({ routes: e.target.value })} placeholder="unlimited" className={INPUT} />
+                    </Field>
+                    <Field label="Trips / mo">
+                      <input type="number" min="0" value={drawer.trips} onChange={e => setD({ trips: e.target.value })} placeholder="unlimited" className={INPUT} />
+                    </Field>
+                    <Field label="Exports / mo">
+                      <input type="number" min="0" value={drawer.exports} onChange={e => setD({ exports: e.target.value })} placeholder="unlimited" className={INPUT} />
+                    </Field>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Override label">
+                    <input value={drawer.label} onChange={e => setD({ label: e.target.value })} placeholder="e.g. Beta partner" className={INPUT} />
+                  </Field>
+                  <Field label="Expires at">
+                    <input type="date" value={drawer.expires_at} onChange={e => setD({ expires_at: e.target.value })} className={INPUT} />
+                  </Field>
+                </div>
+                <Field label="Policy notes (internal)">
+                  <textarea value={drawer.policy_notes} onChange={e => setD({ policy_notes: e.target.value })} rows={2} className={INPUT} />
+                </Field>
+              </section>
+            </div>
+
+            {/* Drawer footer */}
+            <div className="flex-shrink-0 px-5 py-4 border-t border-gray-100 space-y-2">
+              <button onClick={saveDrawer} disabled={drawerBusy}
+                className="w-full py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-40 transition-colors">
+                {drawerBusy ? 'Saving...' : 'Save Changes'}
+              </button>
+              <button onClick={toggleStatus} disabled={drawerBusy}
+                className={`w-full py-2 rounded-xl text-sm font-medium border transition-colors ${
+                  drawer.org.status === 'ACTIVE'
+                    ? 'border-red-200 text-red-600 hover:bg-red-50'
+                    : 'border-green-200 text-green-700 hover:bg-green-50'
+                } disabled:opacity-40`}>
+                {drawer.org.status === 'ACTIVE' ? 'Suspend workspace' : 'Reactivate workspace'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WORKSPACE USER VIEW — team or agent
+// Profile only. Rates on /rates. Subscription/billing on /billing.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function WorkspaceView({
+  viewMode, org, subscription, orgRole,
+}: {
+  viewMode: 'team' | 'agent'
+  org: Org | null
+  subscription: Sub | null
+  orgRole: string | null
+}) {
+  const { toast, show } = useToast()
+  const canEdit = orgRole === 'OWNER' || orgRole === 'ADMIN'
+
+  const [name,        setName]        = useState(org?.name ?? '')
+  const [displayName, setDisplayName] = useState(org?.display_name ?? org?.name ?? '')
+  const [email,       setEmail]       = useState(org?.contact_email ?? '')
+  const [phone,       setPhone]       = useState(org?.contact_phone ?? '')
+  const [address,     setAddress]     = useState(org?.address ?? '')
+  const [profileBusy, setProfileBusy] = useState(false)
+
+  async function saveProfile() {
+    if (!name.trim()) { show('err', 'Workspace name is required'); return }
+    setProfileBusy(true)
+    try {
+      const res = await fetch('/api/workspace/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          org_profile: {
+            name,
+            display_name:  displayName || name,
+            contact_email: email || null,
+            contact_phone: phone || null,
+            address:       address || null,
           },
         }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error?.message ?? 'Failed')
-      toast_('ok', 'Organisation profile and policy updated')
-    } catch (e: unknown) {
-      toast_('err', e instanceof Error ? e.message : 'Failed')
+      show('ok', 'Profile updated')
+    } catch (e) {
+      show('err', e instanceof Error ? e.message : 'Failed')
     } finally {
-      setBusy(null)
+      setProfileBusy(false)
     }
   }
 
+  const tier = subscription?.tier ?? 'FREE'
+  const billingStatus = subscription?.billing_status ?? 'INACTIVE'
+
+  if (!org) {
+    return <div className="text-sm text-gray-400 py-10 text-center">Workspace data unavailable</div>
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Organisation Profiles, Limits & Policies</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Organisation here means the agent / affiliate / manager that manages enrolled users. It is not the claimant employer company.</p>
-        </div>
-        <button onClick={() => setShowNew(v => !v)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
-          {showNew ? 'Cancel' : '+ New Organisation'}
-        </button>
+    <div className="max-w-2xl space-y-5">
+      <Toast toast={toast} />
+
+      <div>
+        <h1 className="text-lg font-semibold text-gray-900">Settings</h1>
+        <p className="text-sm text-gray-500 mt-0.5">{org.display_name ?? org.name}</p>
       </div>
 
-      {toast && (
-        <div className={`px-4 py-2.5 rounded-lg text-sm font-medium ${toast.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-          {toast.msg}
+      {!canEdit && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
+          You have view-only access. Only the workspace Owner or Admin can update settings.
         </div>
       )}
 
-      {showNew && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h2 className="text-sm font-semibold text-gray-900 mb-3">Create New Organisation</h2>
-          <form onSubmit={createOrg} className="flex gap-3">
-            <input value={newName} onChange={e => setNewName(e.target.value)} required placeholder="Organisation / agent name" className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <button type="submit" disabled={creating} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
-              {creating ? 'Creating…' : 'Create'}
-            </button>
-          </form>
-          <p className="text-xs text-gray-400 mt-2">Organisation will be created on Free tier. You can edit its profile and policy immediately below.</p>
-        </div>
-      )}
-
-      {/* ── Platform Free Tier Limits ─────────────────────────────────────────── */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-        <div>
-          <h2 className="text-sm font-semibold text-gray-900">Free Tier Limits</h2>
-          <p className="text-xs text-gray-500 mt-1">
-            Default limits for all FREE organisations using the DEFAULT preset. Leave blank for unlimited. PRO tier is always unlimited.
-          </p>
-        </div>
-
-        {!configLoaded ? (
-          <div className="text-xs text-gray-400">Loading…</div>
-        ) : (
-          <>
-            <div className="grid grid-cols-3 gap-4">
-              <Field label="Routes / month">
-                <input
-                  type="number" min="0" step="1"
-                  placeholder="blank = unlimited"
-                  value={freeForm.routes}
-                  onChange={e => setFreeForm(f => ({ ...f, routes: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </Field>
-              <Field label="Trips / month">
-                <input
-                  type="number" min="0" step="1"
-                  placeholder="blank = unlimited"
-                  value={freeForm.trips}
-                  onChange={e => setFreeForm(f => ({ ...f, trips: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </Field>
-              <Field label="Exports / month">
-                <input
-                  type="number" min="0" step="1"
-                  placeholder="blank = unlimited"
-                  value={freeForm.exports}
-                  onChange={e => setFreeForm(f => ({ ...f, exports: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </Field>
-            </div>
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-gray-400">
-                Current: Routes {platformConfig.free_routes_per_month ?? '∞'} · Trips {platformConfig.free_trips_per_month ?? '∞'} · Exports {platformConfig.free_exports_per_month ?? '∞'}
-              </p>
-              <button
-                onClick={saveFreeLimits}
-                disabled={busy === 'platform'}
-                className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-gray-700"
-              >
-                {busy === 'platform' ? 'Saving…' : 'Save Free Tier Limits'}
+      {/* Profile card */}
+      <Card>
+        <CardHeader title="Workspace Profile" subtitle="Visible on invoices and correspondence" />
+        <CardBody>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Workspace name *">
+              <input value={name} onChange={e => setName(e.target.value)} disabled={!canEdit}
+                className={INPUT + (!canEdit ? ' bg-gray-50 text-gray-500 cursor-not-allowed' : '')} />
+            </Field>
+            <Field label="Display name">
+              <input value={displayName} onChange={e => setDisplayName(e.target.value)} disabled={!canEdit}
+                placeholder="Same as name"
+                className={INPUT + (!canEdit ? ' bg-gray-50 text-gray-500 cursor-not-allowed' : '')} />
+            </Field>
+            <Field label="Contact email">
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} disabled={!canEdit}
+                className={INPUT + (!canEdit ? ' bg-gray-50 text-gray-500 cursor-not-allowed' : '')} />
+            </Field>
+            <Field label="Contact phone">
+              <input value={phone} onChange={e => setPhone(e.target.value)} disabled={!canEdit}
+                placeholder="+60 12-345 6789"
+                className={INPUT + (!canEdit ? ' bg-gray-50 text-gray-500 cursor-not-allowed' : '')} />
+            </Field>
+          </div>
+          <Field label="Address">
+            <textarea value={address} onChange={e => setAddress(e.target.value)} disabled={!canEdit} rows={2}
+              className={INPUT + (!canEdit ? ' bg-gray-50 text-gray-500 cursor-not-allowed' : '')} />
+          </Field>
+          {canEdit && (
+            <div className="flex justify-end pt-1">
+              <button onClick={saveProfile} disabled={profileBusy}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                {profileBusy ? 'Saving...' : 'Save Profile'}
               </button>
             </div>
-          </>
-        )}
-      </div>
+          )}
+        </CardBody>
+      </Card>
 
-      {/* ── Per-org policies ──────────────────────────────────────────────────── */}
-      <div className="space-y-4">
-        {orgs.map(org => {
-          const form = orgForms[org.id]
-          const effective = effectiveRouteText(form, platformConfig)
-
-          return (
-            <div key={org.id} className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-              <div className="flex items-start justify-between gap-4 flex-wrap">
-                <div>
-                  <div className="text-base font-semibold text-gray-900">{form.org_display_name || form.org_name}</div>
-                  <div className="text-xs text-gray-400 font-mono">{org.id.slice(0, 8)}…</div>
-                  <div className="text-xs text-gray-500 mt-1">Created {fmtDate(org.created_at)} · Effective route policy: {effective}</div>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${org.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>{org.status}</span>
-                  <button disabled={busy === `status-${org.id}`} onClick={() => toggleOrgStatus(org)} className={`text-xs font-medium px-3 py-1.5 rounded border ${org.status === 'ACTIVE' ? 'border-red-200 text-red-600 hover:bg-red-50' : 'border-green-200 text-green-700 hover:bg-green-50'} disabled:opacity-40`}>
-                    {busy === `status-${org.id}` ? '…' : org.status === 'ACTIVE' ? 'Suspend' : 'Reactivate'}
-                  </button>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
-                Organisation profile = agent / affiliate / manager profile. Claimant employer company belongs in each user profile, not here.
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <Field label="Organisation Name"><input value={form.org_name} onChange={e => setOrgForms(prev => ({ ...prev, [org.id]: { ...prev[org.id], org_name: e.target.value } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></Field>
-                <Field label="Display Name"><input value={form.org_display_name} onChange={e => setOrgForms(prev => ({ ...prev, [org.id]: { ...prev[org.id], org_display_name: e.target.value } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></Field>
-                <Field label="Contact Email"><input value={form.contact_email} onChange={e => setOrgForms(prev => ({ ...prev, [org.id]: { ...prev[org.id], contact_email: e.target.value } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></Field>
-                <Field label="Contact Phone"><input value={form.contact_phone} onChange={e => setOrgForms(prev => ({ ...prev, [org.id]: { ...prev[org.id], contact_phone: e.target.value } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></Field>
-                <Field label="Address"><textarea value={form.address} onChange={e => setOrgForms(prev => ({ ...prev, [org.id]: { ...prev[org.id], address: e.target.value } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[84px]" /></Field>
-                <Field label="Organisation Notes"><textarea value={form.org_notes} onChange={e => setOrgForms(prev => ({ ...prev, [org.id]: { ...prev[org.id], org_notes: e.target.value } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[84px]" /></Field>
-              </div>
-
-              <div className="grid md:grid-cols-3 gap-4">
-                <Field label="Commercial tier">
-                  <select value={form.tier} onChange={e => setOrgForms(prev => ({ ...prev, [org.id]: { ...prev[org.id], tier: e.target.value as 'FREE' | 'PRO' } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                    <option value="FREE">FREE</option>
-                    <option value="PRO">PRO</option>
-                  </select>
-                </Field>
-                <Field label="Policy preset">
-                  <select value={form.preset} onChange={e => setOrgForms(prev => ({ ...prev, [org.id]: { ...prev[org.id], preset: e.target.value as OrgPolicyForm['preset'] } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                    <option value="DEFAULT">DEFAULT (follow plan)</option>
-                    <option value="BETA_UNLIMITED">BETA_UNLIMITED</option>
-                    <option value="CUSTOM">CUSTOM</option>
-                  </select>
-                </Field>
-                <Field label="Display label"><input value={form.label} onChange={e => setOrgForms(prev => ({ ...prev, [org.id]: { ...prev[org.id], label: e.target.value } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></Field>
-              </div>
-
-              {form.preset === 'CUSTOM' && (
-                <div className="grid md:grid-cols-3 gap-4">
-                  <Field label="Routes / month"><input value={form.routes_per_month} onChange={e => setOrgForms(prev => ({ ...prev, [org.id]: { ...prev[org.id], routes_per_month: e.target.value } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></Field>
-                  <Field label="Trips / month"><input value={form.trips_per_month} onChange={e => setOrgForms(prev => ({ ...prev, [org.id]: { ...prev[org.id], trips_per_month: e.target.value } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></Field>
-                  <Field label="Exports / month"><input value={form.exports_per_month} onChange={e => setOrgForms(prev => ({ ...prev, [org.id]: { ...prev[org.id], exports_per_month: e.target.value } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></Field>
-                </div>
-              )}
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <Field label="Override expires at (optional)"><input type="date" value={form.expires_at} onChange={e => setOrgForms(prev => ({ ...prev, [org.id]: { ...prev[org.id], expires_at: e.target.value } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></Field>
-                <Field label="Policy notes"><input value={form.notes} onChange={e => setOrgForms(prev => ({ ...prev, [org.id]: { ...prev[org.id], notes: e.target.value } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></Field>
-              </div>
-
-              <div className="flex justify-end">
-                <button onClick={() => saveOrg(org.id)} disabled={busy === `org-${org.id}`} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
-                  {busy === `org-${org.id}` ? 'Saving…' : 'Save Organisation'}
-                </button>
-              </div>
+      {/* Quick links */}
+      {viewMode === 'team' && (
+        <Card>
+          <CardHeader title="Quick Links" subtitle="Manage other workspace settings" />
+          <CardBody>
+            <div className="grid grid-cols-2 gap-3">
+              <Link href="/rates"
+                className="flex items-center gap-2 px-4 py-3 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Team Rates
+              </Link>
+              <Link href="/billing"
+                className="flex items-center gap-2 px-4 py-3 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                </svg>
+                Billing
+              </Link>
             </div>
-          )
-        })}
-      </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Plan summary */}
+      <Card>
+        <CardHeader title="Subscription" subtitle="Managed by EffortEdutech" />
+        <CardBody>
+          <div className="flex items-center gap-3">
+            <span className={`inline-flex px-3 py-1 rounded-full text-sm font-semibold ${TIER_CFG[tier].cls}`}>
+              {tier === 'PRO' ? 'Pro Plan' : 'Free Plan'}
+            </span>
+            {billingStatus && billingStatus !== 'INACTIVE' && (
+              <span className="text-xs text-gray-500 capitalize">{billingStatus.toLowerCase()}</span>
+            )}
+          </div>
+          {tier === 'FREE' && (
+            <p className="text-xs text-gray-400">
+              Free plan includes limited route calculations, trips, and exports per month.
+              Contact EffortEdutech to upgrade.
+            </p>
+          )}
+          <div className="pt-1">
+            <Link href="/billing"
+              className="inline-flex items-center gap-1 text-sm text-blue-600 font-medium hover:text-blue-800">
+              View billing details
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+          </div>
+        </CardBody>
+      </Card>
     </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Root export
+// ─────────────────────────────────────────────────────────────────────────────
+
+export default function SettingsClient(props: Props) {
+  if (props.viewMode === 'internal') {
+    return (
+      <InternalView
+        orgs={props.orgs}
+        subscriptions={props.subscriptions}
+        orgSettings={props.orgSettings}
+        templateNames={props.templateNames}
+      />
+    )
+  }
+
+  return (
+    <WorkspaceView
+      viewMode={props.viewMode}
+      org={props.org ?? null}
+      subscription={props.subscription ?? null}
+      orgRole={props.orgRole}
+    />
   )
 }

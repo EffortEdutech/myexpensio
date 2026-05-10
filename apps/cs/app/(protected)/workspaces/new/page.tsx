@@ -108,7 +108,7 @@ function SuccessView({ result, ownerEmail, onCreateAnother }: {
 
       <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3 mb-5">
         {[
-          ['Organisation',   result.org_name],
+          ['Workspace',      result.org_name],
           ['Type',           isTeam ? 'Team Workspace' : 'Agent / Partner Workspace'],
           ['Workspace ID',   result.org_id],
           ['Owner email',    ownerEmail],
@@ -248,11 +248,11 @@ export default function CreateWorkspacePage() {
           </div>
         </div>
 
-        {/* Section 2: Organisation */}
+        {/* Section 2: Workspace */}
         <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-gray-900">Organisation Details</h2>
+          <h2 className="text-sm font-semibold text-gray-900">Workspace Details</h2>
 
-          <Field label="Organisation name" required>
+          <Field label="Workspace name" required>
             <input type="text" value={name} onChange={(e) => setName(e.target.value)}
               placeholder={workspaceType === 'TEAM' ? 'e.g. ACME Sdn Bhd' : 'e.g. Ahmad Partners'}
               required className={INPUT} />

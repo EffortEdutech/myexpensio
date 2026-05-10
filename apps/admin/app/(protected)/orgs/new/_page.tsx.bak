@@ -1,0 +1,220 @@
+'use client'
+// apps/admin/app/(protected)/orgs/new/page.tsx
+// Internal staff only — provision a new workspace.
+
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+
+type WorkspaceType = 'TEAM' | 'AGENT'
+type Tier = 'FREE' | 'PRO'
+
+export default function NewOrgPage() {
+  const router = useRouter()
+
+  const [workspaceType, setWorkspaceType] = useState<WorkspaceType>('TEAM')
+  const [name, setName]                   = useState('')
+  const [ownerEmail, setOwnerEmail]       = useState('')
+  const [ownerName, setOwnerName]         = useState('')
+  const [contactEmail, setContactEmail]   = useState('')
+  const [contactPhone, setContactPhone]   = useState('')
+  const [tier, setTier]                   = useState<Tier>('FREE')
+  const [loading, setLoading]             = useState(false)
+  const [error, setError]                 = useState<string | null>(null)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name.trim() || !ownerEmail.trim() || !ownerName.trim()) return
+
+    setLoading(true)
+    setError(null)
+
+    try {
+      const res = await fetch('/api/admin/orgs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspace_type:     workspaceType,
+          name:               name.trim(),
+          owner_email:        ownerEmail.trim(),
+          owner_display_name: ownerName.trim(),
+          contact_email:      contactEmail.trim() || undefined,
+          contact_phone:      contactPhone.trim() || undefined,
+          initial_tier:       tier,
+        }),
+      })
+
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error?.message ?? 'Failed to create workspace')
+
+      router.push(`/orgs/${json.org_id}/invites?created=1`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error creating workspace')
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="max-w-xl space-y-6">
+      {/* Header */}
+      <div>
+        <div className="flex items-center gap-2 text-sm text-gray-400 mb-3">
+          <Link href="/orgs" className="hover:text-gray-600">Organisations</Link>
+          <span>/</span>
+          <span className="text-gray-700">New Workspace</span>
+        </div>
+        <h1 className="text-lg font-semibold text-gray-900">Create Workspace</h1>
+        <p className="text-sm text-gray-500 mt-0.5">
+          Provisions a new organisation and sends an invite to the owner.
+        </p>
+      </div>
+
+      {/* Form */}
+      <form onSubmit={handleSubmit} className="bg-white border border-gray-200 rounded-xl p-6 space-y-5">
+
+        {/* Workspace type */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Workspace type <span className="text-red-500">*</span>
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            {([
+              { value: 'TEAM',  label: 'Team',    desc: 'Company reimbursement workspace for employees' },
+              { value: 'AGENT', label: 'Partner', desc: 'Agent/reseller workspace that earns commission' },
+            ] as { value: WorkspaceType; label: string; desc: string }[]).map((opt) => (
+              <label
+                key={opt.value}
+                className={`flex flex-col gap-1 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                  workspaceType === opt.value
+                    ? 'border-blue-600 bg-blue-50'
+                    : 'border-gray-200 hover:border-gray-300 bg-white'
+                }`}
+              >
+                <input
+                  type="radio" name="type" value={opt.value}
+                  checked={workspaceType === opt.value}
+                  onChange={() => setWorkspaceType(opt.value)}
+                  className="sr-only"
+                />
+                <span className={`text-sm font-semibold ${workspaceType === opt.value ? 'text-blue-700' : 'text-gray-900'}`}>
+                  {opt.label}
+                </span>
+                <span className="text-xs text-gray-500">{opt.desc}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Org name */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Organisation name <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text" value={name} onChange={(e) => setName(e.target.value)}
+            placeholder="Acme Sdn Bhd"
+            required
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        {/* Owner */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Owner email <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="email" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)}
+              placeholder="owner@company.com"
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Owner name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text" value={ownerName} onChange={(e) => setOwnerName(e.target.value)}
+              placeholder="Ahmad bin Ali"
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+
+        {/* Contact details */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Contact email <span className="text-xs text-gray-400">(optional)</span>
+            </label>
+            <input
+              type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)}
+              placeholder="Same as owner"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Contact phone <span className="text-xs text-gray-400">(optional)</span>
+            </label>
+            <input
+              type="tel" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)}
+              placeholder="+60 12-345 6789"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+
+        {/* Initial tier */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Initial plan</label>
+          <div className="flex gap-3">
+            {(['FREE', 'PRO'] as Tier[]).map((t) => (
+              <label
+                key={t}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 cursor-pointer transition-all ${
+                  tier === t ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <input
+                  type="radio" name="tier" value={t}
+                  checked={tier === t} onChange={() => setTier(t)}
+                  className="sr-only"
+                />
+                <span className={`text-sm font-medium ${tier === t ? 'text-blue-700' : 'text-gray-700'}`}>
+                  {t === 'PRO' ? 'Pro' : 'Free'}
+                </span>
+              </label>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400 mt-1.5">
+            Free: 2 route calculations/month · Pro: unlimited
+          </p>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">{error}</div>
+        )}
+
+        <div className="flex gap-3 pt-1">
+          <button
+            type="submit"
+            disabled={loading || !name.trim() || !ownerEmail.trim() || !ownerName.trim()}
+            className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {loading ? 'Creating…' : 'Create Workspace & Invite Owner'}
+          </button>
+          <Link
+            href="/orgs"
+            className="px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </Link>
+        </div>
+      </form>
+    </div>
+  )
+}

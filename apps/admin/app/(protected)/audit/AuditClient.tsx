@@ -89,7 +89,7 @@ export default function AuditClient({
       <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-500">Organisation</label>
+            <label className="mb-1 block text-xs font-medium text-gray-500">Workspace</label>
             <select
               value={orgFilter}
               onChange={(e) => setOrgFilter(e.target.value)}
@@ -180,7 +180,7 @@ export default function AuditClient({
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Actor</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Action</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Entity</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Organisation</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Workspace</th>
                 <th className="px-4 py-3 text-xs font-medium uppercase text-gray-500">Detail</th>
               </tr>
             </thead>

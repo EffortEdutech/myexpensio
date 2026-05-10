@@ -389,7 +389,7 @@ export default function StartTripPage() {
           <p style={S.subMsg}>
             {limitInfo?.limit !== null
               ? `You've used ${limitInfo?.used ?? 0} of ${limitInfo?.limit ?? 0} trips this month${limitInfo?.label ? ` (${limitInfo.label})` : ''}.`
-              : 'This organisation has reached its current trip creation policy.'}
+              : 'This workspace has reached its current trip creation policy.'}
             {limitInfo?.period_end ? <> Resets on <strong>{fmtMonthEnd(limitInfo.period_end)}</strong>.</> : null}
           </p>
           {limitInfo?.preset && (

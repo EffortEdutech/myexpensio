@@ -64,7 +64,7 @@ export default function WorkspaceEditDrawer({
   const [success, setSuccess]   = useState(false)
 
   async function handleSave() {
-    if (!name.trim()) { setError('Organisation name is required'); return }
+    if (!name.trim()) { setError('Workspace name is required'); return }
     setLoading(true); setError(null)
 
     try {
@@ -152,9 +152,9 @@ export default function WorkspaceEditDrawer({
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
 
-          <Section title="Organisation">
+          <Section title="Workspace">
             <div>
-              <label className={LABEL}>Organisation name *</label>
+              <label className={LABEL}>Workspace name *</label>
               <input type="text" value={name} onChange={(e) => setName(e.target.value)}
                 placeholder="ACME Sdn Bhd" className={INPUT} />
             </div>

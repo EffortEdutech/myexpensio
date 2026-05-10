@@ -1,5 +1,5 @@
 'use client'
-// apps/admin/app/orgs/[id]/invites/page.tsx
+// apps/admin/app/(protected)/orgs/[id]/invites/page.tsx
 // Internal staff only — invitation requests for a specific workspace.
 // Reuses the same /api/workspace/invitations endpoint with org_id scoping.
 
@@ -55,10 +55,10 @@ function AddInviteForm({ orgId, workspaceType, onSubmitted }: {
   workspaceType: string
   onSubmitted: () => void
 }) {
-  const [email, setEmail]     = useState('')
-  const [role, setRole]       = useState('')
+  const [email, setEmail]   = useState('')
+  const [role, setRole]     = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError]     = useState<string | null>(null)
+  const [error, setError]   = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
   const TEAM_ROLES  = ['ADMIN', 'MANAGER', 'EMPLOYEE']
@@ -83,8 +83,7 @@ function AddInviteForm({ orgId, workspaceType, onSubmitted }: {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error')
     } finally {
-      setLoading(false)
-    }
+      setLoading(false) }
   }
 
   return (
@@ -131,12 +130,12 @@ export default function OrgInvitesPage() {
   const orgId        = params.id as string
   const justCreated  = searchParams.get('created') === '1'
 
-  const [requests, setRequests]           = useState<InvitationRequest[]>([])
-  const [total, setTotal]                 = useState(0)
-  const [loading, setLoading]             = useState(true)
+  const [requests, setRequests]     = useState<InvitationRequest[]>([])
+  const [total, setTotal]           = useState(0)
+  const [loading, setLoading]       = useState(true)
   const [workspaceType, setWorkspaceType] = useState<string>('TEAM')
-  const [orgName, setOrgName]             = useState<string>('')
-  const [tab, setTab]                     = useState<'active' | 'completed' | 'rejected'>('active')
+  const [orgName, setOrgName]       = useState<string>('')
+  const [tab, setTab]               = useState<'active' | 'completed' | 'rejected'>('active')
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -164,7 +163,7 @@ export default function OrgInvitesPage() {
     rejected:  ['REJECTED', 'FAILED'],
   }
 
-  const filtered       = requests.filter((r) => (STATUS_MAP[tab] ?? []).includes(r.status))
+  const filtered = requests.filter((r) => (STATUS_MAP[tab] ?? []).includes(r.status))
   const pendingCount   = requests.filter((r) => ['PENDING', 'APPROVED'].includes(r.status)).length
   const completedCount = requests.filter((r) => r.status === 'EXECUTED').length
 

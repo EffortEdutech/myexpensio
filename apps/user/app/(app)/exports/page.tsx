@@ -345,7 +345,7 @@ export default function ExportsPage() {
 
   async function handleGenerate() {
     if (selected.size === 0) { setGenError('Select at least one claim.'); return }
-    if (exportAtLimit) { setGenError('Your organisation has reached its export limit for this month.'); return }
+    if (exportAtLimit) { setGenError('Your workspace has reached its export limit for this month.'); return }
 
     setGenerating(true); setGenError(null); setGenSuccess(null)
 
@@ -403,7 +403,7 @@ export default function ExportsPage() {
           <span style={S.cardIcon}>🧭</span>
           <div>
             <div style={S.cardTitle}>Export Policy</div>
-            <div style={S.cardSub}>Current organisation export allowance</div>
+            <div style={S.cardSub}>Current workspace export allowance</div>
           </div>
         </div>
         {!usage
