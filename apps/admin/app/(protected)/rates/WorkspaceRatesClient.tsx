@@ -297,13 +297,13 @@ function CurrentRateBanner({ rate }: { rate: Record<string, unknown> }) {
             {'Current team rate'}
             {rate.rate_label ? ': ' + rate.rate_label : ''}
           </strong>
-          {rate.effective_from && (
+          {!!rate.effective_from && (
             <span className="ml-2 text-xs font-normal text-blue-500">
               {'Effective ' + fmtDate(rate.effective_from as string)}
             </span>
           )}
         </div>
-        {rate.updated_at && (
+        {!!rate.updated_at && (
           <span className="text-xs text-blue-400">
             {'Updated ' + fmtDate(rate.updated_at as string)}
           </span>
