@@ -1,7 +1,10 @@
 {
-  "version": "3.0.4",
+  "version": "3.1.0",
   "changelog": [
-    "upgrade with 3 apps -user, admin, console",
-    "upgrade with 3 apps -user, admin, console ()"
+    "finish Sprint 1 work (auth gating, org management, rate policy, team rates editor, settings/billing separation) ()",
+    "ready for test myexpensio, workspace, console ()",
+    "billing, claim, rates, templates ()",
+    "favicon ()",
+    "onboarding flow gap ()"
   ]
 }
