@@ -30,7 +30,7 @@ export async function GET(req: Request) {
   const monthStartDate = monthStartIso.slice(0, 10) // 'YYYY-MM-01'
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
-  // ── INTERNAL staff (no org scope) ──────────────────────────────────────────
+  // -- INTERNAL staff (no org scope) ------------------------------------------
   if (ctx.isInternalStaff && !orgId) {
     const [orgsRes, usersRes, claimsRes, exportsRes, newUsersRes] = await Promise.all([
       db.from('organizations').select('id, status, workspace_type'),
@@ -67,7 +67,7 @@ export async function GET(req: Request) {
   // orgId is required beyond this point
   if (!orgId) return err('VALIDATION_ERROR', 'org_id required', 400)
 
-  // ── TEAM workspace ──────────────────────────────────────────────────────────
+  // -- TEAM workspace ----------------------------------------------------------
   if (ctx.isTeamWorkspace || (ctx.isInternalStaff && requestedOrgId)) {
     const [membersRes, claimsRes, exportsRes, usageRes, subscriptionRes] = await Promise.all([
       db.from('org_members')
@@ -116,7 +116,7 @@ export async function GET(req: Request) {
     })
   }
 
-  // ── AGENT workspace ─────────────────────────────────────────────────────────
+  // -- AGENT workspace ---------------------------------------------------------
   if (ctx.isAgentWorkspace) {
     const [referralsRes, commissionRes] = await Promise.all([
       db.from('referrals')

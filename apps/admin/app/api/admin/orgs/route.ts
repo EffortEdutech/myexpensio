@@ -1,7 +1,7 @@
 // apps/admin/app/api/admin/orgs/route.ts
 //
-// GET  /api/admin/orgs  — list all organisations (internal staff only)
-// POST /api/admin/orgs  — provision a new workspace (internal staff only)
+// GET  /api/admin/orgs  - list all organisations (internal staff only)
+// POST /api/admin/orgs  - provision a new workspace (internal staff only)
 //
 // Mirrors the CS console/workspaces logic, scoped to the workspace-auth
 // pattern used in apps/admin.
@@ -14,7 +14,7 @@ function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
 }
 
-// ── GET — list all workspaces ─────────────────────────────────────────────────
+// -- GET - list all workspaces -------------------------------------------------
 
 export async function GET(req: Request) {
   const ctx = await requireWorkspaceAuth('api')
@@ -67,7 +67,7 @@ export async function GET(req: Request) {
   return NextResponse.json({ orgs, total: count ?? 0, page, pageSize })
 }
 
-// ── POST — provision a new workspace ─────────────────────────────────────────
+// -- POST - provision a new workspace -----------------------------------------
 
 export async function POST(req: Request) {
   const ctx = await requireWorkspaceAuth('api')

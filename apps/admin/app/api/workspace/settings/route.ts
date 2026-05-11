@@ -32,7 +32,7 @@ export async function PATCH(req: Request) {
 
   const db = createServiceRoleClient()
 
-  // ── Profile update ────────────────────────────────────────────────────────────
+  // -- Profile update ------------------------------------------------------------
   if (body.org_profile) {
     const { name, display_name, contact_email, contact_phone, address } = body.org_profile
     if (!String(name ?? '').trim()) return err('VALIDATION_ERROR', 'Workspace name is required', 400)
@@ -51,7 +51,7 @@ export async function PATCH(req: Request) {
     if (error) return err('DB_ERROR', error.message, 500)
   }
 
-  // ── Rate template preference ───────────────────────────────────────────────────
+  // -- Rate template preference ---------------------------------------------------
   // Stored in admin_settings.settings.rate_template_name (null = no assignment)
   if ('rate_template_name' in body) {
     const { data: existing } = await db

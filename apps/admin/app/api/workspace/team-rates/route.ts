@@ -4,8 +4,8 @@
 // Stores the team's shared rate schedule in admin_settings.settings.team_rate.
 // Team employees pick up these rates when submitting claims (via the user app).
 //
-// GET  — returns { teamRate, defaults, templates }
-// POST — saves team rate (OWNER or ADMIN only)
+// GET  - returns { teamRate, defaults, templates }
+// POST - saves team rate (OWNER or ADMIN only)
 
 import { NextResponse } from 'next/server'
 import { requireWorkspaceAuth } from '@/lib/workspace-auth'
@@ -41,7 +41,7 @@ function trimOrNull(v: unknown): string | null {
   return typeof v === 'string' && v.trim() ? v.trim() : null
 }
 
-// ── GET ────────────────────────────────────────────────────────────────────────
+// -- GET ------------------------------------------------------------------------
 
 export async function GET() {
   const ctx = await requireWorkspaceAuth('api')
@@ -82,7 +82,7 @@ export async function GET() {
   })
 }
 
-// ── POST ───────────────────────────────────────────────────────────────────────
+// -- POST -----------------------------------------------------------------------
 
 export async function POST(req: Request) {
   const ctx = await requireWorkspaceAuth('api')

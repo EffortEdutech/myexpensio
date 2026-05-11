@@ -1,11 +1,11 @@
 // apps/admin/app/api/admin/assignments/route.ts
 //
-// Manages org_template_assignments — which templates each org has access to.
+// Manages org_template_assignments - which templates each org has access to.
 //
-// GET    ?org_id=xxx        — all assignments for an org (with template details)
-// POST   { org_id, template_id, is_default? }  — assign template to org
-// PATCH  { org_id, template_id }               — set as default for org
-// DELETE { org_id, template_id }               — unassign template from org
+// GET    ?org_id=xxx        - all assignments for an org (with template details)
+// POST   { org_id, template_id, is_default? }  - assign template to org
+// PATCH  { org_id, template_id }               - set as default for org
+// DELETE { org_id, template_id }               - unassign template from org
 //
 // Business rules:
 //   - An org must always have at least one template assigned
@@ -22,7 +22,7 @@ function err(code: string, msg: string, s: number) {
   return NextResponse.json({ error: { code, message: msg } }, { status: s })
 }
 
-// ── GET — assignments for one org ─────────────────────────────────────────────
+// -- GET - assignments for one org ---------------------------------------------
 
 export async function GET(req: NextRequest) {
   const ctx = await requireAdminAuth('api')
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ assignments: data ?? [] })
 }
 
-// ── POST — assign a template to an org ────────────────────────────────────────
+// -- POST - assign a template to an org ----------------------------------------
 
 export async function POST(req: Request) {
   const ctx = await requireAdminAuth('api')
@@ -104,7 +104,7 @@ export async function POST(req: Request) {
   return NextResponse.json({ assignment }, { status: 201 })
 }
 
-// ── PATCH — set a template as default for an org ──────────────────────────────
+// -- PATCH - set a template as default for an org ------------------------------
 
 export async function PATCH(req: Request) {
   const ctx = await requireAdminAuth('api')
@@ -147,7 +147,7 @@ export async function PATCH(req: Request) {
   return NextResponse.json({ ok: true })
 }
 
-// ── DELETE — unassign a template from an org ──────────────────────────────────
+// -- DELETE - unassign a template from an org ----------------------------------
 
 export async function DELETE(req: Request) {
   const ctx = await requireAdminAuth('api')

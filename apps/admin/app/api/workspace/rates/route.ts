@@ -2,10 +2,10 @@
 //
 // GET /api/workspace/rates
 // Returns the global rate_versions library.
-// Workspace users (OWNER/ADMIN/MANAGER) can read — they cannot create or edit.
+// Workspace users (OWNER/ADMIN/MANAGER) can read - they cannot create or edit.
 // Internal staff use /api/admin/rates for full CRUD.
 //
-// Rate versions are GLOBAL — not per-org. They are managed by Console/internal
+// Rate versions are GLOBAL - not per-org. They are managed by Console/internal
 // staff and made available to all workspace users for reference.
 
 import { NextResponse } from 'next/server'

@@ -1,10 +1,10 @@
 // apps/admin/app/api/admin/templates/[templateId]/route.ts
-// PATCH  — edit a global template (name, description, columns, pdf_layout, is_active)
-// DELETE — hard delete from library
+// PATCH  - edit a global template (name, description, columns, pdf_layout, is_active)
+// DELETE - hard delete from library
 //
 // DELETE guards:
 //   1. Cannot delete if export_jobs reference it (audit trail)
-//   2. Cannot delete if any org still has it assigned — unassign from all orgs first
+//   2. Cannot delete if any org still has it assigned - unassign from all orgs first
 
 import { NextResponse } from 'next/server'
 import { requireAdminAuth } from '@/lib/auth'
@@ -18,7 +18,7 @@ function err(code: string, msg: string, s: number) {
   return NextResponse.json({ error: { code, message: msg } }, { status: s })
 }
 
-// ── PATCH ──────────────────────────────────────────────────────────────────────
+// -- PATCH ----------------------------------------------------------------------
 
 export async function PATCH(req: Request, { params }: Params) {
   const ctx = await requireAdminAuth('api')
@@ -81,7 +81,7 @@ export async function PATCH(req: Request, { params }: Params) {
   return NextResponse.json({ template: updated })
 }
 
-// ── DELETE ─────────────────────────────────────────────────────────────────────
+// -- DELETE ---------------------------------------------------------------------
 
 export async function DELETE(_req: Request, { params }: Params) {
   const ctx = await requireAdminAuth('api')

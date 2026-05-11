@@ -2,7 +2,7 @@
 //
 // GET /api/workspace/claims/:claimId
 // Returns a single claim with all items and trip data.
-// READ-ONLY — workspace admins cannot edit claims.
+// READ-ONLY - workspace admins cannot edit claims.
 // SUBMITTED claims are always locked (returned as-is for audit).
 
 import { NextResponse } from 'next/server'

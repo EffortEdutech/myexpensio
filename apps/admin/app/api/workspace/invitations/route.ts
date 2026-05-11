@@ -1,14 +1,14 @@
 // apps/admin/app/api/workspace/invitations/route.ts
 //
-// GET  — list invitation_requests for this workspace
-// POST — submit a new invitation request
+// GET  - list invitation_requests for this workspace
+// POST - submit a new invitation request
 //
 // Auto-approve: if platform_config.auto_approve_invitations = true,
 // immediately creates the user + sends invite email (EXECUTED).
 // Otherwise, status = PENDING for Console staff to review.
 //
 // REDIRECT URL LOGIC (FIX):
-//   EMPLOYEE role → USER_APP_URL  (MyExpensio — they don't use Workspace App)
+//   EMPLOYEE role → USER_APP_URL  (MyExpensio - they don't use Workspace App)
 //   All other roles → WORKSPACE_APP_URL (Expensio Workspace)
 
 import { NextResponse } from 'next/server'
@@ -30,7 +30,7 @@ function getRedirectUrl(orgRole: string): string {
   return WORKSPACE_APP_ROLES.includes(orgRole) ? workspaceAppUrl : userAppUrl
 }
 
-// ── GET ────────────────────────────────────────────────────────────────────────
+// -- GET ------------------------------------------------------------------------
 
 export async function GET(req: Request) {
   const ctx = await requireWorkspaceAuth('api')
@@ -78,7 +78,7 @@ export async function GET(req: Request) {
   return NextResponse.json({ requests, total: count ?? 0, page, pageSize })
 }
 
-// ── POST ───────────────────────────────────────────────────────────────────────
+// -- POST -----------------------------------------------------------------------
 
 export async function POST(req: Request) {
   const ctx = await requireWorkspaceAuth('api')
@@ -157,7 +157,7 @@ export async function POST(req: Request) {
     return err('SERVER_ERROR', 'Failed to create invitation request', 500)
   }
 
-  // ── Auto-approve: execute immediately ──────────────────────────────────────
+  // -- Auto-approve: execute immediately --------------------------------------
 
   if (autoApprove) {
     try {
@@ -281,7 +281,7 @@ export async function POST(req: Request) {
     }
   }
 
-  // ── Manual: save as PENDING ─────────────────────────────────────────────────
+  // -- Manual: save as PENDING -------------------------------------------------
 
   await db.from('audit_logs').insert({
     org_id:        workspaceId,

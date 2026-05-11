@@ -8,7 +8,7 @@
 //   Customer admin  → own org only (org_id enforced server-side)
 //
 // Query params:
-//   org_id      (internal staff only — ignored for customers)
+//   org_id      (internal staff only - ignored for customers)
 //   status      DRAFT | SUBMITTED
 //   user_id     filter by specific user
 //   from        ISO date 'YYYY-MM-DD'
@@ -76,7 +76,7 @@ export async function GET(req: Request) {
   if (orgId) {
     query = query.eq('org_id', orgId)
   }
-  // Note: if orgId is null (internal staff, no filter) — returns all orgs
+  // Note: if orgId is null (internal staff, no filter) - returns all orgs
 
   // Optional filters
   if (status && ['DRAFT', 'SUBMITTED'].includes(status)) {

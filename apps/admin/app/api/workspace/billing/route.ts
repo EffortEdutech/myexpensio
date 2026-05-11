@@ -2,7 +2,7 @@
 //
 // GET /api/workspace/billing
 // Returns subscription status + current period usage for the workspace.
-// Read-only — upgrades/changes are Console-only operations.
+// Read-only - upgrades/changes are Console-only operations.
 
 import { NextResponse } from 'next/server'
 import { requireWorkspaceAuth, resolveOrgScope } from '@/lib/workspace-auth'
@@ -31,7 +31,7 @@ export async function GET(req: Request) {
     .eq('org_id', orgId)
     .maybeSingle()
 
-  // Current month usage — period_start = first day of current month
+  // Current month usage - period_start = first day of current month
   const now = new Date()
   const periodStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
 
@@ -42,7 +42,7 @@ export async function GET(req: Request) {
     .eq('period_start', periodStart)
     .maybeSingle()
 
-  // Platform config — free tier limits
+  // Platform config - free tier limits
   const { data: config } = await db
     .from('platform_config')
     .select('free_routes_per_month, free_trips_per_month, free_exports_per_month')

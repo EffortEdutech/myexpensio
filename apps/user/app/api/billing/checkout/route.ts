@@ -114,20 +114,31 @@ export async function POST(req: Request) {
   }
 
   // 4. Create Checkout Session
-  const session = await stripe.checkout.sessions.create({
-    customer:            customerId,
-    mode:                'subscription',
-    line_items: [
-      { price: priceId, quantity: 1 },
-    ],
-    success_url,
-    cancel_url,
-    subscription_data: {
-      metadata: { org_id: orgId },
-    },
-    metadata: { org_id: orgId, plan_code: plan_code.toUpperCase() },
-    allow_promotion_codes: true,
-  })
+  let session: Awaited<ReturnType<typeof stripe.checkout.sessions.create>>
+  try {
+    session = await stripe.checkout.sessions.create({
+      customer:            customerId,
+      mode:                'subscription',
+      line_items: [
+        { price: priceId, quantity: 1 },
+      ],
+      success_url,
+      cancel_url,
+      subscription_data: {
+        metadata: { org_id: orgId },
+      },
+      metadata: { org_id: orgId, plan_code: plan_code.toUpperCase() },
+      allow_promotion_codes: true,
+    })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Stripe checkout session creation failed'
+    console.error('[billing/checkout] Stripe error:', msg)
+    return err('STRIPE_ERROR', msg, 502)
+  }
 
   if (!session.url) {
-    return
+    return err('INTERNAL_ERROR', 'Stripe did not return a checkout URL', 500)
+  }
+
+  return NextResponse.json({ checkout_url: session.url })
+}

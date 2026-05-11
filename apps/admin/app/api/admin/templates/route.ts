@@ -1,6 +1,6 @@
 // apps/admin/app/api/admin/templates/route.ts
-// GET  — all templates in the global library
-// POST — create a new global template (no org_id — assign to orgs separately)
+// GET  - all templates in the global library
+// POST - create a new global template (no org_id - assign to orgs separately)
 
 import { NextResponse } from 'next/server'
 import { requireAdminAuth } from '@/lib/auth'
@@ -22,7 +22,7 @@ function err(code: string, msg: string, s: number) {
   return NextResponse.json({ error: { code, message: msg } }, { status: s })
 }
 
-// ── GET — full template library ────────────────────────────────────────────────
+// -- GET - full template library ------------------------------------------------
 
 export async function GET() {
   const ctx = await requireAdminAuth('api')
@@ -39,7 +39,7 @@ export async function GET() {
   return NextResponse.json({ templates: data ?? [] })
 }
 
-// ── POST — create a template in the global library ─────────────────────────────
+// -- POST - create a template in the global library -----------------------------
 // After creation, assign it to orgs via POST /api/admin/assignments
 
 export async function POST(req: Request) {
@@ -98,7 +98,7 @@ export async function POST(req: Request) {
   )
 
   await db.from('audit_logs').insert({
-    org_id:        null,   // global template — not org-specific
+    org_id:        null,   // global template - not org-specific
     actor_user_id: ctx.userId,
     entity_type:   'report_template',
     entity_id:     template.id,

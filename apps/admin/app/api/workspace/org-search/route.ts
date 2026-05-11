@@ -1,7 +1,7 @@
 // apps/admin/app/api/workspace/org-search/route.ts
 //
 // GET /api/workspace/org-search?q=<query>
-// Internal staff only — typeahead search for workspace picker.
+// Internal staff only - typeahead search for workspace picker.
 // Used by InternalOrgPicker component in billing, templates, claims etc.
 
 import { NextResponse } from 'next/server'
@@ -12,7 +12,7 @@ export async function GET(req: Request) {
   const ctx = await requireWorkspaceAuth('api')
   if (!ctx) return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 403 })
 
-  // Only internal staff need the picker — customers already have ctx.orgId
+  // Only internal staff need the picker - customers already have ctx.orgId
   if (!ctx.isInternalStaff) {
     return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 })
   }

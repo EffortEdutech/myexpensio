@@ -1,8 +1,8 @@
 // apps/admin/app/api/workspace/members/route.ts
 //
-// GET   /api/workspace/members  — list members of the workspace
-// PATCH /api/workspace/members  — change a member's role (body: {user_id, org_role})
-// DELETE /api/workspace/members — remove a member (body: {user_id})
+// GET   /api/workspace/members  - list members of the workspace
+// PATCH /api/workspace/members  - change a member's role (body: {user_id, org_role})
+// DELETE /api/workspace/members - remove a member (body: {user_id})
 //
 // Customer admins: scoped to their own org.
 // Internal staff:  must pass ?org_id= to scope.
@@ -15,7 +15,7 @@ function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
 }
 
-// ── GET ────────────────────────────────────────────────────────────────────────
+// -- GET ------------------------------------------------------------------------
 
 export async function GET(req: Request) {
   const ctx = await requireWorkspaceAuth('api')
@@ -60,7 +60,7 @@ export async function GET(req: Request) {
   return NextResponse.json({ members })
 }
 
-// ── PATCH — change role ────────────────────────────────────────────────────────
+// -- PATCH - change role --------------------------------------------------------
 
 export async function PATCH(req: Request) {
   const ctx = await requireWorkspaceAuth('api')
@@ -132,7 +132,7 @@ export async function PATCH(req: Request) {
   return NextResponse.json({ success: true })
 }
 
-// ── DELETE — remove member ─────────────────────────────────────────────────────
+// -- DELETE - remove member -----------------------------------------------------
 
 export async function DELETE(req: Request) {
   const ctx = await requireWorkspaceAuth('api')

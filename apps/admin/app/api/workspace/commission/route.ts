@@ -1,8 +1,8 @@
 // apps/admin/app/api/workspace/commission/route.ts
 //
-// GET  /api/workspace/commission         — commissions list + summary
-// GET  /api/workspace/commission?view=payout — agent_payout_settings
-// PATCH /api/workspace/commission?view=payout — update payout settings (OWNER only)
+// GET  /api/workspace/commission         - commissions list + summary
+// GET  /api/workspace/commission?view=payout - agent_payout_settings
+// PATCH /api/workspace/commission?view=payout - update payout settings (OWNER only)
 //
 // AGENT workspace only.
 
@@ -14,7 +14,7 @@ function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
 }
 
-// ── GET ────────────────────────────────────────────────────────────────────────
+// -- GET ------------------------------------------------------------------------
 
 export async function GET(req: Request) {
   const ctx = await requireWorkspaceAuth('api')
@@ -99,7 +99,7 @@ export async function GET(req: Request) {
     return err('SERVER_ERROR', 'Failed to fetch commissions', 500)
   }
 
-  // Summary aggregates — all-time
+  // Summary aggregates - all-time
   const { data: summary } = await db
     .from('commissions')
     .select('commission_amount, status')
@@ -136,7 +136,7 @@ export async function GET(req: Request) {
   })
 }
 
-// ── PATCH — update payout settings ────────────────────────────────────────────
+// -- PATCH - update payout settings --------------------------------------------
 
 export async function PATCH(req: Request) {
   const ctx = await requireWorkspaceAuth('api')

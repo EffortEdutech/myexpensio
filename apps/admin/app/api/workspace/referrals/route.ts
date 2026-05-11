@@ -1,7 +1,7 @@
 // apps/admin/app/api/workspace/referrals/route.ts
 //
-// GET  /api/workspace/referrals  — list referrals for an Agent workspace
-// POST /api/workspace/referrals  — create a new referral invite
+// GET  /api/workspace/referrals  - list referrals for an Agent workspace
+// POST /api/workspace/referrals  - create a new referral invite
 //
 // AGENT workspace only. Returns 403 for TEAM or INTERNAL contexts.
 
@@ -13,7 +13,7 @@ function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
 }
 
-// ── GET ────────────────────────────────────────────────────────────────────────
+// -- GET ------------------------------------------------------------------------
 
 export async function GET(req: Request) {
   const ctx = await requireWorkspaceAuth('api')
@@ -83,7 +83,7 @@ export async function GET(req: Request) {
   return NextResponse.json({ referrals, total: count ?? 0, page, pageSize })
 }
 
-// ── POST ───────────────────────────────────────────────────────────────────────
+// -- POST -----------------------------------------------------------------------
 
 export async function POST(req: Request) {
   const ctx = await requireWorkspaceAuth('api')

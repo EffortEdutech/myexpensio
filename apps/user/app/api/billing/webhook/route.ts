@@ -222,11 +222,11 @@ async function upsertSubscription(
   const item       = sub.items.data[0]
   const isActive   = ['active', 'trialing'].includes(sub.status)
   const tier       = isActive ? 'PRO' : 'FREE'
-  const periodEnd  = item?.current_period_end
-    ? new Date(item.current_period_end * 1000).toISOString()
+  const periodEnd  = sub.current_period_end
+    ? new Date(sub.current_period_end * 1000).toISOString()
     : null
-  const periodStart = item?.current_period_start
-    ? new Date(item.current_period_start * 1000).toISOString()
+  const periodStart = sub.current_period_start
+    ? new Date(sub.current_period_start * 1000).toISOString()
     : null
 
   // Infer plan_code from price nickname or interval
@@ -271,3 +271,11 @@ async function upsertSubscription(
   })
 }
 
+async function resolveOrgByCustomer(db: DbClient, customerId: string): Promise<string | null> {
+  const { data } = await db
+    .from('subscription_status')
+    .select('org_id')
+    .eq('stripe_customer_id', customerId)
+    .maybeSingle()
+  return data?.org_id ?? null
+}
