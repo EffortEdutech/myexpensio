@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.1.2](https://github.com/EffortEdutech/myexpensio/compare/v3.1.1...v3.1.2) (2026-05-11)
+
+
+### Bug Fixes
+
+* downgrade Stripe apiVersion to match stripe@17.7.0 (acacia) ([07585cf](https://github.com/EffortEdutech/myexpensio/commit/07585cf1b98d2e51b5f05ffdbc4afce6b7db1121))
+
 ### [3.1.1](https://github.com/EffortEdutech/myexpensio/compare/v3.1.0...v3.1.1) (2026-05-10)
 
 
