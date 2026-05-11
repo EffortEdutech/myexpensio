@@ -1,5 +1,5 @@
 {
-  "version": "3.1.1",
+  "version": "3.1.2",
   "changelog": [
     "finish Sprint 1 work (auth gating, org management, rate policy, team rates editor, settings/billing separation) ()",
     "ready for test myexpensio, workspace, console ()",
