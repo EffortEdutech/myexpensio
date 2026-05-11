@@ -23,7 +23,7 @@ function err(code: string, message: string, status: number) {
 function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY
   if (!key) throw new Error('STRIPE_SECRET_KEY is not set')
-  return new Stripe(key, { apiVersion: '2025-05-28.basil' })
+  return new Stripe(key, { apiVersion: '2025-02-24.acacia' })
 }
 
 // Plan code → Stripe price ID mapping (via env vars)
@@ -130,8 +130,4 @@ export async function POST(req: Request) {
   })
 
   if (!session.url) {
-    return err('SERVER_ERROR', 'Failed to create checkout session URL', 500)
-  }
-
-  return NextResponse.json({ checkout_url: session.url })
-}
+    return

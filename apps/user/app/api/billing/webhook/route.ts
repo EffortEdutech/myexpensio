@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 })
   }
 
-  const stripe = new Stripe(stripeKey, { apiVersion: '2025-05-28.basil' })
+  const stripe = new Stripe(stripeKey, { apiVersion: '2025-02-24.acacia' })
 
   // Read raw body for signature verification
   const body      = await req.text()
@@ -271,11 +271,3 @@ async function upsertSubscription(
   })
 }
 
-async function resolveOrgByCustomer(db: DbClient, customerId: string): Promise<string | null> {
-  const { data } = await db
-    .from('subscription_status')
-    .select('org_id')
-    .eq('stripe_customer_id', customerId)
-    .maybeSingle()
-  return data?.org_id ?? null
-}
