@@ -4,16 +4,19 @@
 // POST - submit a new invitation request
 //
 // Auto-approve: if platform_config.auto_approve_invitations = true,
-// immediately creates the user + sends invite email (EXECUTED).
-// Otherwise, status = PENDING for Console staff to review.
+// immediately creates the user + sends onboarding email via Gmail SMTP (EXECUTED).
+// Otherwise, status = PENDING for CS Console staff to review and execute.
 //
-// REDIRECT URL LOGIC (FIX):
-//   EMPLOYEE role → USER_APP_URL  (MyExpensio - they don't use Workspace App)
-//   All other roles → WORKSPACE_APP_URL (Expensio Workspace)
+// Password flow for new employees:
+//   1. User created with random temp password + must_change_password: true
+//   2. Onboarding email sent via Gmail SMTP with temp password + login URL
+//   3. Employee logs in -> user app forces /change-password before dashboard access
+//   4. Employee sets own password -> must_change_password cleared
 
 import { NextResponse } from 'next/server'
 import { requireWorkspaceAuth, resolveOrgScope } from '@/lib/workspace-auth'
 import { createServiceRoleClient } from '@/lib/supabase/server'
+import { sendOnboardingEmail } from '@/lib/mail/send-onboarding-email'
 
 function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
@@ -22,12 +25,18 @@ function err(code: string, message: string, status: number) {
 // Roles that use Workspace App (apps/admin)
 const WORKSPACE_APP_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'SALES', 'FINANCE']
 
-function getRedirectUrl(orgRole: string): string {
-  const workspaceAppUrl = process.env.NEXT_PUBLIC_WORKSPACE_APP_URL ?? 'http://localhost:3101'
-  const userAppUrl      = process.env.NEXT_PUBLIC_USER_APP_URL      ?? 'http://localhost:3100'
+function getUserAppUrl(): string {
+  return process.env.NEXT_PUBLIC_USER_APP_URL ?? 'https://myexpensio-jade.vercel.app'
+}
 
-  // EMPLOYEE (Team member or Agent subscriber) → MyExpensio user app
-  return WORKSPACE_APP_ROLES.includes(orgRole) ? workspaceAppUrl : userAppUrl
+// Generates a readable 10-character temp password (no ambiguous chars like 0/O/l/I)
+function generateTempPassword(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+  let pwd = ''
+  for (let i = 0; i < 10; i++) {
+    pwd += chars[Math.floor(Math.random() * chars.length)]
+  }
+  return pwd
 }
 
 // -- GET ------------------------------------------------------------------------
@@ -161,15 +170,16 @@ export async function POST(req: Request) {
 
   if (autoApprove) {
     try {
-      // Role-aware redirect: EMPLOYEE → user app, others → workspace app
-      const redirectTo = `${getRedirectUrl(requested_role)}/auth/callback`
+      const userAppUrl = getUserAppUrl()
 
-      // Get workspace name for the invite email
+      // Get workspace name for the onboarding email
       const { data: org } = await db
         .from('organizations')
         .select('name')
         .eq('id', workspaceId)
         .single()
+
+      const orgName = org?.name ?? workspaceId
 
       // Check if user already exists
       const { data: existingUsers } = await db.auth.admin.listUsers()
@@ -179,27 +189,28 @@ export async function POST(req: Request) {
 
       let userId: string
       let userExisted = false
+      let tempPassword: string | null = null
 
       if (existingUser) {
+        // Existing user — just add to org, no password change needed
         userId = existingUser.id
         userExisted = true
-        await db.auth.admin.inviteUserByEmail(cleanEmail, { redirectTo })
       } else {
-        const { data: inviteData, error: inviteError } = await db.auth.admin.inviteUserByEmail(
-          cleanEmail,
-          {
-            redirectTo,
-            data: {
-              workspace_name: org?.name,
-              workspace_type: workspaceType,
-            },
-          },
-        )
+        // New user — create with temp password + must_change_password flag
+        tempPassword = generateTempPassword()
 
-        if (inviteError || !inviteData?.user?.id) {
-          throw new Error(inviteError?.message ?? 'Failed to invite user')
+        const { data: newUser, error: createError } = await db.auth.admin.createUser({
+          email:         cleanEmail,
+          password:      tempPassword,
+          email_confirm: true,
+          app_metadata:  { must_change_password: true },
+          user_metadata: { workspace_name: orgName, workspace_type: workspaceType },
+        })
+
+        if (createError || !newUser?.user?.id) {
+          throw new Error(createError?.message ?? 'Failed to create user')
         }
-        userId = inviteData.user.id
+        userId = newUser.user.id
       }
 
       // Upsert profile
@@ -214,14 +225,28 @@ export async function POST(req: Request) {
         { onConflict: 'org_id,user_id' },
       )
 
+      // Send onboarding email with temp password (new users only)
+      let emailSent = false
+      if (!userExisted && tempPassword) {
+        try {
+          await sendOnboardingEmail({
+            to:                      cleanEmail,
+            orgName,
+            tempPassword,
+            loginUrl:                `${userAppUrl}/login`,
+            displayName:             null,
+            defaultRateTemplateName: null,
+          })
+          emailSent = true
+        } catch (mailErr) {
+          console.error('[workspace/invitations] sendOnboardingEmail failed:', mailErr)
+        }
+      }
+
       // Mark EXECUTED
       await db
         .from('invitation_requests')
-        .update({
-          status:       'EXECUTED',
-          executed_at:  new Date().toISOString(),
-          approved_at:  new Date().toISOString(),
-        })
+        .update({ status: 'EXECUTED', executed_at: new Date().toISOString(), approved_at: new Date().toISOString() })
         .eq('id', created.id)
 
       // Audit log
@@ -231,26 +256,18 @@ export async function POST(req: Request) {
         entity_type:   'invitation_request',
         entity_id:     created.id,
         action:        'INVITATION_REQUEST_AUTO_EXECUTED',
-        metadata:      {
-          email:         cleanEmail,
-          role:          requested_role,
-          user_id:       userId,
-          user_existed:  userExisted,
-          redirect_to:   redirectTo,
-        },
+        metadata:      { email: cleanEmail, role: requested_role, user_id: userId, user_existed: userExisted, email_sent: emailSent },
       })
 
-      const isEmployee = requested_role === 'EMPLOYEE'
       return NextResponse.json(
         {
           request:       { ...created, status: 'EXECUTED' },
           auto_executed: true,
           user_existed:  userExisted,
-          message: isEmployee
-            ? `Invite sent to ${cleanEmail}. They will log in via MyExpensio (user app) after accepting.`
-            : userExisted
-              ? `${cleanEmail} has been added to your workspace. They can log in to Expensio Workspace.`
-              : `Invite sent to ${cleanEmail}. They can log in to Expensio Workspace after accepting.`,
+          email_sent:    emailSent,
+          message: userExisted
+            ? `${cleanEmail} has been added to your workspace. They can log in with their existing password.`
+            : `Onboarding email sent to ${cleanEmail} with login instructions and a temporary password.`,
         },
         { status: 201 },
       )
