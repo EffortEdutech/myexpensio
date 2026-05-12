@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.1.4](https://github.com/EffortEdutech/myexpensio/compare/v3.1.3...v3.1.4) (2026-05-12)
+
+
+### Bug Fixes
+
+* email invitation ([b3de903](https://github.com/EffortEdutech/myexpensio/commit/b3de903d1252db4d4c9bce018fc7bfdab497ffff))
+
 ### [3.1.3](https://github.com/EffortEdutech/myexpensio/compare/v3.1.2...v3.1.3) (2026-05-11)
 
 
