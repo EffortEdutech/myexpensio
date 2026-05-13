@@ -12,7 +12,7 @@ type Membership = {
 
 type User = {
   id: string; email: string | null; display_name: string | null
-  role: string; department: string | null; created_at: string
+  role: string; department: string | null; subscription_plan: string | null; created_at: string
   memberships: Membership[]
 }
 
@@ -55,6 +55,20 @@ function TypePill({ type }: { type: string }) {
   return <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${cls[type] ?? 'bg-gray-100 text-gray-500'}`}>{type}</span>
 }
 
+function PlanBadge({ plan }: { plan: string | null }) {
+  const p = plan ?? 'FREE'
+  const cls: Record<string, string> = {
+    FREE:     'bg-gray-100 text-gray-500',
+    STANDARD: 'bg-amber-50 text-amber-700',
+    PREMIUM:  'bg-violet-100 text-violet-700',
+  }
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cls[p] ?? 'bg-gray-100 text-gray-500'}`}>
+      {p === 'PREMIUM' && <span className="mr-1">★</span>}{p}
+    </span>
+  )
+}
+
 function KPICard({ label, value, sub, variant = 'default' }: {
   label: string; value: string | number; sub?: string; variant?: 'default' | 'up' | 'warn' | 'danger'
 }) {
@@ -83,6 +97,7 @@ export default function UsersPage() {
   const PAGE_SIZE = 25
   const superAdminCount = users.filter((u) => u.role === 'SUPER_ADMIN').length
   const supportCount    = users.filter((u) => u.role === 'SUPPORT').length
+  const premiumCount    = users.filter((u) => u.subscription_plan === 'PREMIUM').length
 
   const fetchUsers = useCallback(async (p: number) => {
     setLoading(true)
@@ -131,10 +146,10 @@ export default function UsersPage() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <KPICard label="Total users"    value={total}          sub="across all workspaces" />
-        <KPICard label="Super Admins"   value={superAdminCount} sub="EffortEdutech staff"  variant="warn" />
+        <KPICard label="Total users"    value={total}           sub="across all workspaces" />
+        <KPICard label="Premium"        value={premiumCount}    sub="Business Space enabled" variant="up" />
+        <KPICard label="Super Admins"   value={superAdminCount} sub="EffortEdutech staff"    variant="warn" />
         <KPICard label="Support staff"  value={supportCount}    sub="Console access" />
-        <KPICard label="Standard users" value={Math.max(0, total - superAdminCount - supportCount)} sub="profiles.role = USER" />
       </div>
 
       {/* Filters */}
@@ -170,7 +185,7 @@ export default function UsersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['User','Platform role','Workspace','Workspace role','Joined','Actions'].map((h) => (
+                  {['User','Plan','Platform role','Workspace','Workspace role','Joined','Actions'].map((h) => (
                     <th key={h} className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{h}</th>
                   ))}
                 </tr>
@@ -196,6 +211,7 @@ export default function UsersPage() {
                           </div>
                         </div>
                       </td>
+                      <td className="px-4 py-3"><PlanBadge plan={u.subscription_plan} /></td>
                       <td className="px-4 py-3"><PlatformRoleBadge role={u.role} /></td>
                       <td className="px-4 py-3">
                         {activeMemberships.length === 0 ? (
@@ -225,12 +241,13 @@ export default function UsersPage() {
                       <td className="px-4 py-3">
                         <button
                           onClick={() => setEditTarget({
-                            id:           u.id,
-                            email:        u.email,
-                            display_name: u.display_name,
-                            role:         u.role,
-                            department:   u.department,
-                            memberships:  u.memberships,
+                            id:                u.id,
+                            email:             u.email,
+                            display_name:      u.display_name,
+                            role:              u.role,
+                            department:        u.department,
+                            subscription_plan: u.subscription_plan,
+                            memberships:       u.memberships,
                           })}
                           className="text-xs text-blue-600 hover:text-blue-800 font-medium"
                         >

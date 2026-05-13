@@ -27,7 +27,7 @@ export async function GET(req: Request) {
     .from('profiles')
     .select(
       `
-      id, email, display_name, role, department, created_at,
+      id, email, display_name, role, department, subscription_plan, created_at,
       org_members (
         org_id, org_role, status,
         organizations ( id, name, workspace_type )

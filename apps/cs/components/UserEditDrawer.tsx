@@ -11,6 +11,7 @@ export type EditableUser = {
   display_name: string | null
   role: string
   department: string | null
+  subscription_plan: string | null
   memberships: Array<{
     org_id: string
     org_role: string
@@ -57,6 +58,28 @@ const PLATFORM_ROLE_DESCRIPTIONS: Record<string, string> = {
   USER:        'Standard user — access MyExpensio only',
   SUPPORT:     'Support staff — Console access (read)',
   SUPER_ADMIN: 'Super Admin — full platform control',
+}
+
+const SUBSCRIPTION_PLAN_DESCRIPTIONS: Record<string, string> = {
+  FREE:     'Personal Space + Work Space only. No Business Space.',
+  STANDARD: 'Reserved — same as FREE for now (future mid-tier).',
+  PREMIUM:  'Full access — Personal, Business, and Work Spaces.',
+}
+
+const PLAN_CLS: Record<string, string> = {
+  FREE:     'border-gray-200 hover:border-gray-300',
+  STANDARD: 'border-amber-200 hover:border-amber-300',
+  PREMIUM:  'border-violet-200 hover:border-violet-300',
+}
+const PLAN_ACTIVE_CLS: Record<string, string> = {
+  FREE:     'border-gray-500 bg-gray-50',
+  STANDARD: 'border-amber-500 bg-amber-50',
+  PREMIUM:  'border-violet-600 bg-violet-50',
+}
+const PLAN_TEXT_CLS: Record<string, string> = {
+  FREE:     'text-gray-700',
+  STANDARD: 'text-amber-700',
+  PREMIUM:  'text-violet-700',
 }
 
 // ── Membership role row ────────────────────────────────────────────────────────
@@ -208,6 +231,8 @@ export default function UserEditDrawer({
   const [displayName, setDisplayName] = useState(user.display_name ?? '')
   const [department, setDepartment]   = useState(user.department ?? '')
   const [platformRole, setPlatformRole] = useState(user.role)
+  const [subscriptionPlan, setSubscriptionPlan] = useState(user.subscription_plan ?? 'FREE')
+  const [planNote, setPlanNote] = useState('')
 
   // Local memberships state — updated when org_role changes succeed
   const [memberships, setMemberships] = useState(user.memberships)
@@ -227,14 +252,20 @@ export default function UserEditDrawer({
   async function handleSave() {
     setLoading(true); setError(null)
     try {
-      // 1. Update profile (name + department)
+      // 1. Update profile (name + department + subscription_plan if changed)
+      const profilePayload: Record<string, unknown> = {
+        display_name: displayName.trim() || null,
+        department:   department.trim() || null,
+      }
+      if (subscriptionPlan !== (user.subscription_plan ?? 'FREE') && isSuperAdmin) {
+        profilePayload.subscription_plan = subscriptionPlan
+        profilePayload.note = planNote.trim() || undefined
+      }
+
       const profileRes = await fetch(`/api/console/users/${user.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          display_name: displayName.trim() || null,
-          department:   department.trim() || null,
-        }),
+        body: JSON.stringify(profilePayload),
       })
       if (!profileRes.ok) {
         const j = await profileRes.json()
@@ -372,6 +403,57 @@ export default function UserEditDrawer({
                   {user.role}
                 </span>
                 <span className="text-xs text-gray-500">Platform role changes require SUPER_ADMIN</span>
+              </div>
+            )}
+          </div>
+
+          {/* ── Subscription Plan ── */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Individual Subscription Plan</p>
+            <p className="text-xs text-gray-400 mb-3">
+              Controls Personal &amp; Business Space access. Normally set by Stripe — only override for support escalations.
+            </p>
+            {isSuperAdmin ? (
+              <div className="space-y-2">
+                {(['FREE', 'STANDARD', 'PREMIUM'] as const).map((plan) => (
+                  <label key={plan}
+                    className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                      subscriptionPlan === plan ? PLAN_ACTIVE_CLS[plan] : PLAN_CLS[plan]
+                    }`}>
+                    <input type="radio" name="subscriptionPlan" value={plan} checked={subscriptionPlan === plan}
+                      onChange={() => setSubscriptionPlan(plan)} className="mt-0.5 flex-shrink-0" />
+                    <div>
+                      <div className={`text-sm font-semibold ${subscriptionPlan === plan ? PLAN_TEXT_CLS[plan] : 'text-gray-900'}`}>
+                        {plan}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-0.5">{SUBSCRIPTION_PLAN_DESCRIPTIONS[plan]}</div>
+                    </div>
+                  </label>
+                ))}
+                {subscriptionPlan !== (user.subscription_plan ?? 'FREE') && (
+                  <div className="mt-2">
+                    <label className={`block text-xs font-medium text-gray-500 mb-1`}>
+                      Reason / note for audit log
+                    </label>
+                    <input
+                      type="text"
+                      value={planNote}
+                      onChange={(e) => setPlanNote(e.target.value)}
+                      placeholder="e.g. Refund processed, keeping Premium access for 30 days"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                    />
+                    <p className="mt-1.5 text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">
+                      ⚠️ Changing from <strong>{user.subscription_plan ?? 'FREE'}</strong> → <strong>{subscriptionPlan}</strong>. This will immediately affect the user&apos;s feature access.
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-3 border border-gray-200 rounded-lg bg-gray-50">
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">
+                  {user.subscription_plan ?? 'FREE'}
+                </span>
+                <span className="text-xs text-gray-500">Plan changes require SUPER_ADMIN</span>
               </div>
             )}
           </div>

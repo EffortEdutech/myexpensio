@@ -23,7 +23,7 @@ export async function GET(_req: Request, { params }: Params) {
   const { data: profile, error } = await db
     .from('profiles')
     .select(`
-      id, email, display_name, role, department, created_at,
+      id, email, display_name, role, department, subscription_plan, created_at,
       org_members (
         org_id, org_role, status,
         organizations ( id, name, workspace_type )
@@ -54,11 +54,23 @@ export async function PATCH(req: Request, { params }: Params) {
   const body = await req.json().catch(() => null)
   if (!body) return err('VALIDATION_ERROR', 'Request body required', 400)
 
-  const { display_name, department } = body
+  const { display_name, department, subscription_plan } = body
 
   const updatePayload: Record<string, unknown> = {}
   if (display_name !== undefined) updatePayload.display_name = display_name?.trim() || null
   if (department   !== undefined) updatePayload.department   = department?.trim() || null
+
+  // subscription_plan can only be changed by SUPER_ADMIN
+  if (subscription_plan !== undefined) {
+    if (ctx.role !== 'SUPER_ADMIN') {
+      return err('FORBIDDEN', 'SUPER_ADMIN only can change subscription plan', 403)
+    }
+    const VALID_PLANS = ['FREE', 'STANDARD', 'PREMIUM']
+    if (!VALID_PLANS.includes(subscription_plan)) {
+      return err('VALIDATION_ERROR', `subscription_plan must be one of: ${VALID_PLANS.join(', ')}`, 400)
+    }
+    updatePayload.subscription_plan = subscription_plan
+  }
 
   if (Object.keys(updatePayload).length === 0) {
     return err('VALIDATION_ERROR', 'Nothing to update', 400)
@@ -73,13 +85,21 @@ export async function PATCH(req: Request, { params }: Params) {
 
   if (error) return err('SERVER_ERROR', error.message, 500)
 
+  const action = subscription_plan !== undefined
+    ? 'USER_SUBSCRIPTION_PLAN_CHANGED'
+    : 'USER_PROFILE_UPDATED'
+
   await db.from('audit_logs').insert({
     org_id:        null,
     actor_user_id: ctx.userId,
     entity_type:   'profile',
     entity_id:     userId,
-    action:        'USER_PROFILE_UPDATED',
-    metadata:      { changes: updatePayload, updated_by: ctx.email },
+    action,
+    metadata:      {
+      changes:    updatePayload,
+      updated_by: ctx.email,
+      ...(subscription_plan !== undefined ? { note: body.note ?? 'Manual override via Console' } : {}),
+    },
   })
 
   return NextResponse.json({ success: true })
