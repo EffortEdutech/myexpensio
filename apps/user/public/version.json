@@ -1,10 +1,10 @@
 {
-  "version": "3.1.5",
+  "version": "3.3.0",
   "changelog": [
-    "finish Sprint 1 work (auth gating, org management, rate policy, team rates editor, settings/billing separation) ()",
-    "ready for test myexpensio, workspace, console ()",
-    "billing, claim, rates, templates ()",
-    "favicon ()",
-    "onboarding flow gap ()"
+    "api: spaces + ledger API routes - user v3.2.0 )",
+    "email invitation ()",
+    "stripe gateway payment ()",
+    "downgrade Stripe apiVersion to match stripe@17.7.0 (acacia) ()",
+    "workspace build errors + add stripe dependency ()"
   ]
 }
