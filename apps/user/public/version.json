@@ -1,7 +1,6 @@
 {
-  "version": "3.5.0",
+  "version": "3.6.0",
   "changelog": [
-    "personal: tax summary page v3.3.1 )",
-    "apostrophe parse error in tax-personal route; SUPER_ADMIN gets Business space )"
+    "user: S5 Premium gate complete — webhook activates PREMIUM_INDIVIDUAL, v3.5.0 ()"
   ]
 }
