@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.4.0](https://github.com/EffortEdutech/myexpensio/compare/v3.2.1-user...v3.4.0) (2026-05-13)
+
+
+### Features
+
+* **personal:** Personal Space UI - space switcher, dashboard, add expense, list v3.2.1 [S3] ([59a9106](https://github.com/EffortEdutech/myexpensio/commit/59a910641064d4014094853d2c5bb9d17ee2e305))
+* **personal:** wire SpaceSwitcher into app layout [S3] ([694e4a4](https://github.com/EffortEdutech/myexpensio/commit/694e4a4008b365141204e6a43a33d9692b45b9e6))
+
 ## [3.3.0](https://github.com/EffortEdutech/myexpensio/compare/v3.1.5...v3.3.0) (2026-05-13)
 
 
