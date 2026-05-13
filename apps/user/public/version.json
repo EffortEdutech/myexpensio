@@ -1,5 +1,5 @@
 {
-  "version": "3.4.0",
+  "version": "3.4.1",
   "changelog": [
     "personal: Personal Space UI - space switcher, dashboard, add expense, list v3.2.1 )",
     "personal: wire SpaceSwitcher into app layout )"
