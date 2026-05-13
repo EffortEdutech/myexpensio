@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.8.1](https://github.com/EffortEdutech/myexpensio/compare/v3.7.2...v3.8.1) (2026-05-13)
+
+
+### Bug Fixes
+
+* **user:** arrow year picker in business reports + personal tax, v3.8.0 ([4599ea1](https://github.com/EffortEdutech/myexpensio/commit/4599ea104ce1caf597062f255d79665793d5e7a4))
+
 ### [3.7.2](https://github.com/EffortEdutech/myexpensio/compare/v3.7.1...v3.7.2) (2026-05-13)
 
 
