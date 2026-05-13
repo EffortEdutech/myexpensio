@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
       categories:  [],
       grand_total: 0,
       entry_count: 0,
-      disclaimer:  'This summary is for reference only. Final tax submission is subject to LHDN rules and your tax agent's review.',
+      disclaimer:  "This summary is for reference only. Final tax submission is subject to LHDN rules and your tax agent's review.",
     })
   }
 
@@ -101,6 +101,6 @@ export async function GET(req: NextRequest) {
     categories,
     grand_total:   Number(grand_total.toFixed(2)),
     entry_count:   (entries ?? []).length,
-    disclaimer:    'This summary is for reference only. Final tax submission is subject to LHDN rules and your tax agent's review.',
+    disclaimer:    "This summary is for reference only. Final tax submission is subject to LHDN rules and your tax agent's review.",
   })
 }
