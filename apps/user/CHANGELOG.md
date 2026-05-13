@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.3.0](https://github.com/EffortEdutech/myexpensio/compare/v3.1.5...v3.3.0) (2026-05-13)
+
+
+### Features
+
+* **api:** spaces + ledger API routes - user v3.2.0 [S2] ([6f51759](https://github.com/EffortEdutech/myexpensio/commit/6f517590c148d1f2a382aaa4ae9552b20cd15439))
+
 ### [3.1.5](https://github.com/EffortEdutech/myexpensio/compare/v3.1.4...v3.1.5) (2026-05-13)
 
 ### [3.1.4](https://github.com/EffortEdutech/myexpensio/compare/v3.1.3...v3.1.4) (2026-05-12)
