@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.7.0](https://github.com/EffortEdutech/myexpensio/compare/v3.6.0...v3.7.0) (2026-05-13)
+
+
+### Features
+
+* **user:** S6 Business Space + SmartNav context-aware nav, v3.6.1 ([a0c1819](https://github.com/EffortEdutech/myexpensio/commit/a0c18198ce5c9b43d27c0de75f18d6b8ac6e72ff))
+
 ## [3.6.0](https://github.com/EffortEdutech/myexpensio/compare/v3.5.0...v3.6.0) (2026-05-13)
 
 
