@@ -1,10 +1,7 @@
 {
-  "version": "3.3.0",
+  "version": "3.4.0",
   "changelog": [
-    "api: spaces + ledger API routes - user v3.2.0 )",
-    "email invitation ()",
-    "stripe gateway payment ()",
-    "downgrade Stripe apiVersion to match stripe@17.7.0 (acacia) ()",
-    "workspace build errors + add stripe dependency ()"
+    "personal: Personal Space UI - space switcher, dashboard, add expense, list v3.2.1 )",
+    "personal: wire SpaceSwitcher into app layout )"
   ]
 }
