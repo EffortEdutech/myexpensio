@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.4.1](https://github.com/EffortEdutech/myexpensio/compare/v3.4.0...v3.4.1) (2026-05-13)
+
+
+### Bug Fixes
+
+* apostrophe parse error in tax-personal route; SUPER_ADMIN gets Business space [S3] ([91f7f1b](https://github.com/EffortEdutech/myexpensio/commit/91f7f1b49e7f17765898c93b748288f52127e7a3))
+
 ## [3.4.0](https://github.com/EffortEdutech/myexpensio/compare/v3.2.1-user...v3.4.0) (2026-05-13)
 
 
