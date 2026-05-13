@@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { bootstrapOrg } from '@/lib/org'
-import { Nav } from '@/components/Nav'
+import { SmartNav } from '@/components/SmartNav'
 import { SignOutButton } from '@/components/SignOutButton'
 import { OnlineStatusBanner } from '@/components/OnlineStatusBanner'
 import { SpaceSwitcher } from '@/components/SpaceSwitcher'
@@ -34,7 +34,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         {children}
       </main>
 
-      <Nav />
+      <SmartNav />
     </div>
   )
 }

@@ -1,31 +1,33 @@
 'use client'
-// components/PersonalNav.tsx
-// Bottom nav for Personal Space (/personal/*).
-// Indigo accent — 4 tabs: Dashboard · Expenses · Add · Tax
+// components/BusinessNav.tsx
+// Bottom nav for Business Space (/business/*).
+// Green accent — 5 tabs: Dashboard · Income · Add · Expenses · Reports
 // Centre Add tab is the primary action (raised, filled button).
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-const ACCENT  = '#4f46e5' // indigo — personal space colour
-const ACCENT_BG = '#eef2ff'
+const ACCENT    = '#16a34a' // green — business space colour
+const ACCENT_BG = '#f0fdf4'
 
 type Tab = {
-  href:    string
-  label:   string
-  icon:    string
-  exact?:  boolean
-  primary?: boolean   // renders as the raised centre button
+  href:     string
+  label:    string
+  icon:     string
+  exact?:   boolean
+  primary?: boolean  // renders as the raised centre button
+  disabled?: boolean // not yet built — greyed out
 }
 
 const TABS: Tab[] = [
-  { href: '/personal',          label: 'Home',     icon: '🏠', exact: true },
-  { href: '/personal/expenses', label: 'Expenses', icon: '💸' },
-  { href: '/personal/add',      label: 'Add',      icon: '+',  primary: true },
-  { href: '/personal/tax',      label: 'Tax',      icon: '🧾' },
+  { href: '/business',             label: 'Dashboard', icon: '📊', exact: true },
+  { href: '/business/income',      label: 'Income',    icon: '💵' },
+  { href: '/business/add-income',  label: 'Add',       icon: '+',  primary: true },
+  { href: '/business/expenses',    label: 'Expenses',  icon: '💸' },
+  { href: '/business/reports',     label: 'Reports',   icon: '📈', disabled: true },
 ]
 
-export function PersonalNav() {
+export function BusinessNav() {
   const pathname = usePathname()
 
   return (
@@ -34,21 +36,23 @@ export function PersonalNav() {
       <div style={{ ...S.accentBar, backgroundColor: ACCENT }} />
 
       {/* small space label */}
-      <div style={S.spaceLabel}>Personal Space</div>
+      <div style={S.spaceLabel}>Business Space</div>
 
       <div style={S.tabs}>
         {TABS.map(tab => {
-          const active = tab.exact
-            ? pathname === tab.href
-            : pathname.startsWith(tab.href)
+          const active = !tab.disabled && (
+            tab.exact
+              ? pathname === tab.href
+              : pathname.startsWith(tab.href)
+          )
 
           if (tab.primary) {
             return (
               <Link key={tab.href} href={tab.href} style={S.tab}>
                 <div style={{
                   ...S.addCircle,
-                  backgroundColor: active ? ACCENT : ACCENT,
-                  boxShadow: '0 4px 12px rgba(79,70,229,0.4)',
+                  backgroundColor: ACCENT,
+                  boxShadow: '0 4px 12px rgba(22,163,74,0.4)',
                   transform: active ? 'scale(1.05)' : 'scale(1)',
                 }}>
                   <span style={S.addIcon}>+</span>
@@ -57,6 +61,21 @@ export function PersonalNav() {
                   Add
                 </span>
               </Link>
+            )
+          }
+
+          if (tab.disabled) {
+            return (
+              <div key={tab.href} style={{ ...S.tab, cursor: 'default' }}>
+                <div style={{ ...S.iconWrap, backgroundColor: 'transparent' }}>
+                  <span style={{ fontSize: 20, filter: 'grayscale(100%) opacity(25%)' }}>
+                    {tab.icon}
+                  </span>
+                </div>
+                <span style={{ ...S.label, color: '#cbd5e1', fontWeight: 400 }}>
+                  {tab.label}
+                </span>
+              </div>
             )
           }
 
@@ -95,7 +114,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   spaceLabel: {
     textAlign: 'right', fontSize: 9, fontWeight: 600,
-    color: '#4f46e5', letterSpacing: '0.08em',
+    color: '#16a34a', letterSpacing: '0.08em',
     textTransform: 'uppercase', paddingTop: 3,
     paddingRight: 14, opacity: 0.7,
   },
