@@ -8,6 +8,7 @@ import { bootstrapOrg } from '@/lib/org'
 import { Nav } from '@/components/Nav'
 import { SignOutButton } from '@/components/SignOutButton'
 import { OnlineStatusBanner } from '@/components/OnlineStatusBanner'
+import { SpaceSwitcher } from '@/components/SpaceSwitcher'
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const supabase = await createClient()
@@ -20,6 +21,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     <div style={S.root}>
       <header style={S.header}>
         <span style={S.logo}>myexpensio</span>
+        <SpaceSwitcher />
         <div style={S.headerRight}>
           {org && <span style={S.orgBadge}>{org.tier === 'PRO' ? '★ Pro' : 'Free'}</span>}
           <span style={S.email}>{user.email}</span>
