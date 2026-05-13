@@ -26,10 +26,11 @@ export const runtime = 'nodejs'
 
 export async function POST(req: Request) {
   const stripeKey    = process.env.STRIPE_SECRET_KEY
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
+  // Premium individual webhook uses its own signing secret (separate from the PRO org webhook)
+  const webhookSecret = process.env.STRIPE_PREMIUM_WEBHOOK_SECRET
 
   if (!stripeKey || !webhookSecret) {
-    console.error('[billing/webhook] Missing STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET')
+    console.error('[billing/webhook] Missing STRIPE_SECRET_KEY or STRIPE_PREMIUM_WEBHOOK_SECRET')
     return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 })
   }
 
