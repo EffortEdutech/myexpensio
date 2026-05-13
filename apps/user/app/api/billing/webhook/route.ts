@@ -60,15 +60,24 @@ export async function POST(req: Request) {
 
       // ── Checkout completed → activate subscription ────────────────────────
       case 'checkout.session.completed': {
-        const session = event.data.object as Stripe.Checkout.Session
+        const session        = event.data.object as Stripe.Checkout.Session
         if (session.mode !== 'subscription') break
 
-        const orgId         = session.metadata?.org_id
+        const orgId          = session.metadata?.org_id
+        const userId         = session.metadata?.user_id
+        const planType       = session.metadata?.plan_type
         const subscriptionId = session.subscription as string | null
-        const customerId    = session.customer as string | null
+        const customerId     = session.customer as string | null
 
+        // ── Branch A: Individual Premium activation (no org) ──────────────
+        if (userId && planType === 'PREMIUM_INDIVIDUAL') {
+          await activatePremiumIndividual(db, userId, customerId, subscriptionId)
+          break
+        }
+
+        // ── Branch B: Org-level PRO subscription (existing path) ──────────
         if (!orgId) {
-          console.error('[billing/webhook] checkout.session.completed missing org_id metadata')
+          console.error('[billing/webhook] checkout.session.completed missing org_id and user_id metadata')
           break
         }
 
@@ -278,4 +287,55 @@ async function resolveOrgByCustomer(db: DbClient, customerId: string): Promise<s
     .eq('stripe_customer_id', customerId)
     .maybeSingle()
   return data?.org_id ?? null
+}
+
+// ── Individual Premium activation ─────────────────────────────────────────────
+// Called when checkout.session.completed carries user_id + plan_type=PREMIUM_INDIVIDUAL
+// instead of org_id. Updates profiles.subscription_plan and auto-creates BUSINESS space.
+
+async function activatePremiumIndividual(
+  db: DbClient,
+  userId: string,
+  customerId: string | null,
+  subscriptionId: string | null,
+) {
+  // 1. Mark the user as Premium in their profile
+  //    Only subscription_plan is guaranteed by our migration.
+  //    stripe_customer_id / stripe_subscription_id are stored in audit_logs.
+  const { error: profileErr } = await db
+    .from('profiles')
+    .update({ subscription_plan: 'PREMIUM' })
+    .eq('id', userId)
+
+  if (profileErr) {
+    console.error('[billing/webhook] Failed to update profile for Premium:', profileErr.message)
+    // Don't throw — still try to create the space
+  }
+
+  // 2. Auto-create BUSINESS space (idempotent — ignoreDuplicates: true)
+  const { error: spaceErr } = await db
+    .from('spaces')
+    .upsert(
+      { user_id: userId, type: 'BUSINESS', name: 'My Business', is_default: false },
+      { onConflict: 'user_id,type', ignoreDuplicates: true },
+    )
+
+  if (spaceErr) {
+    console.error('[billing/webhook] Failed to create BUSINESS space:', spaceErr.message)
+  }
+
+  // 3. Audit log (best-effort — table may not have a user-scoped entry yet)
+  await db.from('audit_logs').insert({
+    org_id:        null,
+    actor_user_id: userId,
+    entity_type:   'subscription',
+    entity_id:     subscriptionId ?? userId,
+    action:        'PREMIUM_INDIVIDUAL_ACTIVATED',
+    metadata:      {
+      stripe_customer_id:     customerId,
+      stripe_subscription_id: subscriptionId,
+    },
+  }).then(() => {}).catch(() => {}) // non-fatal
+
+  console.log(`[billing/webhook] Premium activated for user ${userId}`)
 }
