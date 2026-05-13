@@ -1,5 +1,5 @@
 {
-  "version": "4.1.0",
+  "version": "4.1.1",
   "changelog": [
     "user: S8 production polish - security headers, error pages, metadata, v4.0.0 ()",
     "user: arrow year picker in business reports + personal tax, v3.8.0 ()",
