@@ -336,7 +336,7 @@ async function activatePremiumIndividual(
       stripe_customer_id:     customerId,
       stripe_subscription_id: subscriptionId,
     },
-  }).then(() => {}).catch(() => {}) // non-fatal
+  }).then(() => {}, () => {}) // non-fatal — PromiseLike compatible
 
   console.log(`[billing/webhook] Premium activated for user ${userId}`)
 }
