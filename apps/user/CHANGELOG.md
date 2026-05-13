@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.5.0](https://github.com/EffortEdutech/myexpensio/compare/v3.3.1-user...v3.5.0) (2026-05-13)
+
+
+### Features
+
+* **personal:** tax summary page v3.3.1 [S4] ([0d5d29f](https://github.com/EffortEdutech/myexpensio/commit/0d5d29fb913aa01457c3688696de709820a6f866))
+
 ### [3.4.1](https://github.com/EffortEdutech/myexpensio/compare/v3.4.0...v3.4.1) (2026-05-13)
 
 
