@@ -1,6 +1,9 @@
 {
-  "version": "3.8.1",
+  "version": "4.1.0",
   "changelog": [
-    "user: S6 Business Space + SmartNav context-aware nav, v3.6.1 ()"
+    "user: S8 production polish - security headers, error pages, metadata, v4.0.0 ()",
+    "user: arrow year picker in business reports + personal tax, v3.8.0 ()",
+    "user: PromiseLike audit log chain in webhook handler ()",
+    "user: rename webhook secret env var to STRIPE_PREMIUM_WEBHOOK_SECRET ()"
   ]
 }
