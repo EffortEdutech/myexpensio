@@ -24,7 +24,7 @@ const TABS: Tab[] = [
   { href: '/business/income',      label: 'Income',    icon: '💵' },
   { href: '/business/add-income',  label: 'Add',       icon: '+',  primary: true },
   { href: '/business/expenses',    label: 'Expenses',  icon: '💸' },
-  { href: '/business/reports',     label: 'Reports',   icon: '📈', disabled: true },
+  { href: '/business/reports',     label: 'Reports',   icon: '📈' },
 ]
 
 export function BusinessNav() {

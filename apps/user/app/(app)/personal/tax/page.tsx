@@ -41,6 +41,7 @@ export default function PersonalTaxPage() {
   const printRef = useRef<HTMLDivElement>(null)
 
   const currentYear = new Date().getFullYear()
+  const minYear = currentYear - 4
   const [year,    setYear]    = useState(currentYear)
   const [summary, setSummary] = useState<TaxSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -63,7 +64,8 @@ export default function PersonalTaxPage() {
     window.print()
   }
 
-  const years = Array.from({ length: 5 }, (_, i) => currentYear - i)
+  const prevYear = () => { if (year > minYear) setYear(y => y - 1) }
+  const nextYear = () => { if (year < currentYear) setYear(y => y + 1) }
 
   return (
     <>
@@ -92,21 +94,10 @@ export default function PersonalTaxPage() {
         </div>
 
         {/* Year selector */}
-        <div style={S.yearRow} className="no-print">
-          {years.map(y => (
-            <button
-              key={y}
-              onClick={() => setYear(y)}
-              style={{
-                ...S.yearBtn,
-                backgroundColor: y === year ? '#0f172a' : '#f1f5f9',
-                color:           y === year ? '#ffffff' : '#475569',
-                fontWeight:      y === year ? 700 : 400,
-              }}
-            >
-              {y}
-            </button>
-          ))}
+        <div style={S.yearNav} className="no-print">
+          <button onClick={prevYear} disabled={year <= minYear} style={S.arrow}>‹</button>
+          <span style={S.yearLabel}>Year {year}</span>
+          <button onClick={nextYear} disabled={year >= currentYear} style={S.arrow}>›</button>
         </div>
 
         {error   && <div style={S.error}>{error}</div>}
@@ -180,8 +171,9 @@ const S: Record<string, React.CSSProperties> = {
   back:        { fontSize: 24, background: 'none', border: 'none', cursor: 'pointer', color: '#475569', padding: 0, lineHeight: 1 },
   title:       { fontSize: 20, fontWeight: 800, color: '#0f172a', margin: 0, flex: 1 },
   printBtn:    { fontSize: 13, fontWeight: 600, padding: '7px 14px', borderRadius: 10, border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', cursor: 'pointer', color: '#0f172a', whiteSpace: 'nowrap' },
-  yearRow:     { display: 'flex', gap: 8, flexWrap: 'wrap' },
-  yearBtn:     { padding: '7px 16px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 13, transition: 'all 0.15s' },
+  yearNav:     { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 },
+  arrow:       { fontSize: 22, background: 'none', border: 'none', cursor: 'pointer', color: '#475569', padding: '0 4px', lineHeight: 1 },
+  yearLabel:   { fontSize: 16, fontWeight: 700, color: '#0f172a', minWidth: 80, textAlign: 'center' },
   heroCard:    { backgroundColor: '#0f172a', borderRadius: 16, padding: '24px 20px', textAlign: 'center', color: '#ffffff' },
   heroLabel:   { fontSize: 13, color: '#94a3b8', marginBottom: 8 },
   heroAmount:  { fontSize: 36, fontWeight: 900, letterSpacing: '-1px', marginBottom: 6 },
