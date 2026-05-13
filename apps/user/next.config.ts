@@ -3,6 +3,28 @@
 import type { NextConfig } from 'next'
 import pkg from './package.json'
 
+// ── Security headers applied to every response ────────────────────────────────
+const securityHeaders = [
+  // Prevent clickjacking — page cannot be embedded in an iframe
+  { key: 'X-Frame-Options',        value: 'DENY' },
+  // Prevent MIME-type sniffing
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  // Only send origin in Referer header (not full URL)
+  { key: 'Referrer-Policy',        value: 'strict-origin-when-cross-origin' },
+  // Disable browser features not used by this app
+  {
+    key: 'Permissions-Policy',
+    value: 'camera=(), microphone=(), geolocation=(self), payment=()',
+  },
+  // Force HTTPS for 1 year (only meaningful in production)
+  {
+    key: 'Strict-Transport-Security',
+    value: 'max-age=31536000; includeSubDomains',
+  },
+  // Basic XSS protection for older browsers
+  { key: 'X-XSS-Protection', value: '1; mode=block' },
+]
+
 const nextConfig: NextConfig = {
   // pdfkit reads font .afm files from disk using __dirname-relative paths.
   // pdf-parse v2.x has no ESM default export — must stay as CJS via require().
@@ -13,11 +35,18 @@ const nextConfig: NextConfig = {
   transpilePackages: ['@myexpensio/domain'],
 
   // Always read version from package.json at Vercel build time.
-  // standard-version bumps package.json → Vercel builds → correct version baked in.
-  // Do NOT set NEXT_PUBLIC_APP_VERSION in the Vercel dashboard — it will override this.
-  // Local dev: override via apps/user/.env.local if needed.
   env: {
     NEXT_PUBLIC_APP_VERSION: pkg.version,
+  },
+
+  // Apply security headers to all routes
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: securityHeaders,
+      },
+    ]
   },
 }
 

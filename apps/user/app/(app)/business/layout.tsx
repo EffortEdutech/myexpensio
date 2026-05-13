@@ -6,8 +6,14 @@
 // The BusinessNav bottom tab bar is rendered by SmartNav in the app layout —
 // no nav is mounted here to prevent duplicate navs.
 
+import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 import { PremiumGate } from '@/components/PremiumGate'
+
+export const metadata: Metadata = {
+  title: 'Business Space',
+  description: 'Tax-ready i/o tracker for solo business',
+}
 
 export default function BusinessLayout({ children }: { children: ReactNode }) {
   return (
