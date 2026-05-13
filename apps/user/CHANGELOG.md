@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.1.0](https://github.com/EffortEdutech/myexpensio/compare/v3.8.1...v4.1.0) (2026-05-13)
+
+
+### Features
+
+* **user:** S8 production polish - security headers, error pages, metadata, v4.0.0 ([2900563](https://github.com/EffortEdutech/myexpensio/commit/2900563371057cdf40741eb19c80e2d0336b2095))
+
 ### [3.8.1](https://github.com/EffortEdutech/myexpensio/compare/v3.7.2...v3.8.1) (2026-05-13)
 
 
