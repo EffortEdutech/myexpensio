@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.7.2](https://github.com/EffortEdutech/myexpensio/compare/v3.7.1...v3.7.2) (2026-05-13)
+
+
+### Bug Fixes
+
+* **user:** PromiseLike audit log chain in webhook handler ([4d0add9](https://github.com/EffortEdutech/myexpensio/commit/4d0add9b1ab7f57e9060ebb80f8d021760391437))
+
 ### [3.7.1](https://github.com/EffortEdutech/myexpensio/compare/v3.7.0...v3.7.1) (2026-05-13)
 
 
