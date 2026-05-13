@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.6.0](https://github.com/EffortEdutech/myexpensio/compare/v3.5.0...v3.6.0) (2026-05-13)
+
+
+### Features
+
+* **user:** S5 Premium gate complete — webhook activates PREMIUM_INDIVIDUAL, v3.5.0 ([3b05d71](https://github.com/EffortEdutech/myexpensio/commit/3b05d7155f89823c7b1589ec549b968741294ea1))
+
 ## [3.5.0](https://github.com/EffortEdutech/myexpensio/compare/v3.3.1-user...v3.5.0) (2026-05-13)
 
 
