@@ -21,9 +21,9 @@ type Space = {
 }
 
 const SPACE_META: Record<string, { icon: string; label: string; href: string }> = {
-  WORK:     { icon: '💼', label: 'Work Claims',  href: '/'         },
-  PERSONAL: { icon: '👤', label: 'Personal',     href: '/personal' },
-  BUSINESS: { icon: '🏢', label: 'My Business',  href: '/business' },
+  WORK:     { icon: '💼', label: 'Work Claims',      href: '/'         },
+  PERSONAL: { icon: '👤', label: 'Personal Expense', href: '/personal' },
+  BUSINESS: { icon: '🏢', label: 'My Income',        href: '/business' },
 }
 
 function deriveActiveType(pathname: string): string {

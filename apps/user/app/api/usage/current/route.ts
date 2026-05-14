@@ -65,7 +65,7 @@ export async function GET() {
   const periodStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
 
   // Fetch everything in parallel
-  const [usageRes, subscriptionRes, platformRes] = await Promise.all([
+  const [usageRes, subscriptionRes, platformRes, profileRes] = await Promise.all([
     supabase
       .from('usage_counters')
       .select('routes_calls, trips_created, exports_created, period_start')
@@ -85,17 +85,31 @@ export async function GET() {
       .select('free_routes_per_month, free_trips_per_month, free_exports_per_month')
       .eq('id', true)
       .maybeSingle(),
+
+    // Individual plan: PREMIUM users get unlimited Work Space claims even if org is FREE.
+    // This avoids double-charging solo gig workers who pay for PREMIUM personally
+    // and would otherwise also need to pay for org PRO just for unlimited claims.
+    supabase
+      .from('profiles')
+      .select('subscription_plan')
+      .eq('id', user.id)
+      .maybeSingle(),
   ])
 
   if (usageRes.error) return err('SERVER_ERROR', usageRes.error.message, 500)
   if (subscriptionRes.error) return err('SERVER_ERROR', subscriptionRes.error.message, 500)
 
-  const tier = subscriptionRes.data?.tier ?? 'FREE'
+  const tier             = subscriptionRes.data?.tier ?? 'FREE'
+  const subscriptionPlan = profileRes.data?.subscription_plan ?? 'FREE'
 
-  // Resolve entitlements from tier + platform_config
+  // Unlimited if: org is PRO (team/agency pays) OR individual is PREMIUM (self-pays).
+  // This prevents double-charging solo gig workers who need both Work Space and Business Space.
+  const isUnlimited = tier === 'PRO' || subscriptionPlan === 'PREMIUM'
+
+  // Resolve entitlements from tier + individual plan + platform_config
   let entitlements: EntitlementsShape
 
-  if (tier === 'PRO') {
+  if (isUnlimited) {
     entitlements = PRO_ENTITLEMENTS
   } else {
     // FREE tier: use platform_config limits (admin-editable), fall back to hardcoded
@@ -122,5 +136,7 @@ export async function GET() {
     },
     entitlements,
     tier,
+    subscription_plan: subscriptionPlan,
+    is_unlimited: isUnlimited,
   })
 }

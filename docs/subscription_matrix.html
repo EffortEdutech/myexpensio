@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MyExpensio — Subscription Reference</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f8fafc; color: #0f172a; padding: 32px 24px; max-width: 900px; margin: 0 auto;
+    font-size: 13px; line-height: 1.5;
+  }
+  h1 { font-size: 20px; font-weight: 800; margin-bottom: 4px; }
+  .doc-sub { color: #64748b; font-size: 12px; margin-bottom: 32px; }
+
+  /* ── Section headings ── */
+  h2 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+       color: #64748b; margin: 28px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0; }
+
+  /* ── Two-column layout ── */
+  .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .cols3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+  /* ── Cards ── */
+  .card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px;
+  }
+  .card.indigo { background: #eef2ff; border-color: #c7d2fe; }
+  .card.green  { background: #f0fdf4; border-color: #bbf7d0; }
+  .card.amber  { background: #fffbeb; border-color: #fde68a; }
+  .card.violet { background: #faf5ff; border-color: #e9d5ff; }
+  .card.green2 { background: #f0fdf4; border-color: #6ee7b7; }
+  .card.red    { background: #fef2f2; border-color: #fecaca; }
+
+  .card-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 5px; }
+  .card.indigo .card-label { color: #4338ca; }
+  .card.green  .card-label { color: #15803d; }
+  .card.amber  .card-label { color: #92400e; }
+  .card.violet .card-label { color: #6d28d9; }
+  .card.green2 .card-label { color: #059669; }
+  .card-title { font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
+  .card-body  { font-size: 11px; color: #475569; line-height: 1.6; }
+  .card-body strong { font-weight: 600; color: #0f172a; }
+
+  /* ── Badges ── */
+  .badge {
+    display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px;
+    border-radius: 99px; line-height: 1.4;
+  }
+  .b-free    { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
+  .b-std     { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+  .b-prem    { background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; }
+  .b-org-free{ background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
+  .b-org-pro { background: #dcfce7; color: #15803d; border: 1px solid #6ee7b7; }
+  .b-ok      { background: #dcfce7; color: #166534; }
+  .b-warn    { background: #fef3c7; color: #92400e; }
+
+  /* ── Upgrade flow steps ── */
+  .flow { display: flex; gap: 0; align-items: stretch; margin: 4px 0; flex-wrap: wrap; }
+  .step {
+    flex: 1; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+    padding: 10px 12px; position: relative; min-width: 130px;
+  }
+  .step + .step { margin-left: 10px; }
+  .step + .step::before {
+    content: '→'; position: absolute; left: -14px; top: 50%; transform: translateY(-50%);
+    color: #94a3b8; font-size: 16px; font-weight: 700;
+  }
+  .step-num { font-size: 10px; font-weight: 700; color: #94a3b8; margin-bottom: 3px; }
+  .step-title { font-size: 12px; font-weight: 700; color: #0f172a; margin-bottom: 3px; }
+  .step-body { font-size: 10px; color: #475569; line-height: 1.5; }
+  .step.highlight { background: #f5f3ff; border-color: #c4b5fd; }
+  .step.highlight .step-title { color: #5b21b6; }
+
+  /* ── Table ── */
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px;
+          overflow: hidden; border: 1px solid #e2e8f0; margin-bottom: 8px; }
+  thead { background: #f8fafc; }
+  th { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+       color: #64748b; padding: 9px 11px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+  td { font-size: 11px; padding: 10px 11px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr.row-prem { background: #faf5ff; }
+  .check  { color: #16a34a; font-weight: 700; }
+  .cross  { color: #dc2626; }
+  .dim    { color: #94a3b8; font-style: italic; }
+  .tag    { display: inline-block; font-size: 9px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: .04em; padding: 1px 5px; border-radius: 4px;
+            margin-left: 4px; vertical-align: middle; }
+  .tag-blue   { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+  .tag-violet { background: #f5f3ff; color: #6d28d9; border: 1px solid #c4b5fd; }
+
+  /* ── Callout boxes ── */
+  .callout {
+    border-radius: 8px; padding: 12px 14px; font-size: 11px; line-height: 1.7;
+    margin-bottom: 12px;
+  }
+  .callout.green  { background: #f0fdf4; border: 1px solid #bbf7d0; color: #14532d; }
+  .callout.amber  { background: #fffbeb; border: 1px solid #fde68a; color: #78350f; }
+  .callout.violet { background: #faf5ff; border: 1px solid #e9d5ff; color: #4c1d95; }
+  .callout.blue   { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; }
+  .callout strong { font-weight: 700; }
+  .callout code   { font-family: 'Menlo', 'Consolas', monospace; font-size: 10px;
+                    background: rgba(0,0,0,.06); padding: 1px 4px; border-radius: 3px; }
+
+  /* ── How-set cards ── */
+  .how-item { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 5px; font-size: 11px; color: #475569; }
+  .dot { width: 5px; height: 5px; border-radius: 50%; background: #94a3b8; flex-shrink: 0; margin-top: 4px; }
+  .dot.green  { background: #16a34a; }
+  .dot.red    { background: #dc2626; }
+
+  code { font-family: 'Menlo', 'Consolas', monospace; font-size: 10px;
+         background: #f1f5f9; padding: 1px 4px; border-radius: 3px; color: #334155; }
+
+  /* ── Updated notice ── */
+  .updated { float: right; font-size: 10px; color: #94a3b8; }
+
+  @media (max-width: 600px) {
+    .cols2, .cols3 { grid-template-columns: 1fr; }
+    .flow { flex-direction: column; }
+    .step + .step { margin-left: 0; margin-top: 24px; }
+    .step + .step::before { content: '↓'; left: 50%; top: -18px; transform: translateX(-50%); }
+  }
+</style>
+</head>
+<body>
+
+<h1>MyExpensio — Subscription Reference</h1>
+<p class="doc-sub">
+  <span class="updated">Last updated: 2026-05-14 · v4.0.0</span>
+  Two independent billing systems · Complete upgrade flow · "Double subscription" explained
+</p>
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2>1 · Two Completely Independent Systems</h2>
+
+<div class="cols2">
+  <div class="card indigo">
+    <div class="card-label">🔵 System A — Individual Plan</div>
+    <div class="card-title">profiles.subscription_plan</div>
+    <div class="card-body">
+      Belongs to the <strong>person</strong>, not a company.<br>
+      Controls Personal Space and Business Space access.<br>
+      Follows the user wherever they go — across workspaces.
+      <br><br>
+      Values: <span class="badge b-free">FREE</span>&nbsp;
+              <span class="badge b-std">STANDARD ⚠ reserved</span>&nbsp;
+              <span class="badge b-prem">PREMIUM</span>
+      <br><br>
+      Charged to: <strong>the individual</strong> (RM 29/mo)
+    </div>
+  </div>
+  <div class="card green">
+    <div class="card-label">🟢 System B — Organisation Plan</div>
+    <div class="card-title">subscription_status.tier</div>
+    <div class="card-body">
+      Belongs to the <strong>company / workspace</strong>, not a person.<br>
+      Controls Work Space mileage claim quota — shared by all org members.<br>
+      Completely invisible to solo users with no workspace.
+      <br><br>
+      Values: <span class="badge b-org-free">FREE</span>&nbsp;
+              <span class="badge b-org-pro">PRO</span>
+      <br><br>
+      Charged to: <strong>the organisation</strong> (separate Stripe product)
+    </div>
+  </div>
+</div>
+
+<div class="callout green" style="margin-top:12px;">
+  <strong>Can a user be PREMIUM and the org be PRO at the same time?</strong><br>
+  Yes — and it is completely normal. The two systems are in <strong>different database tables</strong> with
+  <strong>different Stripe products</strong> and <strong>different webhook signing secrets</strong>.
+  They never conflict. A business owner who subscribes to Premium personally (RM 29/mo) while
+  their company also pays for a PRO org plan is simply using both. Each payment goes to a
+  separate Stripe subscription and each webhook updates a different table.
+  <br><br>
+  <strong>Important rule (implemented in code):</strong> A user with <code>subscription_plan = PREMIUM</code>
+  automatically gets <strong>unlimited Work Space claims</strong> — even if their org is on the FREE tier.
+  This means a solo gig worker only needs to pay for PREMIUM once (RM 29/mo), not PREMIUM + org PRO.
+  They are <em>not</em> double-charged. See Section 1b below.
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2>1b · The Three Real-World User Types — Who Pays What</h2>
+
+<div class="cols3">
+  <div class="card">
+    <div class="card-label" style="color:#1d4ed8;">TEAM workspace employee</div>
+    <div class="card-title">Employer pays for Work Space</div>
+    <div class="card-body">
+      Company subscribes to <strong>org PRO (RM 29/mo)</strong> for the whole team.<br><br>
+      Employee gets unlimited Work claims at <strong>zero personal cost</strong>.<br><br>
+      If employee also does e-hailing or freelancing → pays <strong>PREMIUM (RM 29/mo)</strong> personally for Business Space.<br><br>
+      <strong>Individual total: RM 29/mo</strong><br>
+      <span style="color:#16a34a; font-weight:700;">✓ Not double-charged. Employer pays the work part.</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-label" style="color:#6d28d9;">AGENT workspace employee</div>
+    <div class="card-title">Agency pays for Work Space</div>
+    <div class="card-body">
+      Agency (Grab, Lalamove etc.) subscribes to <strong>org PRO (RM 29/mo)</strong> for all their drivers.<br><br>
+      Driver gets unlimited Work claims at <strong>zero personal cost</strong> (agency pays).<br><br>
+      If driver wants Business Space to track gig income → pays <strong>PREMIUM (RM 29/mo)</strong> personally.<br><br>
+      <strong>Individual total: RM 29/mo</strong><br>
+      <span style="color:#16a34a; font-weight:700;">✓ Not double-charged. Agency pays the work part.</span>
+    </div>
+  </div>
+  <div class="card violet">
+    <div class="card-label" style="color:#6d28d9;">Solo gig worker (no agency)</div>
+    <div class="card-title">Pays for everything themselves</div>
+    <div class="card-body">
+      Grab/Foodpanda driver with no employer or agency — manages their own expenses.<br><br>
+      Needs Work Space claims (to track mileage, submit to client) <strong>AND</strong> Business Space (income, expenses, P&L).<br><br>
+      Pays <strong>PREMIUM (RM 29/mo)</strong> → gets <em>both</em>: Business Space + unlimited Work claims.<br><br>
+      <strong>Individual total: RM 29/mo</strong><br>
+      <span style="color:#16a34a; font-weight:700;">✓ No separate org PRO needed. PREMIUM covers everything.</span><br>
+      <span style="font-size:10px; color:#6d28d9;">Code: <code>isUnlimited = tier === 'PRO' || subscription_plan === 'PREMIUM'</code></span>
+    </div>
+  </div>
+</div>
+
+<div class="callout amber" style="margin-top:12px;">
+  <strong>The rule that prevents double-charging:</strong>
+  In <code>api/usage/current/route.ts</code> and <code>api/billing/summary/route.ts</code>, the entitlement check is:<br>
+  <code>isUnlimited = subscription_status.tier === 'PRO'  ||  profiles.subscription_plan === 'PREMIUM'</code><br><br>
+  Either condition alone is sufficient for unlimited Work Space claims.
+  A solo PREMIUM user does <strong>not</strong> need to also pay for an org PRO subscription.
+  The org PRO subscription only matters when you need <em>the whole team / all agency members</em> to get unlimited claims.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2>2 · How Each System Gets Set</h2>
+
+<div class="cols2">
+  <div class="card">
+    <div class="card-label" style="color:#5b21b6;">Individual Plan — subscription_plan</div>
+    <div class="how-item"><span class="dot green"></span><span>Sign-up: always starts as <strong>FREE</strong> (default in profiles table)</span></div>
+    <div class="how-item"><span class="dot green"></span><span>→ PREMIUM: user pays via <strong>/upgrade page → Stripe Checkout</strong> → webhook fires → <code>activatePremiumIndividual()</code> → sets PREMIUM + creates BUSINESS space</span></div>
+    <div class="how-item"><span class="dot green"></span><span>Manual override: <strong>CS Console → Users → Edit → Individual Subscription Plan</strong> (SUPER_ADMIN only) — for support escalations</span></div>
+    <div class="how-item"><span class="dot red"></span><span><strong>NOT set during invitation</strong> — invitation only adds to org_members, plan stays FREE</span></div>
+  </div>
+  <div class="card">
+    <div class="card-label" style="color:#15803d;">Org Plan — subscription_status.tier</div>
+    <div class="how-item"><span class="dot green"></span><span>Org provisioning: always starts as <strong>FREE</strong></span></div>
+    <div class="how-item"><span class="dot green"></span><span>→ PRO: org owner pays via Stripe → webhook fires → <code>upsertSubscription()</code> → sets PRO for the whole org</span></div>
+    <div class="how-item"><span class="dot green"></span><span>Manual override: <strong>CS Console → Workspaces → Edit → Plan tier</strong> (SUPER_ADMIN only)</span></div>
+    <div class="how-item"><span class="dot red"></span><span><strong>NOT set during invitation</strong> — invitation only creates org_members row</span></div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2>3 · How a User Upgrades to Premium — Step by Step</h2>
+
+<div class="callout blue" style="margin-bottom:14px;">
+  This is the <strong>only self-service upgrade path</strong>. The user does everything from within the User App.
+  No admin action is needed for a successful upgrade.
+</div>
+
+<div class="flow">
+  <div class="step">
+    <div class="step-num">Step 1</div>
+    <div class="step-title">User hits the gate</div>
+    <div class="step-body">
+      User taps <strong>Business Space</strong> or the upgrade banner anywhere in the app.<br>
+      <code>PremiumGate</code> component checks <code>subscription_plan</code> — if FREE, shows upgrade modal.
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">Step 2</div>
+    <div class="step-title">Visits /upgrade page</div>
+    <div class="step-body">
+      Free vs Premium plan comparison. Taps <strong>"Upgrade — RM 15/month"</strong> button.
+    </div>
+  </div>
+  <div class="step highlight">
+    <div class="step-num">Step 3</div>
+    <div class="step-title">Stripe Checkout</div>
+    <div class="step-body">
+      <code>POST /api/billing/premium/checkout</code><br>
+      Creates Stripe Checkout Session with <code>metadata.plan_type = "PREMIUM_INDIVIDUAL"</code> and <code>metadata.user_id</code>.<br>
+      Redirects to Stripe-hosted payment page.
+    </div>
+  </div>
+  <div class="step highlight">
+    <div class="step-num">Step 4</div>
+    <div class="step-title">Stripe fires webhook</div>
+    <div class="step-body">
+      Event: <code>checkout.session.completed</code><br>
+      Hits: <code>POST /api/billing/webhook</code><br>
+      Verified with <code>STRIPE_PREMIUM_WEBHOOK_SECRET</code>
+    </div>
+  </div>
+  <div class="step highlight">
+    <div class="step-num">Step 5</div>
+    <div class="step-title">activatePremiumIndividual()</div>
+    <div class="step-body">
+      1. Sets <code>profiles.subscription_plan = 'PREMIUM'</code><br>
+      2. Upserts BUSINESS space for this user<br>
+      3. Writes audit log entry
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">Step 6</div>
+    <div class="step-title">User lands at /upgrade/success</div>
+    <div class="step-body">
+      Business Space is now unlocked. User can navigate to <strong>/business</strong> immediately.
+    </div>
+  </div>
+</div>
+
+<div class="callout amber" style="margin-top:14px;">
+  <strong>Important:</strong> The webhook uses <code>STRIPE_PREMIUM_WEBHOOK_SECRET</code> — a <em>separate env var</em> from
+  <code>STRIPE_WEBHOOK_SECRET</code> (which is for the org PRO plan). These must both be set in Vercel env vars.
+  Mixing them up will cause signature verification failures and the upgrade will appear to succeed in Stripe
+  but never activate in the database.
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2>4 · All Possible Combinations</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Individual Plan<br>(profiles.subscription_plan)</th>
+      <th>Org Plan<br>(subscription_status.tier)</th>
+      <th>Personal Space</th>
+      <th>Business Space</th>
+      <th>Work Space</th>
+      <th>Real-world user</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="badge b-free">FREE</span> <span class="tag tag-blue">most common</span></td>
+      <td><span class="badge b-org-free">FREE</span></td>
+      <td><span class="check">✓</span> Expenses + Tax</td>
+      <td><span class="cross">✗</span> Locked</td>
+      <td><span class="check">✓</span> 2 claims / month</td>
+      <td>Regular salaried employee, no personal upgrade</td>
+    </tr>
+    <tr>
+      <td><span class="badge b-free">FREE</span></td>
+      <td><span class="badge b-org-pro">PRO</span></td>
+      <td><span class="check">✓</span> Expenses + Tax</td>
+      <td><span class="cross">✗</span> Locked</td>
+      <td><span class="check">✓</span> Unlimited claims</td>
+      <td>Employee at a PRO company — Work Space benefits flow from org, no personal upgrade</td>
+    </tr>
+    <tr class="row-prem">
+      <td><span class="badge b-prem">PREMIUM</span> <span class="tag tag-violet">solo worker</span></td>
+      <td><span class="badge b-org-free">FREE</span> or none</td>
+      <td><span class="check">✓</span> Expenses + Tax</td>
+      <td><span class="check">✓</span> Full access</td>
+      <td><span class="check">✓</span> <strong>Unlimited</strong> <span style="font-size:9px; color:#6d28d9;">(PREMIUM entitles this)</span></td>
+      <td>Solo gig worker (Grab/Foodpanda) — pays RM 29/mo PREMIUM, gets everything. No separate org PRO needed.</td>
+    </tr>
+    <tr class="row-prem">
+      <td><span class="badge b-prem">PREMIUM</span> <span class="tag tag-violet">power user</span></td>
+      <td><span class="badge b-org-pro">PRO</span></td>
+      <td><span class="check">✓</span> Expenses + Tax</td>
+      <td><span class="check">✓</span> Full access</td>
+      <td><span class="check">✓</span> Unlimited claims</td>
+      <td>Business owner who also works as employee — pays Premium personally AND company is on PRO plan. Two separate payments, zero conflict.</td>
+    </tr>
+    <tr>
+      <td><span class="badge b-std">STANDARD</span></td>
+      <td>any</td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span> Locked</td>
+      <td><span class="check">✓</span></td>
+      <td class="dim">Reserved — behaves same as FREE today. Future mid-tier.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout violet">
+  <strong>Answer to "double subscription" concern:</strong> The PREMIUM row and the PRO row in the table above
+  are two <em>completely separate charges</em>. A user being PREMIUM does not interact with or cancel the
+  org's PRO status. A user's org being PRO does not give them Business Space — only their personal
+  <code>subscription_plan = PREMIUM</code> does that. You can think of it like a phone plan vs a gym membership —
+  having both is normal, and cancelling one has no effect on the other.
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2>5 · Stripe Configuration Required</h2>
+
+<div class="cols3">
+  <div class="card">
+    <div class="card-label" style="color:#5b21b6;">Premium Individual</div>
+    <div class="card-body">
+      <strong>Product:</strong> MyExpensio Premium<br>
+      <strong>Price:</strong> RM 15/month recurring<br>
+      <strong>Env var:</strong> <code>STRIPE_PREMIUM_MONTHLY_PRICE_ID</code><br>
+      <strong>Webhook:</strong> <code>checkout.session.completed</code><br>
+      <strong>Secret:</strong> <code>STRIPE_PREMIUM_WEBHOOK_SECRET</code><br>
+      <strong>Webhook URL:</strong> <code>myexpensio-jade.vercel.app/api/billing/webhook</code>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-label" style="color:#15803d;">Org PRO Plan</div>
+    <div class="card-body">
+      <strong>Product:</strong> MyExpensio PRO<br>
+      <strong>Price:</strong> Per-org pricing<br>
+      <strong>Env var:</strong> <code>STRIPE_ORG_PRICE_ID</code> (or equivalent)<br>
+      <strong>Webhook events:</strong> subscription.updated / deleted / invoice.paid / invoice.payment_failed<br>
+      <strong>Secret:</strong> <code>STRIPE_WEBHOOK_SECRET</code><br>
+      <strong>Webhook URL:</strong> Admin app endpoint
+    </div>
+  </div>
+  <div class="card amber">
+    <div class="card-label" style="color:#92400e;">⚠ Do Not Confuse</div>
+    <div class="card-body">
+      <code>STRIPE_WEBHOOK_SECRET</code> = org PRO webhook<br>
+      <code>STRIPE_PREMIUM_WEBHOOK_SECRET</code> = individual Premium webhook<br><br>
+      These are two separate webhook endpoints registered in Stripe Dashboard with different signing secrets.
+      Swapping them causes silent failures — Stripe reports success but the database never updates.
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2>6 · Manual Override (Support Escalations)</h2>
+
+<div class="cols2">
+  <div class="card">
+    <div class="card-label" style="color:#5b21b6;">Override individual subscription_plan</div>
+    <div class="card-body">
+      <strong>Where:</strong> CS Console (myexpensio-cs.vercel.app) → Users → click Edit on any user → Individual Subscription Plan section<br><br>
+      <strong>Who can:</strong> SUPER_ADMIN only<br><br>
+      <strong>When to use:</strong> Refund processed but want to keep Premium for 30 days; user reports payment succeeded but plan not activated; fraud / abuse revocation.<br><br>
+      <strong>Audit trail:</strong> Writes <code>USER_SUBSCRIPTION_PLAN_CHANGED</code> event with actor email, old→new plan, and the support note you enter.
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-label" style="color:#15803d;">Override org subscription_status.tier</div>
+    <div class="card-body">
+      <strong>Where:</strong> CS Console → Workspaces → click Edit on any workspace → Subscription section<br><br>
+      <strong>Who can:</strong> SUPER_ADMIN only<br><br>
+      <strong>When to use:</strong> Trial period extension; payment failed but grace period needed; internal test org needs PRO features.<br><br>
+      <strong>Audit trail:</strong> Writes <code>SUBSCRIPTION_CHANGED</code> event with <code>provider: 'MANUAL'</code> so it's distinguishable from Stripe-driven changes.
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2>7 · Quick Reference — Which Table Controls What</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Feature / Gate</th>
+      <th>Controlled by</th>
+      <th>Table</th>
+      <th>Code location</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Can enter Business Space</td>
+      <td><span class="badge b-prem">subscription_plan = PREMIUM</span> or <code>is_internal</code></td>
+      <td>profiles</td>
+      <td>components/PremiumGate.tsx</td>
+    </tr>
+    <tr>
+      <td>Work Space claim limit (2/mo vs unlimited)</td>
+      <td><span class="badge b-org-pro">subscription_status.tier = PRO</span></td>
+      <td>subscription_status</td>
+      <td>api/workspace/claims (rate check)</td>
+    </tr>
+    <tr>
+      <td>Personal expense tracking</td>
+      <td>Any logged-in user</td>
+      <td>—</td>
+      <td>/personal/* (no gate)</td>
+    </tr>
+    <tr>
+      <td>Business income / expense / reports / PDF</td>
+      <td><span class="badge b-prem">PREMIUM</span> only</td>
+      <td>profiles</td>
+      <td>app/(app)/business/layout.tsx → PremiumGate</td>
+    </tr>
+    <tr>
+      <td>LHDN personal tax summary</td>
+      <td>Any logged-in user</td>
+      <td>—</td>
+      <td>/personal/tax (no gate)</td>
+    </tr>
+    <tr>
+      <td>CS Console access</td>
+      <td>profiles.role = SUPPORT or SUPER_ADMIN</td>
+      <td>profiles</td>
+      <td>cs/lib/auth.ts → requireConsoleAuth</td>
+    </tr>
+  </tbody>
+</table>
+
+</body>
+</html>

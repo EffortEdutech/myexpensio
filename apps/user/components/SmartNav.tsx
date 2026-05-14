@@ -4,7 +4,7 @@
 // Single bottom-nav slot rendered by (app)/layout.tsx.
 // Reads the current pathname and renders the right nav:
 //
-//   /personal/*  → PersonalNav (indigo, 4 tabs)
+//   /personal/*  → PersonalNav (indigo, 5 tabs: Home · Expenses · + · Bills · Tax)
 //   /business/*  → BusinessNav (green, 5 tabs)
 //   everything else → WorkNav (slate, 6 tabs — the default)
 //

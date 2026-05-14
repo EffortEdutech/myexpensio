@@ -1,20 +1,20 @@
 'use client'
 // components/PersonalNav.tsx
-// Bottom nav for Personal Space (/personal/*).
-// Indigo accent — 4 tabs: Dashboard · Expenses · Add · Tax
-// Centre Add tab is the primary action (raised, filled button).
+// Bottom nav for Personal Expense space (/personal/*).
+// Indigo accent — 5 tabs: Home · Expenses · + · Bills · Tax
+// Add sits dead-centre (position 3 of 5) — perfectly symmetric.
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-const ACCENT  = '#4f46e5' // indigo — personal space colour
+const ACCENT    = '#4f46e5' // indigo — personal space colour
 const ACCENT_BG = '#eef2ff'
 
 type Tab = {
-  href:    string
-  label:   string
-  icon:    string
-  exact?:  boolean
+  href:     string
+  label:    string
+  icon:     string
+  exact?:   boolean
   primary?: boolean   // renders as the raised centre button
 }
 
@@ -22,6 +22,7 @@ const TABS: Tab[] = [
   { href: '/personal',          label: 'Home',     icon: '🏠', exact: true },
   { href: '/personal/expenses', label: 'Expenses', icon: '💸' },
   { href: '/personal/add',      label: 'Add',      icon: '+',  primary: true },
+  { href: '/personal/bills',    label: 'Bills',    icon: '📋' },
   { href: '/personal/tax',      label: 'Tax',      icon: '🧾' },
 ]
 
@@ -33,8 +34,8 @@ export function PersonalNav() {
       {/* thin space-colour accent strip at top */}
       <div style={{ ...S.accentBar, backgroundColor: ACCENT }} />
 
-      {/* small space label */}
-      <div style={S.spaceLabel}>Personal Space</div>
+      {/* space label — right-justified so the + button never covers it */}
+      <div style={S.spaceLabel}>Personal Expense</div>
 
       <div style={S.tabs}>
         {TABS.map(tab => {
@@ -47,7 +48,7 @@ export function PersonalNav() {
               <Link key={tab.href} href={tab.href} style={S.tab}>
                 <div style={{
                   ...S.addCircle,
-                  backgroundColor: active ? ACCENT : ACCENT,
+                  backgroundColor: ACCENT,
                   boxShadow: '0 4px 12px rgba(79,70,229,0.4)',
                   transform: active ? 'scale(1.05)' : 'scale(1)',
                 }}>

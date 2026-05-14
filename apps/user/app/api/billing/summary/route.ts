@@ -36,6 +36,18 @@ export async function GET() {
 
     const orgId = membership?.org_id ?? null
 
+    // ── Individual plan ───────────────────────────────────────────────────────
+    // Needed to determine if user is PREMIUM (gives unlimited Work claims even
+    // if their org is FREE — prevents double-charging solo gig workers).
+
+    const { data: profileData } = await db
+      .from('profiles')
+      .select('subscription_plan')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    const subscriptionPlan = profileData?.subscription_plan ?? 'FREE'
+
     // ── Subscription status ──────────────────────────────────────────────────
 
     let subscription = {
@@ -78,10 +90,14 @@ export async function GET() {
       .limit(1)
       .maybeSingle()
 
+    // Unlimited if org is PRO (team/agency pays) OR individual is PREMIUM (self-pays).
+    // Prevents double-charging: a PREMIUM solo gig worker does not need a separate org PRO plan.
+    const isUnlimited = subscription.tier === 'PRO' || subscriptionPlan === 'PREMIUM'
+
     const limits = {
-      routes_per_month:  subscription.tier === 'PRO' ? null : (config?.free_routes_per_month ?? 2),
-      trips_per_month:   subscription.tier === 'PRO' ? null : (config?.free_trips_per_month ?? null),
-      exports_per_month: subscription.tier === 'PRO' ? null : (config?.free_exports_per_month ?? null),
+      routes_per_month:  isUnlimited ? null : (config?.free_routes_per_month ?? 2),
+      trips_per_month:   isUnlimited ? null : (config?.free_trips_per_month ?? null),
+      exports_per_month: isUnlimited ? null : (config?.free_exports_per_month ?? null),
     }
 
     // ── Usage this month ──────────────────────────────────────────────────────
@@ -116,7 +132,7 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json({ subscription, usage, limits })
+    return NextResponse.json({ subscription, usage, limits, subscription_plan: subscriptionPlan, is_unlimited: isUnlimited })
 
   } catch (e) {
     console.error('[api/billing/summary] error:', e)
