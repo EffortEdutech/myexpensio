@@ -13,7 +13,7 @@ import { createClient } from '@/lib/supabase/server'
 export type LimitValue = number | null
 
 export type ResolvedEntitlements = {
-  tier: 'FREE' | 'PRO'
+  tier: 'FREE' | 'PRO' | 'PREMIUM'
   routes_limit: LimitValue
   trips_limit: LimitValue
   exports_limit: LimitValue
@@ -87,7 +87,7 @@ function parseOrgOverride(raw: unknown) {
 export async function loadOrgEntitlements(params: {
   supabase: Awaited<ReturnType<typeof createClient>>
   orgId: string
-  tier: 'FREE' | 'PRO'
+  tier: 'FREE' | 'PRO' | 'PREMIUM'
   isAdmin?: boolean
 }): Promise<ResolvedEntitlements> {
 
@@ -106,16 +106,16 @@ export async function loadOrgEntitlements(params: {
     }
   }
 
-  // PRO tier is always unlimited — no DB read needed.
-  if (params.tier === 'PRO') {
+  // PRO and PREMIUM tiers are always unlimited — no DB read needed.
+  if (params.tier === 'PRO' || params.tier === 'PREMIUM') {
     return {
-      tier: 'PRO',
-      routes_limit: PRO_LIMITS.routes_per_month,
-      trips_limit:  PRO_LIMITS.trips_per_month,
+      tier: params.tier,
+      routes_limit:  PRO_LIMITS.routes_per_month,
+      trips_limit:   PRO_LIMITS.trips_per_month,
       exports_limit: PRO_LIMITS.exports_per_month,
-      limit_label: PRO_LIMITS.label,
-      limit_preset: 'DEFAULT',
-      limit_source: 'PLAN_DEFAULT',
+      limit_label:   params.tier === 'PREMIUM' ? 'Premium Unlimited' : PRO_LIMITS.label,
+      limit_preset:  'DEFAULT',
+      limit_source:  'PLAN_DEFAULT',
       override_expires_at: null,
       override_notes: null,
     }
