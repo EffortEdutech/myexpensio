@@ -58,13 +58,15 @@ export async function loadTierAndEntitlements(
   orgId: string,
   isAdmin: boolean,
 ) {
+  // Read ORG subscription from unified subscriptions table
   const { data: sub } = await supabase
-    .from('subscription_status')
+    .from('subscriptions')
     .select('tier')
-    .eq('org_id', orgId)
+    .eq('entity_type', 'ORG')
+    .eq('entity_id', orgId)
     .maybeSingle()
 
-  const tier = (sub?.tier ?? 'FREE') as 'FREE' | 'PRO'
+  const tier = (sub?.tier ?? 'FREE') as 'FREE' | 'PRO' | 'PREMIUM'
   const entitlements = await loadOrgEntitlements({
     supabase,
     orgId,

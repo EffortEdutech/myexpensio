@@ -3,8 +3,11 @@
  * apps/user/app/(app)/settings/billing/page.tsx
  *
  * Payment & subscription management page.
- * Shows: plan comparison, upgrade flow, invoice history.
- * Links to Stripe Customer Portal for card/cancel management.
+ * Shows plan status, upgrade options, and Stripe portal link.
+ *
+ * 2026-05-15: Rewritten for unified subscriptions table (S14-CLEANUP).
+ *             Removed billing_catalog dependency (table dropped).
+ *             Plans hardcoded: FREE (trial) | PRO RM18/mo | PREMIUM RM29/mo
  */
 import { useEffect, useState } from 'react'
 
@@ -13,28 +16,73 @@ import { useEffect, useState } from 'react'
 // ---------------------------------------------------------------------------
 
 type BillingSummary = {
-  org: { org_id: string; org_name: string }
-  subscription_status: {
-    tier: string; billing_status: string | null; plan_code: string | null
-    cancel_at_period_end: boolean; period_start: string | null
-    period_end: string | null; last_invoice_at: string | null
-  } | null
-  live_subscription: {
-    amount: number; currency: string; interval: string | null
-    current_period_start: string | null; current_period_end: string | null
+  subscription: {
+    tier: string
+    status: string
+    period_end: string | null
+    billing_status: string | null   // legacy compat field
     cancel_at_period_end: boolean
   } | null
-  invoices: Array<{
-    id: string; status: string; amount_paid: number; currency: string
-    invoice_number: string | null; invoice_url: string | null
-    invoice_pdf_url: string | null; paid_at: string | null; created_at: string
-  }>
+  tier: string
+  is_unlimited: boolean
 }
 
-type AvailablePlan = {
-  plan: { id: string; code: string; name: string; tier: string; interval: string | null; description: string | null }
-  price: { id: string; provider: string; provider_price_id: string | null; currency: string; amount: number; interval: string | null } | null
+type PlanOption = {
+  tier: 'PRO' | 'PREMIUM'
+  name: string
+  price: number       // MYR per month
+  icon: string
+  badge?: string
+  description: string
+  features: string[]
 }
+
+// ---------------------------------------------------------------------------
+// Plan definitions (hardcoded — no catalog API needed)
+// ---------------------------------------------------------------------------
+
+const PLANS: PlanOption[] = [
+  {
+    tier:        'PRO',
+    name:        'Pro',
+    icon:        '🚀',
+    price:       18,
+    description: 'For solo professionals and freelancers.',
+    features: [
+      'Unlimited route calculations',
+      'Unlimited trips & exports',
+      'Full claims management',
+      'TNG statement import',
+      'Receipt scanning',
+      'PDF exports',
+    ],
+  },
+  {
+    tier:        'PREMIUM',
+    name:        'Premium',
+    icon:        '💎',
+    price:       29,
+    badge:       'Best value',
+    description: 'For business owners and self-employed.',
+    features: [
+      'Everything in Pro',
+      'Business income & expense tracker',
+      'Profit & Loss reports',
+      'LHDN business tax summary',
+      'Annual P&L PDF download',
+      'Priority support',
+    ],
+  },
+]
+
+const FREE_FEATURES = [
+  '2 route calculations / month',
+  'Unlimited trips',
+  'Unlimited exports',
+  'Claims management',
+  'TNG statement import',
+  'Receipt scanning',
+]
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -45,43 +93,37 @@ function fmtDate(iso: string | null | undefined) {
   return new Date(iso).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-function fmtMYR(amount: number) {
-  return `RM ${amount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
 async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init)
+  const res  = await fetch(url, init)
   const data = await res.json()
-  if (!res.ok) throw new Error(data?.error?.message ?? `HTTP ${res.status}`)
+  if (!res.ok) throw new Error(data?.error?.message ?? data?.error ?? `HTTP ${res.status}`)
   return data as T
 }
 
-const FEATURES = [
-  { label: 'Route calculations / month', free: '2', pro: 'Unlimited' },
-  { label: 'Trips', free: 'Unlimited', pro: 'Unlimited' },
-  { label: 'Exports', free: 'Unlimited', pro: 'Unlimited' },
-  { label: 'Claims management', free: '✓', pro: '✓' },
-  { label: 'TNG statement import', free: '✓', pro: '✓' },
-  { label: 'Receipt scanning', free: '✓', pro: '✓' },
-  { label: 'PDF exports', free: '✓', pro: '✓' },
-]
+function statusColor(status: string | null) {
+  if (!status) return { bg: '#f1f5f9', text: '#64748b' }
+  if (status === 'ACTIVE')    return { bg: '#d1fae5', text: '#065f46' }
+  if (status === 'TRIALING')  return { bg: '#dbeafe', text: '#1e40af' }
+  if (status === 'PAST_DUE')  return { bg: '#fef3c7', text: '#92400e' }
+  if (status === 'CANCELLED') return { bg: '#fee2e2', text: '#991b1b' }
+  return { bg: '#f1f5f9', text: '#64748b' }
+}
 
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 export default function BillingPage() {
-  const [summary, setSummary]   = useState<BillingSummary | null>(null)
-  const [plans, setPlans]       = useState<AvailablePlan[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [error, setError]       = useState<string | null>(null)
-  const [selected, setSelected] = useState<AvailablePlan | null>(null)
-  const [checkingOut, setCheckingOut] = useState(false)
-  const [checkoutErr, setCheckoutErr] = useState<string | null>(null)
+  const [summary, setSummary]       = useState<BillingSummary | null>(null)
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState<string | null>(null)
+  const [selected, setSelected]     = useState<PlanOption>(PLANS[0])
+  const [checkingOut, setCheckingOut]     = useState(false)
+  const [checkoutErr, setCheckoutErr]     = useState<string | null>(null)
   const [openingPortal, setOpeningPortal] = useState(false)
-  const [portalErr, setPortalErr] = useState<string | null>(null)
+  const [portalErr, setPortalErr]         = useState<string | null>(null)
 
-  // Check for Stripe return
+  // Stripe return param
   const checkoutResult = typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('checkout')
     : null
@@ -90,21 +132,8 @@ export default function BillingPage() {
     async function load() {
       setLoading(true); setError(null)
       try {
-        const summaryData = await apiFetch<BillingSummary>('/api/billing/summary')
-        setSummary(summaryData)
-
-        // Load both PRO plans
-        const codes = ['PRO_MONTHLY', 'PRO_YEARLY']
-        const results = await Promise.allSettled(
-          codes.map((code) =>
-            apiFetch<AvailablePlan>(`/api/billing/catalog?plan_code=${code}&provider=STRIPE`)
-          )
-        )
-        const available = results
-          .filter((r): r is PromiseFulfilledResult<AvailablePlan> => r.status === 'fulfilled')
-          .map((r) => r.value)
-        setPlans(available)
-        if (available.length > 0) setSelected(available[0])
+        const data = await apiFetch<BillingSummary>('/api/billing/summary')
+        setSummary(data)
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load billing info.')
       } finally {
@@ -115,17 +144,15 @@ export default function BillingPage() {
   }, [])
 
   async function handleUpgrade() {
-    if (!selected) return
     setCheckingOut(true); setCheckoutErr(null)
     try {
       const origin = window.location.origin
-      const data = await apiFetch<{ checkout_url: string }>('/api/billing/checkout', {
-        method: 'POST',
+      const data   = await apiFetch<{ checkout_url: string }>('/api/billing/checkout', {
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          plan_code:   selected.plan.code,
-          provider:    'STRIPE',
-          success_url: `${origin}/settings/billing?checkout=success`,
+        body:    JSON.stringify({
+          tier:        selected.tier,
+          success_url: `${origin}/upgrade/success?tier=${selected.tier}`,
           cancel_url:  `${origin}/settings/billing?checkout=cancel`,
         }),
       })
@@ -140,23 +167,24 @@ export default function BillingPage() {
     setOpeningPortal(true); setPortalErr(null)
     try {
       const origin = window.location.origin
-      const data = await apiFetch<{ url: string }>('/api/billing/portal', {
-        method: 'POST',
+      const data   = await apiFetch<{ portal_url: string }>('/api/billing/portal', {
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ return_url: `${origin}/settings/billing` }),
+        body:    JSON.stringify({ return_url: `${origin}/settings/billing` }),
       })
-      window.location.href = data.url
+      window.location.href = data.portal_url
     } catch (e) {
       setPortalErr(e instanceof Error ? e.message : 'Could not open billing portal.')
       setOpeningPortal(false)
     }
   }
 
-  const ss = summary?.subscription_status
-  const live = summary?.live_subscription
-  const isPro = ss?.tier === 'PRO'
-  const invoices = summary?.invoices ?? []
-  const noPrices = plans.every((p) => !p.price)
+  const sub        = summary?.subscription
+  const tier       = summary?.tier ?? sub?.tier ?? 'FREE'
+  const isPaid     = tier === 'PRO' || tier === 'PREMIUM'
+  const subStatus  = sub?.status ?? null
+  const periodEnd  = sub?.period_end ?? null
+  const statusClr  = statusColor(subStatus)
 
   if (loading) {
     return (
@@ -192,211 +220,199 @@ export default function BillingPage() {
           Checkout was cancelled. Your plan has not changed.
         </div>
       )}
-
       {error && <div style={banner('red')}>{error}</div>}
 
-      {/* ── Current plan (PRO only) ── */}
-      {isPro && live && (
+      {/* ── Current subscription (paid users) ── */}
+      {isPaid && (
         <div style={card}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
             <div>
               <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#6b7280', marginBottom: 4 }}>
                 Current plan
               </div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: '#0f172a' }}>Pro plan</div>
-              {ss?.plan_code && (
-                <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>{ss.plan_code.replace('_', ' ')}</div>
-              )}
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 22, fontWeight: 800, color: '#0f172a' }}>{fmtMYR(live.amount)}</div>
-              <div style={{ fontSize: 13, color: '#94a3b8' }}>/ {live.interval?.toLowerCase() ?? 'period'}</div>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: 24, marginTop: 16, paddingTop: 16, borderTop: '1px solid #f1f5f9' }}>
-            <div>
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>Period start</div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginTop: 2 }}>{fmtDate(live.current_period_start)}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>Next billing</div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginTop: 2 }}>{fmtDate(live.current_period_end)}</div>
-            </div>
-            {ss?.billing_status && (
-              <div>
-                <div style={{ fontSize: 11, color: '#94a3b8' }}>Status</div>
-                <div style={{ marginTop: 2 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: ss.billing_status === 'ACTIVE' ? '#d1fae5' : '#fef3c7', color: ss.billing_status === 'ACTIVE' ? '#065f46' : '#92400e' }}>
-                    {ss.billing_status}
-                  </span>
-                </div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#0f172a' }}>
+                {tier === 'PREMIUM' ? '💎 Premium' : '🚀 Pro'}
               </div>
+            </div>
+            {subStatus && (
+              <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 999, background: statusClr.bg, color: statusClr.text }}>
+                {subStatus}
+              </span>
             )}
           </div>
 
-          {ss?.cancel_at_period_end && (
-            <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 8, background: '#fef3c7', color: '#92400e', fontSize: 13 }}>
-              ⚠️ Your subscription will cancel at the end of the current period ({fmtDate(live.current_period_end)}). You will not be charged again.
+          {periodEnd && (
+            <div style={{ display: 'flex', gap: 24, marginTop: 16, paddingTop: 16, borderTop: '1px solid #f1f5f9' }}>
+              <div>
+                <div style={{ fontSize: 11, color: '#94a3b8' }}>Next billing / period end</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginTop: 2 }}>{fmtDate(periodEnd)}</div>
+              </div>
             </div>
           )}
 
-          {/* Stripe portal — manage card/cancel */}
-          <div style={{ marginTop: 14 }}>
+          {sub?.cancel_at_period_end && (
+            <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 8, background: '#fef3c7', color: '#92400e', fontSize: 13 }}>
+              ⚠️ Your subscription will cancel at the end of the current period ({fmtDate(periodEnd)}). You will not be charged again.
+            </div>
+          )}
+
+          {/* Stripe portal */}
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f1f5f9' }}>
             <button
               onClick={() => void handleOpenPortal()}
               disabled={openingPortal}
-              style={{ fontSize: 13, color: '#4f46e5', fontWeight: 600, padding: '8px 14px', border: '1px solid #e0e7ff', borderRadius: 8, background: openingPortal ? '#f5f3ff' : '#f5f3ff', cursor: openingPortal ? 'wait' : 'pointer' }}
+              style={{ fontSize: 13, color: '#4f46e5', fontWeight: 600, padding: '9px 16px', border: '1px solid #e0e7ff', borderRadius: 8, background: '#f5f3ff', cursor: openingPortal ? 'wait' : 'pointer' }}
             >
               {openingPortal ? 'Opening portal…' : 'Manage card & subscription in Stripe →'}
             </button>
-            {portalErr && (
-              <div style={{ marginTop: 8, fontSize: 12, color: '#dc2626' }}>{portalErr}</div>
+            {portalErr && <div style={{ marginTop: 8, fontSize: 12, color: '#dc2626' }}>{portalErr}</div>}
+            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
+              Opens Stripe's secure portal to update payment method, switch plans, or cancel.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Current plan (FREE users) ── */}
+      {!isPaid && (
+        <div style={{ ...card, marginBottom: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#6b7280', marginBottom: 4 }}>
+                Current plan
+              </div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#0f172a' }}>🆓 Free</div>
+              <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>Limited to 2 route calculations per month.</div>
+            </div>
+            {subStatus && (
+              <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 999, background: statusClr.bg, color: statusClr.text }}>
+                {subStatus}
+              </span>
             )}
           </div>
-          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
-            Opens Stripe's secure portal to update payment method or cancel.
-          </div>
         </div>
       )}
 
-      {/* ── Plan comparison + upgrade (FREE users or plan change) ── */}
-      {!isPro && (
+      {/* ── Free plan features ── */}
+      {!isPaid && (
+        <div style={{ ...card, marginBottom: 20 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', marginBottom: 8 }}>What you have now (Free)</div>
+          <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {FREE_FEATURES.map((f) => (
+              <li key={f} style={{ fontSize: 13, color: '#374151', display: 'flex', gap: 8 }}>
+                <span style={{ color: '#94a3b8' }}>—</span> {f}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* ── Upgrade section (FREE users) ── */}
+      {!isPaid && (
         <div style={card}>
           <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>
-            Upgrade to Pro
+            Upgrade your plan
           </div>
           <div style={{ fontSize: 13, color: '#64748b', marginBottom: 20 }}>
-            Remove limits and unlock full access.
+            Unlock unlimited access and powerful business tools.
           </div>
 
-          {/* Feature comparison */}
-          <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden', marginBottom: 20 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px', background: '#f8fafc' }}>
-              <div style={th}>Feature</div>
-              <div style={{ ...th, textAlign: 'center' }}>Free</div>
-              <div style={{ ...th, textAlign: 'center', color: '#4f46e5' }}>Pro</div>
-            </div>
-            {FEATURES.map((f, i) => (
-              <div key={f.label} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px', borderTop: i === 0 ? 'none' : '1px solid #f1f5f9' }}>
-                <div style={td_}>{f.label}</div>
-                <div style={{ ...td_, textAlign: 'center', color: '#9ca3af' }}>{f.free}</div>
-                <div style={{ ...td_, textAlign: 'center', color: '#059669', fontWeight: 600 }}>{f.pro}</div>
-              </div>
-            ))}
+          {/* Plan cards */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+            {PLANS.map((plan) => {
+              const isSelected = selected.tier === plan.tier
+              return (
+                <label
+                  key={plan.tier}
+                  style={{
+                    display:        'flex',
+                    alignItems:     'flex-start',
+                    gap:            14,
+                    padding:        '16px',
+                    borderRadius:   12,
+                    cursor:         'pointer',
+                    border:         isSelected ? '2px solid #4f46e5' : '1px solid #e2e8f0',
+                    background:     isSelected ? '#f5f3ff' : '#fff',
+                    position:       'relative',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="plan"
+                    checked={isSelected}
+                    onChange={() => setSelected(plan)}
+                    style={{ marginTop: 3, accentColor: '#4f46e5', width: 16, height: 16, flexShrink: 0 }}
+                  />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 18 }}>{plan.icon}</span>
+                      <span style={{ fontSize: 16, fontWeight: 800, color: '#0f172a' }}>{plan.name}</span>
+                      {plan.badge && (
+                        <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: '#d1fae5', color: '#065f46' }}>
+                          {plan.badge}
+                        </span>
+                      )}
+                      <span style={{ marginLeft: 'auto', fontSize: 18, fontWeight: 800, color: '#0f172a' }}>
+                        RM{plan.price}
+                        <span style={{ fontSize: 12, fontWeight: 400, color: '#94a3b8' }}>/mo</span>
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>{plan.description}</div>
+                    <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {plan.features.map((f) => (
+                        <li key={f} style={{ fontSize: 12, color: '#374151', display: 'flex', gap: 6 }}>
+                          <span style={{ color: '#059669', fontWeight: 700 }}>✓</span> {f}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </label>
+              )
+            })}
           </div>
 
-          {/* Plan picker */}
-          {noPrices ? (
-            <div style={{ padding: '16px', background: '#f9fafb', borderRadius: 8, fontSize: 13, color: '#9ca3af', textAlign: 'center' }}>
-              Pricing not yet configured. Please contact support.
-            </div>
-          ) : (
-            <>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
-                {plans.filter((p) => p.price).map((p) => (
-                  <label
-                    key={p.plan.id}
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '14px 16px', borderRadius: 10, cursor: 'pointer',
-                      border: selected?.plan.id === p.plan.id ? '2px solid #4f46e5' : '1px solid #e2e8f0',
-                      background: selected?.plan.id === p.plan.id ? '#f5f3ff' : '#fff',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <input type="radio" name="plan" checked={selected?.plan.id === p.plan.id}
-                        onChange={() => setSelected(p)} style={{ accentColor: '#4f46e5', width: 16, height: 16 }} />
-                      <div>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>{p.plan.name}</div>
-                        {p.plan.interval === 'YEAR' && (
-                          <div style={{ fontSize: 12, color: '#059669', fontWeight: 500, marginTop: 2 }}>Save ~17% vs monthly</div>
-                        )}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 20, fontWeight: 800, color: '#0f172a' }}>{fmtMYR(p.price!.amount)}</div>
-                      <div style={{ fontSize: 12, color: '#94a3b8' }}>/ {p.plan.interval?.toLowerCase()}</div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-
-              {checkoutErr && (
-                <div style={{ ...banner('red'), marginBottom: 12 }}>{checkoutErr}</div>
-              )}
-
-              <button
-                onClick={() => void handleUpgrade()}
-                disabled={checkingOut || !selected}
-                style={{
-                  width: '100%', padding: '14px', borderRadius: 10, fontSize: 15,
-                  fontWeight: 700, border: 'none', cursor: checkingOut ? 'wait' : 'pointer',
-                  background: checkingOut ? '#e5e7eb' : '#4f46e5',
-                  color: checkingOut ? '#9ca3af' : '#fff',
-                }}
-              >
-                {checkingOut ? 'Redirecting to Stripe…' : `Continue to payment →`}
-              </button>
-              <div style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', marginTop: 8 }}>
-                Secured by Stripe · Cancel anytime · MYR billing
-              </div>
-            </>
+          {checkoutErr && (
+            <div style={{ ...banner('red'), marginBottom: 12 }}>{checkoutErr}</div>
           )}
-        </div>
-      )}
 
-      {/* ── Invoice history ── */}
-      {invoices.length > 0 && (
-        <div style={{ ...card, marginTop: 20 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', marginBottom: 14 }}>
-            Invoice history
+          <button
+            onClick={() => void handleUpgrade()}
+            disabled={checkingOut}
+            style={{
+              width:        '100%',
+              padding:      '14px',
+              borderRadius: 10,
+              fontSize:     15,
+              fontWeight:   700,
+              border:       'none',
+              cursor:       checkingOut ? 'wait' : 'pointer',
+              background:   checkingOut ? '#e5e7eb' : '#4f46e5',
+              color:        checkingOut ? '#9ca3af' : '#fff',
+            }}
+          >
+            {checkingOut ? 'Redirecting to Stripe…' : `Continue to payment → RM${selected.price}/month`}
+          </button>
+          <div style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', marginTop: 8 }}>
+            Secured by Stripe · Cancel anytime · MYR billing
           </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                {['Date', 'Invoice', 'Amount', 'Status', ''].map((h) => (
-                  <th key={h} style={{ padding: '6px 8px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {invoices.map((inv) => (
-                <tr key={inv.id} style={{ borderTop: '1px solid #f9fafb' }}>
-                  <td style={inv_td}>{fmtDate(inv.paid_at ?? inv.created_at)}</td>
-                  <td style={{ ...inv_td, fontFamily: 'monospace', fontSize: 12, color: '#94a3b8' }}>
-                    {inv.invoice_number ?? '—'}
-                  </td>
-                  <td style={{ ...inv_td, fontWeight: 600, color: '#0f172a' }}>{fmtMYR(inv.amount_paid)}</td>
-                  <td style={inv_td}>
-                    <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 999, background: inv.status === 'PAID' ? '#d1fae5' : '#fef3c7', color: inv.status === 'PAID' ? '#065f46' : '#92400e' }}>
-                      {inv.status}
-                    </span>
-                  </td>
-                  <td style={inv_td}>
-                    {inv.invoice_url && (
-                      <a href={inv.invoice_url} target="_blank" rel="noopener noreferrer"
-                        style={{ fontSize: 12, color: '#4f46e5', textDecoration: 'none', marginRight: 8 }}>
-                        View
-                      </a>
-                    )}
-                    {inv.invoice_pdf_url && (
-                      <a href={inv.invoice_pdf_url} target="_blank" rel="noopener noreferrer"
-                        style={{ fontSize: 12, color: '#6b7280', textDecoration: 'none' }}>
-                        PDF
-                      </a>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       )}
 
-      {invoices.length === 0 && isPro && (
-        <div style={{ ...card, marginTop: 20, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
-          No invoices yet.
+      {/* ── Upgrade nudge for PRO users (show Premium option) ── */}
+      {tier === 'PRO' && (
+        <div style={{ ...card, marginTop: 20 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>💎 Upgrade to Premium</div>
+          <div style={{ fontSize: 13, color: '#64748b', marginBottom: 14 }}>
+            Unlock the business suite — income tracking, P&L reports, and LHDN tax summaries.
+          </div>
+          <button
+            onClick={() => { setSelected(PLANS[1]); void handleUpgrade() }}
+            disabled={checkingOut}
+            style={{ fontSize: 13, fontWeight: 700, padding: '10px 18px', borderRadius: 8, border: '2px solid #4f46e5', background: '#f5f3ff', color: '#4338ca', cursor: checkingOut ? 'wait' : 'pointer' }}
+          >
+            {checkingOut ? 'Redirecting…' : 'Upgrade to Premium — RM29/month →'}
+          </button>
+          {checkoutErr && <div style={{ marginTop: 8, fontSize: 12, color: '#dc2626' }}>{checkoutErr}</div>}
         </div>
       )}
     </div>
@@ -409,19 +425,6 @@ export default function BillingPage() {
 
 const card: React.CSSProperties = {
   background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 24,
-}
-
-const th: React.CSSProperties = {
-  padding: '10px 12px', fontSize: 11, fontWeight: 600,
-  color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em',
-}
-
-const td_: React.CSSProperties = {
-  padding: '10px 12px', fontSize: 13, color: '#374151',
-}
-
-const inv_td: React.CSSProperties = {
-  padding: '10px 8px', fontSize: 13, color: '#374151', verticalAlign: 'middle',
 }
 
 function banner(color: 'green' | 'amber' | 'red'): React.CSSProperties {

@@ -1,4 +1,8 @@
 // apps/cs/app/api/console/workspaces/route.ts
+//
+// GET   — list all workspaces (with subscription info from unified subscriptions table)
+// POST  — provision a new workspace + create ORG subscription row
+// PATCH — update workspace status
 
 import { NextResponse } from 'next/server'
 import { requireConsoleAuth } from '@/lib/auth'
@@ -30,13 +34,10 @@ export async function GET(req: Request) {
       `
       id, name, display_name, status, workspace_type,
       contact_email, created_at,
-      subscription_status (
-        tier, billing_status, period_end
-      ),
       org_members (
         user_id, status, org_role
       )
-    `,
+      `,
       { count: 'exact' },
     )
     .order('created_at', { ascending: false })
@@ -53,20 +54,35 @@ export async function GET(req: Request) {
     return err('SERVER_ERROR', 'Failed to fetch workspaces', 500)
   }
 
+  const orgIds = (data ?? []).map((r) => r.id)
+
+  // Batch-fetch ORG subscriptions from the unified subscriptions table
+  const { data: subRows } = orgIds.length
+    ? await db
+        .from('subscriptions')
+        .select('entity_id, tier, status, current_period_end, seat_count')
+        .eq('entity_type', 'ORG')
+        .in('entity_id', orgIds)
+    : { data: [] }
+
+  const subByOrg = Object.fromEntries(
+    (subRows ?? []).map((s) => [s.entity_id, s]),
+  )
+
   const workspaces = (data ?? []).map((row) => {
-    const sub = Array.isArray(row.subscription_status)
-      ? row.subscription_status[0] ?? null
-      : row.subscription_status
-    const members  = row.org_members ?? []
-    const owner    = members.find((m: { org_role: string }) => m.org_role === 'OWNER')
+    const sub     = subByOrg[row.id] ?? null
+    const members = row.org_members ?? []
+    const owner   = members.find((m: { org_role: string }) => m.org_role === 'OWNER')
 
     return {
       ...row,
-      subscription_status:  sub,
-      org_members:          undefined,
-      active_member_count:  members.filter((m: { status: string }) => m.status === 'ACTIVE').length,
-      total_member_count:   members.length,
-      owner_user_id:        owner?.user_id ?? null,
+      subscription: sub
+        ? { tier: sub.tier, status: sub.status, period_end: sub.current_period_end, seat_count: sub.seat_count }
+        : null,
+      org_members:         undefined,
+      active_member_count: members.filter((m: { status: string }) => m.status === 'ACTIVE').length,
+      total_member_count:  members.length,
+      owner_user_id:       owner?.user_id ?? null,
     }
   })
 
@@ -91,7 +107,8 @@ export async function POST(req: Request) {
     contact_phone,
     address,
     notes,
-    initial_tier = 'FREE',
+    initial_tier = 'PRO',
+    seat_count   = 1,
   } = body
 
   if (!workspace_type || !['TEAM', 'AGENT'].includes(workspace_type))
@@ -102,8 +119,8 @@ export async function POST(req: Request) {
     return err('VALIDATION_ERROR', 'Owner email is required', 400)
   if (!owner_display_name?.trim())
     return err('VALIDATION_ERROR', 'Owner name is required', 400)
-  if (!['FREE', 'PRO'].includes(initial_tier))
-    return err('VALIDATION_ERROR', 'initial_tier must be FREE or PRO', 400)
+  if (!['FREE', 'PRO', 'PREMIUM'].includes(initial_tier))
+    return err('VALIDATION_ERROR', 'initial_tier must be FREE, PRO, or PREMIUM', 400)
 
   const cleanEmail        = owner_email.trim().toLowerCase()
   const cleanContactEmail = contact_email?.trim().toLowerCase() || cleanEmail
@@ -191,13 +208,26 @@ export async function POST(req: Request) {
     return err('SERVER_ERROR', `Failed to assign owner: ${memberError.message}`, 500)
   }
 
-  // Step 5: Create subscription_status (non-fatal)
-  // Non-fatal — wrap in try/catch since Supabase builders don't support .catch()
+  // Step 5: Create ORG subscription row in the unified subscriptions table
+  // Console-provisioned workspaces are ACTIVE immediately (billing handled separately).
+  // FREE = TRIALING so they can still test the workspace before paying.
   try {
-    await db.from('subscription_status').insert({
-      org_id: orgId, tier: initial_tier, billing_status: 'INACTIVE', provider: 'MANUAL',
-    })
-  } catch { /* non-fatal — workspace is usable without subscription row */ }
+    await db.from('subscriptions').upsert(
+      {
+        entity_type: 'ORG',
+        entity_id:   orgId,
+        tier:        initial_tier,
+        status:      initial_tier === 'FREE' ? 'TRIALING' : 'ACTIVE',
+        seat_count:  Math.max(1, Number(seat_count) || 1),
+        created_at:  new Date().toISOString(),
+        updated_at:  new Date().toISOString(),
+      },
+      { onConflict: 'entity_type,entity_id', ignoreDuplicates: false },
+    )
+  } catch (subErr) {
+    // Non-fatal — workspace is usable; log for ops team to investigate
+    console.error('[console/workspaces] subscription upsert failed (non-fatal):', subErr)
+  }
 
   // Step 6: Audit log
   await db.from('audit_logs').insert({
@@ -209,7 +239,7 @@ export async function POST(req: Request) {
     metadata:      {
       workspace_type, name: name.trim(),
       owner_email: cleanEmail, owner_user_id: userId,
-      initial_tier, user_existed: userExisted,
+      initial_tier, seat_count, user_existed: userExisted,
       provisioned_by: ctx.email,
     },
   })

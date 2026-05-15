@@ -1,9 +1,8 @@
 'use client'
 // components/PremiumGate.tsx
 //
-// Wraps any Premium-only UI section.
-// Shows children if user is Premium or internal staff.
-// Shows an upgrade prompt otherwise.
+// Wraps any PREMIUM-only UI section (My Earning / Business space).
+// Reads tier from /api/subscription — single source of truth.
 //
 // Usage:
 //   <PremiumGate>
@@ -15,19 +14,16 @@ import Link from 'next/link'
 
 type Props = {
   children: React.ReactNode
-  feature?: string   // optional label shown in the prompt, e.g. "Business Space"
+  feature?: string
 }
 
-export function PremiumGate({ children, feature = 'this feature' }: Props) {
+export function PremiumGate({ children, feature = 'My Earning' }: Props) {
   const [status, setStatus] = useState<'loading' | 'allowed' | 'locked'>('loading')
 
   useEffect(() => {
-    fetch('/api/spaces')
+    fetch('/api/subscription')
       .then(r => r.json())
-      .then(d => {
-        if (d.is_premium || d.is_internal) setStatus('allowed')
-        else setStatus('locked')
-      })
+      .then(d => setStatus(d.can_business ? 'allowed' : 'locked'))
       .catch(() => setStatus('locked'))
   }, [])
 
@@ -39,8 +35,8 @@ export function PremiumGate({ children, feature = 'this feature' }: Props) {
       <div style={S.icon}>🔒</div>
       <h2 style={S.title}>Premium Feature</h2>
       <p style={S.desc}>
-        Unlock {feature} with a myexpensio Premium subscription —
-        the tax-ready i/o tracker for solo business.
+        Unlock {feature} with a myexpensio <strong>Premium</strong> plan —
+        the complete income and tax tracker for freelancers and business owners.
       </p>
       <div style={S.benefits}>
         {[

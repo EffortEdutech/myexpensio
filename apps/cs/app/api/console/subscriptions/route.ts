@@ -1,6 +1,10 @@
-// apps/console/app/api/console/subscriptions/route.ts
-// GET   /api/console/subscriptions — all subscription_status rows
+// apps/cs/app/api/console/subscriptions/route.ts
+//
+// GET   /api/console/subscriptions — all ORG subscriptions
 // PATCH /api/console/subscriptions — manual override (SUPER_ADMIN only)
+//
+// 2026-05-15: Rewritten for unified `subscriptions` table (S14-CLEANUP).
+//             subscription_status table dropped.
 
 import { NextResponse } from 'next/server'
 import { requireConsoleAuth } from '@/lib/auth'
@@ -19,28 +23,26 @@ export async function GET(req: Request) {
   const pageSize = Math.min(100, Math.max(1, Number(searchParams.get('page_size') ?? 25)))
   const from     = (page - 1) * pageSize
   const tier     = searchParams.get('tier')?.trim() || null
-  const status   = searchParams.get('billing_status')?.trim() || null
+  const status   = searchParams.get('status')?.trim() || null
 
   const db = createServiceRoleClient()
 
   let query = db
-    .from('subscription_status')
+    .from('subscriptions')
     .select(
       `
-      org_id, tier, billing_status, provider, plan_code,
-      period_start, period_end, cancel_at_period_end,
-      grace_until, last_invoice_at, last_synced_at,
-      organizations:org_id (
-        id, name, workspace_type, status
-      )
-    `,
+      entity_id, entity_type, tier, status,
+      current_period_end, stripe_customer_id, seat_count,
+      created_at, updated_at
+      `,
       { count: 'exact' },
     )
-    .order('last_synced_at', { ascending: false, nullsFirst: false })
+    .eq('entity_type', 'ORG')
+    .order('updated_at', { ascending: false, nullsFirst: false })
     .range(from, from + pageSize - 1)
 
   if (tier)   query = query.eq('tier', tier)
-  if (status) query = query.eq('billing_status', status)
+  if (status) query = query.eq('status', status)
 
   const { data, error, count } = await query
 
@@ -49,11 +51,26 @@ export async function GET(req: Request) {
     return err('SERVER_ERROR', 'Failed to fetch subscriptions', 500)
   }
 
-  const subscriptions = (data ?? []).map((row) => ({
-    ...row,
-    organizations: Array.isArray(row.organizations)
-      ? row.organizations[0] ?? null
-      : row.organizations,
+  // Batch-fetch org names
+  const orgIds = (data ?? []).map(s => s.entity_id)
+  let orgMap: Record<string, { id: string; name: string; workspace_type: string | null; status: string }> = {}
+  if (orgIds.length > 0) {
+    const { data: orgs } = await db
+      .from('organizations')
+      .select('id, name, workspace_type, status')
+      .in('id', orgIds)
+    orgMap = Object.fromEntries((orgs ?? []).map(o => [o.id, o]))
+  }
+
+  const subscriptions = (data ?? []).map(row => ({
+    org_id:             row.entity_id,
+    tier:               row.tier,
+    status:             row.status,
+    current_period_end: row.current_period_end,
+    stripe_customer_id: row.stripe_customer_id,
+    seat_count:         row.seat_count,
+    updated_at:         row.updated_at,
+    organization:       orgMap[row.entity_id] ?? null,
   }))
 
   return NextResponse.json({ subscriptions, total: count ?? 0, page, pageSize })
@@ -67,40 +84,42 @@ export async function PATCH(req: Request) {
   const body = await req.json().catch(() => null)
   if (!body?.org_id) return err('VALIDATION_ERROR', 'org_id required', 400)
 
-  const VALID_TIERS   = ['FREE', 'PRO']
-  const VALID_STATUSES = ['INACTIVE', 'TRIALING', 'ACTIVE', 'PAST_DUE', 'UNPAID', 'CANCELED', 'EXPIRED']
+  const VALID_TIERS    = ['FREE', 'PRO', 'PREMIUM']
+  const VALID_STATUSES = ['TRIALING', 'ACTIVE', 'PAST_DUE', 'CANCELLED', 'EXPIRED']
 
   if (body.tier && !VALID_TIERS.includes(body.tier)) {
     return err('VALIDATION_ERROR', `tier must be one of: ${VALID_TIERS.join(', ')}`, 400)
   }
-  if (body.billing_status && !VALID_STATUSES.includes(body.billing_status)) {
-    return err('VALIDATION_ERROR', `billing_status must be one of: ${VALID_STATUSES.join(', ')}`, 400)
+  if (body.status && !VALID_STATUSES.includes(body.status)) {
+    return err('VALIDATION_ERROR', `status must be one of: ${VALID_STATUSES.join(', ')}`, 400)
   }
 
   const db = createServiceRoleClient()
 
-  const updatePayload: Record<string, unknown> = {
-    last_synced_at: new Date().toISOString(),
+  const upsertPayload: Record<string, unknown> = {
+    entity_type: 'ORG',
+    entity_id:   body.org_id,
+    updated_at:  new Date().toISOString(),
   }
-  if (body.tier)           updatePayload.tier           = body.tier
-  if (body.billing_status) updatePayload.billing_status = body.billing_status
-  if (body.period_end)     updatePayload.period_end     = body.period_end
-  if (body.plan_code)      updatePayload.plan_code      = body.plan_code
-  if ('cancel_at_period_end' in body) updatePayload.cancel_at_period_end = body.cancel_at_period_end
+  if (body.tier)                        upsertPayload.tier               = body.tier
+  if (body.status)                      upsertPayload.status             = body.status
+  if (body.current_period_end)          upsertPayload.current_period_end = body.current_period_end
+  if ('seat_count' in body)             upsertPayload.seat_count         = body.seat_count
+  if ('stripe_customer_id' in body)     upsertPayload.stripe_customer_id = body.stripe_customer_id
 
   const { error } = await db
-    .from('subscription_status')
-    .upsert({ org_id: body.org_id, provider: 'MANUAL', ...updatePayload })
+    .from('subscriptions')
+    .upsert(upsertPayload, { onConflict: 'entity_type,entity_id', ignoreDuplicates: false })
 
   if (error) return err('SERVER_ERROR', error.message, 500)
 
   await db.from('audit_logs').insert({
     org_id:        body.org_id,
     actor_user_id: ctx.userId,
-    entity_type:   'subscription_status',
+    entity_type:   'subscription',
     entity_id:     body.org_id,
     action:        'SUBSCRIPTION_CHANGED',
-    metadata:      { changes: updatePayload, note: body.note ?? 'Manual override via Console' },
+    metadata:      { changes: upsertPayload, note: body.note ?? 'Manual override via Console' },
   })
 
   return NextResponse.json({ success: true })

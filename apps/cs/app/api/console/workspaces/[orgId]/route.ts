@@ -20,25 +20,28 @@ export async function GET(_req: Request, { params }: Params) {
   const { orgId } = await params
   const db = createServiceRoleClient()
 
-  const { data, error } = await db
-    .from('organizations')
-    .select(`
-      id, name, display_name, status, workspace_type,
-      contact_email, contact_phone, address, notes, created_at, updated_at,
-      subscription_status (
-        tier, billing_status, period_end, provider, plan_code
-      )
-    `)
-    .eq('id', orgId)
-    .single()
+  const [orgRes, subRes] = await Promise.all([
+    db
+      .from('organizations')
+      .select('id, name, display_name, status, workspace_type, contact_email, contact_phone, address, notes, created_at, updated_at')
+      .eq('id', orgId)
+      .single(),
+    db
+      .from('subscriptions')
+      .select('tier, status, current_period_end, stripe_customer_id, seat_count')
+      .eq('entity_type', 'ORG')
+      .eq('entity_id', orgId)
+      .maybeSingle(),
+  ])
 
-  if (error || !data) return err('NOT_FOUND', 'Workspace not found', 404)
+  if (orgRes.error || !orgRes.data) return err('NOT_FOUND', 'Workspace not found', 404)
 
-  const sub = Array.isArray(data.subscription_status)
-    ? data.subscription_status[0] ?? null
-    : data.subscription_status
-
-  return NextResponse.json({ workspace: { ...data, subscription_status: sub } })
+  return NextResponse.json({
+    workspace: {
+      ...orgRes.data,
+      subscription: subRes.data ?? { tier: 'FREE', status: 'TRIALING', current_period_end: null },
+    },
+  })
 }
 
 export async function PATCH(req: Request, { params }: Params) {

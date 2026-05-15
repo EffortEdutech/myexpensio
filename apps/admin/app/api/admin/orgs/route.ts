@@ -34,13 +34,7 @@ export async function GET(req: Request) {
   let query = db
     .from('organizations')
     .select(
-      `
-      id, name, status, workspace_type,
-      contact_email, created_at,
-      subscription_status (
-        tier, billing_status, period_end
-      )
-    `,
+      'id, name, status, workspace_type, contact_email, created_at',
       { count: 'exact' },
     )
     .order('created_at', { ascending: false })
@@ -57,12 +51,24 @@ export async function GET(req: Request) {
     return err('SERVER_ERROR', 'Failed to fetch workspaces', 500)
   }
 
-  const orgs = (data ?? []).map((row) => {
-    const sub = Array.isArray(row.subscription_status)
-      ? row.subscription_status[0] ?? null
-      : row.subscription_status
-    return { ...row, subscription_status: sub }
-  })
+  const orgIds = (data ?? []).map((o) => o.id)
+  let subMap: Record<string, { tier: string; status: string; current_period_end: string | null }> = {}
+
+  if (orgIds.length > 0) {
+    const { data: subs } = await db
+      .from('subscriptions')
+      .select('entity_id, tier, status, current_period_end')
+      .eq('entity_type', 'ORG')
+      .in('entity_id', orgIds)
+    subMap = Object.fromEntries(
+      (subs ?? []).map((s) => [s.entity_id, { tier: s.tier, status: s.status, current_period_end: s.current_period_end }])
+    )
+  }
+
+  const orgs = (data ?? []).map((row) => ({
+    ...row,
+    subscription: subMap[row.id] ?? { tier: 'FREE', status: 'TRIALING', current_period_end: null },
+  }))
 
   return NextResponse.json({ orgs, total: count ?? 0, page, pageSize })
 }
@@ -95,8 +101,8 @@ export async function POST(req: Request) {
     return err('VALIDATION_ERROR', 'Owner email is required', 400)
   if (!owner_display_name?.trim())
     return err('VALIDATION_ERROR', 'Owner display name is required', 400)
-  if (!['FREE', 'PRO'].includes(initial_tier))
-    return err('VALIDATION_ERROR', 'initial_tier must be FREE or PRO', 400)
+  if (!['FREE', 'PRO', 'PREMIUM'].includes(initial_tier))
+    return err('VALIDATION_ERROR', 'initial_tier must be FREE, PRO or PREMIUM', 400)
 
   const cleanEmail        = owner_email.trim().toLowerCase()
   const cleanContactEmail = contact_email?.trim().toLowerCase() || cleanEmail
@@ -177,11 +183,17 @@ export async function POST(req: Request) {
     return err('SERVER_ERROR', `Failed to assign owner: ${memberError.message}`, 500)
   }
 
-  // Step 5: Create subscription_status (non-fatal)
+  // Step 5: Provision subscription row (non-fatal — idempotent)
   try {
-    await db.from('subscription_status').insert({
-      org_id: orgId, tier: initial_tier, billing_status: 'INACTIVE', provider: 'MANUAL',
-    })
+    await db.from('subscriptions').upsert(
+      {
+        entity_type: 'ORG',
+        entity_id:   orgId,
+        tier:        initial_tier,
+        status:      initial_tier === 'FREE' ? 'TRIALING' : 'ACTIVE',
+      },
+      { onConflict: 'entity_type,entity_id', ignoreDuplicates: true }
+    )
   } catch { /* non-fatal */ }
 
   // Step 6: Audit log

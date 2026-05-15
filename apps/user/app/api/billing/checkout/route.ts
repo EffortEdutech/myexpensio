@@ -1,15 +1,28 @@
 // apps/user/app/api/billing/checkout/route.ts
 //
 // POST /api/billing/checkout
-// Creates a Stripe Checkout Session and returns the redirect URL.
+// Creates a Stripe Checkout Session for PRO or PREMIUM subscriptions.
 //
-// Body: { plan_code, provider, success_url, cancel_url }
+// Supports two entity types:
+//   USER — individual user subscribing (Agent Subscriber upgrading themselves)
+//   ORG  — workspace subscription (Console-initiated for Team / Agent workspace)
 //
-// Flow:
-//   1. Verify user session + get org_id
-//   2. Look up / create Stripe customer for this org
-//   3. Create Checkout Session with the right price_id
-//   4. Return { checkout_url }
+// Body:
+//   {
+//     tier:         'PRO' | 'PREMIUM'           required
+//     entity_type:  'USER' | 'ORG'              optional, defaults to 'USER'
+//     entity_id:    uuid                         optional, defaults to current user id
+//     quantity:     number                       optional, default 1 (ORG = seat count)
+//     success_url:  string                       optional, defaults to /upgrade/success
+//     cancel_url:   string                       optional, defaults to /upgrade
+//   }
+//
+// Returns: { checkout_url }
+//
+// Required env vars:
+//   STRIPE_SECRET_KEY
+//   STRIPE_PRICE_PRO         ← RM18/month price ID
+//   STRIPE_PRICE_PREMIUM     ← RM29/month price ID
 
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
@@ -22,122 +35,144 @@ function err(code: string, message: string, status: number) {
 
 function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY
-  if (!key) throw new Error('STRIPE_SECRET_KEY is not set')
+  if (!key) throw new Error('STRIPE_SECRET_KEY not set')
   return new Stripe(key, { apiVersion: '2025-02-24.acacia' })
 }
 
-// Plan code → Stripe price ID mapping (via env vars)
-const PRICE_ID_MAP: Record<string, string | undefined> = {
-  PRO_MONTHLY: process.env.STRIPE_PRO_MONTHLY_PRICE_ID,
-  PRO_YEARLY:  process.env.STRIPE_PRO_YEARLY_PRICE_ID,
-}
+const ORIGIN = process.env.NEXT_PUBLIC_USER_APP_URL ?? 'https://myexpensio-jade.vercel.app'
 
 export async function POST(req: Request) {
-  // 1. Auth
+  // ── Auth ────────────────────────────────────────────────────────────────────
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return err('UNAUTHORIZED', 'Not authenticated', 401)
+  if (!user) return err('UNAUTHENTICATED', 'Login required.', 401)
 
   const body = await req.json().catch(() => null)
-  if (!body) return err('VALIDATION_ERROR', 'Request body required', 400)
+  if (!body) return err('VALIDATION_ERROR', 'Request body required.', 400)
 
-  const { plan_code, provider = 'STRIPE', success_url, cancel_url } = body
+  const {
+    tier        = 'PRO',
+    entity_type = 'USER',
+    entity_id   = user.id,
+    quantity    = 1,
+    cancel_url  = `${ORIGIN}/upgrade`,
+  } = body
 
-  if (provider !== 'STRIPE') return err('VALIDATION_ERROR', 'Only STRIPE provider supported', 400)
-  if (!plan_code)    return err('VALIDATION_ERROR', 'plan_code required', 400)
-  if (!success_url)  return err('VALIDATION_ERROR', 'success_url required', 400)
-  if (!cancel_url)   return err('VALIDATION_ERROR', 'cancel_url required', 400)
+  // Include tier in success URL so the success page can tailor messaging
+  const success_url: string = body.success_url ?? `${ORIGIN}/upgrade/success?tier=${tier}`
 
-  const priceId = PRICE_ID_MAP[plan_code?.toUpperCase()]
+  if (!['PRO', 'PREMIUM'].includes(tier)) {
+    return err('VALIDATION_ERROR', 'tier must be PRO or PREMIUM.', 400)
+  }
+  if (!['USER', 'ORG'].includes(entity_type)) {
+    return err('VALIDATION_ERROR', 'entity_type must be USER or ORG.', 400)
+  }
+
+  // ── Resolve Stripe price ID ─────────────────────────────────────────────────
+  const priceId =
+    tier === 'PREMIUM'
+      ? process.env.STRIPE_PRICE_PREMIUM
+      : process.env.STRIPE_PRICE_PRO
+
   if (!priceId) {
-    return err('VALIDATION_ERROR', `No Stripe price configured for plan: ${plan_code}`, 400)
+    return err('CONFIG_ERROR', `STRIPE_PRICE_${tier} env var not set.`, 500)
   }
 
-  // 2. Get org_id for this user
+  // ── Guard: already subscribed? ──────────────────────────────────────────────
   const db = createServiceRoleClient()
-  const { data: membership } = await db
-    .from('org_members')
-    .select('org_id')
-    .eq('user_id', user.id)
-    .eq('status', 'ACTIVE')
-    .limit(1)
+  const { data: existing } = await db
+    .from('subscriptions')
+    .select('tier, status')
+    .eq('entity_type', entity_type)
+    .eq('entity_id', entity_id)
     .maybeSingle()
 
-  if (!membership?.org_id) {
-    return err('NOT_FOUND', 'No active workspace found for this user', 404)
+  if (existing?.status === 'ACTIVE' && existing.tier === tier) {
+    return err('CONFLICT', `This ${entity_type === 'USER' ? 'account' : 'workspace'} already has an active ${tier} subscription. Use the billing portal to manage it.`, 409)
   }
 
-  const orgId = membership.org_id
-
-  // 3. Get or create Stripe customer_id for this org
-  //    We store it in subscription_status.stripe_customer_id (or fall back to metadata lookup)
-  const { data: subStatus } = await db
-    .from('subscription_status')
-    .select('stripe_customer_id, tier, billing_status')
-    .eq('org_id', orgId)
-    .maybeSingle()
-
-  if (subStatus?.tier === 'PRO' && subStatus?.billing_status === 'ACTIVE') {
-    return err('CONFLICT', 'This workspace already has an active Pro subscription. Use the billing portal to manage it.', 409)
-  }
-
+  // ── Resolve or create Stripe customer ──────────────────────────────────────
   let stripe: Stripe
-  try {
-    stripe = getStripe()
-  } catch {
-    return err('CONFIGURATION_ERROR', 'Stripe is not configured on this server', 500)
+  try { stripe = getStripe() } catch {
+    return err('CONFIG_ERROR', 'Stripe is not configured on this server.', 500)
   }
 
-  // Fetch org name for Stripe customer metadata
-  const { data: org } = await db
-    .from('organizations')
-    .select('name, contact_email')
-    .eq('id', orgId)
+  // Look up existing customer ID from subscriptions table
+  const { data: sub } = await db
+    .from('subscriptions')
+    .select('stripe_customer_id')
+    .eq('entity_type', entity_type)
+    .eq('entity_id', entity_id)
     .maybeSingle()
 
-  let customerId: string | null = subStatus?.stripe_customer_id ?? null
+  let customerId: string | null = sub?.stripe_customer_id ?? null
 
   if (!customerId) {
-    // Create a new Stripe customer
+    // Determine customer email and name for Stripe
+    let customerEmail = user.email ?? undefined
+    let customerName: string | undefined
+
+    if (entity_type === 'ORG') {
+      const { data: org } = await db
+        .from('organizations')
+        .select('name')
+        .eq('id', entity_id)
+        .maybeSingle()
+      customerName  = org?.name ?? undefined
+    } else {
+      const { data: profile } = await db
+        .from('profiles')
+        .select('display_name, email')
+        .eq('id', entity_id)
+        .maybeSingle()
+      customerName  = profile?.display_name ?? undefined
+      customerEmail = profile?.email ?? customerEmail
+    }
+
     const customer = await stripe.customers.create({
-      email:    org?.contact_email ?? user.email ?? undefined,
-      name:     org?.name ?? undefined,
-      metadata: { org_id: orgId, user_id: user.id },
+      email:    customerEmail,
+      name:     customerName,
+      metadata: { entity_type, entity_id, created_by: user.id },
     })
     customerId = customer.id
 
-    // Persist the customer ID
-    await db.from('subscription_status').upsert(
-      { org_id: orgId, stripe_customer_id: customerId },
-      { onConflict: 'org_id', ignoreDuplicates: false },
+    // Persist customer ID immediately (so it's available before webhook fires)
+    await db.from('subscriptions').upsert(
+      {
+        entity_type,
+        entity_id,
+        tier:              'FREE',
+        status:            'TRIALING',
+        stripe_customer_id: customerId,
+      },
+      { onConflict: 'entity_type,entity_id', ignoreDuplicates: false },
     )
   }
 
-  // 4. Create Checkout Session
-  let session: Awaited<ReturnType<typeof stripe.checkout.sessions.create>>
+  // ── Create Checkout Session ─────────────────────────────────────────────────
+  let session: Stripe.Checkout.Session
   try {
     session = await stripe.checkout.sessions.create({
       customer:            customerId,
       mode:                'subscription',
-      line_items: [
-        { price: priceId, quantity: 1 },
-      ],
+      payment_method_types: ['card'],
+      line_items: [{ price: priceId, quantity: Math.max(1, quantity) }],
       success_url,
       cancel_url,
-      subscription_data: {
-        metadata: { org_id: orgId },
-      },
-      metadata: { org_id: orgId, plan_code: plan_code.toUpperCase() },
       allow_promotion_codes: true,
+      subscription_data: {
+        metadata: { entity_type, entity_id },
+      },
+      metadata: { entity_type, entity_id, tier },
     })
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : 'Stripe checkout session creation failed'
+    const msg = e instanceof Error ? e.message : 'Stripe checkout creation failed'
     console.error('[billing/checkout] Stripe error:', msg)
     return err('STRIPE_ERROR', msg, 502)
   }
 
   if (!session.url) {
-    return err('INTERNAL_ERROR', 'Stripe did not return a checkout URL', 500)
+    return err('INTERNAL_ERROR', 'Stripe did not return a checkout URL.', 500)
   }
 
   return NextResponse.json({ checkout_url: session.url })

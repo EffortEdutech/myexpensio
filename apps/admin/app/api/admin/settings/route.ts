@@ -87,7 +87,10 @@ export async function POST(req: Request) {
       return err('DB_ERROR', orgErr.message, 500)
     }
 
-    await db.from('subscription_status').insert({ org_id: org.id, tier: 'FREE' })
+    await db.from('subscriptions').upsert(
+      { entity_type: 'ORG', entity_id: org.id, tier: 'FREE', status: 'TRIALING' },
+      { onConflict: 'entity_type,entity_id', ignoreDuplicates: true }
+    )
 
     await db.from('audit_logs').insert({
       actor_user_id: ctx.userId,
@@ -131,12 +134,18 @@ export async function PATCH(req: Request) {
   }
 
   if (body.tier !== undefined) {
-    if (!['FREE', 'PRO'].includes(body.tier)) return err('VALIDATION_ERROR', 'Invalid tier', 400)
-    const { error } = await db.from('subscription_status').upsert({
-      org_id: body.org_id,
-      tier: body.tier,
-      updated_at: new Date().toISOString(),
-    })
+    if (!['FREE', 'PRO', 'PREMIUM'].includes(body.tier)) return err('VALIDATION_ERROR', 'Invalid tier', 400)
+    const newStatus = body.tier === 'FREE' ? 'TRIALING' : 'ACTIVE'
+    const { error } = await db.from('subscriptions').upsert(
+      {
+        entity_type: 'ORG',
+        entity_id:   body.org_id,
+        tier:        body.tier,
+        status:      newStatus,
+        updated_at:  new Date().toISOString(),
+      },
+      { onConflict: 'entity_type,entity_id', ignoreDuplicates: false }
+    )
     if (error) return err('DB_ERROR', error.message, 500)
   }
 

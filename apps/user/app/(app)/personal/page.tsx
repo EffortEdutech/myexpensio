@@ -1,41 +1,35 @@
 'use client'
 // apps/user/app/(app)/personal/page.tsx
-// Personal Space dashboard — monthly summary + recent entries.
+//
+// Personal Expense Home — yearly statistics.
+// Shows a year picker and 3 summary cards:
+//   • Total Expenses   — sum of all EXPENSE ledger entries for the year
+//   • Bills Paid       — sum of commitment_payments.paid_amount (PAID/PARTIAL) for the year
+//   • Tax Deductible   — sum of tax-deductible EXPENSE entries for the year
+//
+// No action buttons — navigation is via the bottom tab bar.
+// Data fetched from /api/spaces/:spaceId/summary?year=YYYY (yearly mode).
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
-
-type Summary = {
-  space_id:    string
-  month:       number
-  year:        number
-  expense:     number
-  net:         number
-  entry_count: number
-}
-
-type Entry = {
-  id:               string
-  entry_date:       string
-  category:         string
-  description:      string | null
-  amount:           number
-  is_tax_deductible: boolean
-}
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-export default function PersonalDashboard() {
-  const now   = new Date()
-  const [month,   setMonth]   = useState(now.getMonth() + 1)
+type YearlySummary = {
+  expense:              number
+  bills_paid_total:     number
+  tax_deductible_total: number
+  entry_count:          number
+}
+
+export default function PersonalHome() {
+  const now              = new Date()
   const [year,    setYear]    = useState(now.getFullYear())
   const [spaceId, setSpaceId] = useState<string | null>(null)
-  const [summary, setSummary] = useState<Summary | null>(null)
-  const [entries, setEntries] = useState<Entry[]>([])
+  const [summary, setSummary] = useState<YearlySummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
 
-  // Load space id once
+  // Resolve PERSONAL space id once
   useEffect(() => {
     fetch('/api/spaces')
       .then(r => r.json())
@@ -47,104 +41,172 @@ export default function PersonalDashboard() {
       .catch(() => setError('Failed to load spaces.'))
   }, [])
 
-  // Load summary + recent entries when space or month changes
+  // Fetch yearly summary whenever spaceId or year changes
   useEffect(() => {
     if (!spaceId) return
     setLoading(true)
     setError(null)
 
-    Promise.all([
-      fetch(`/api/spaces/${spaceId}/summary?month=${month}&year=${year}`).then(r => r.json()),
-      fetch(`/api/ledger?spaceId=${spaceId}&month=${month}&year=${year}&limit=5`).then(r => r.json()),
-    ])
-      .then(([sum, led]) => {
-        setSummary(sum)
-        setEntries(led.entries ?? [])
+    fetch(`/api/spaces/${spaceId}/summary?year=${year}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) setError(d.error.message ?? 'Failed to load summary.')
+        else setSummary(d)
       })
-      .catch(() => setError('Failed to load data.'))
+      .catch(() => setError('Failed to load yearly summary.'))
       .finally(() => setLoading(false))
-  }, [spaceId, month, year])
+  }, [spaceId, year])
 
-  const taxDeductibleCount = entries.filter(e => e.is_tax_deductible).length
+  const prevYear = () => setYear(y => y - 1)
+  const nextYear = () => setYear(y => y + 1)
+  const isCurrentYear = year === now.getFullYear()
+
+  const fmt = (v: number) => `RM ${v.toFixed(2)}`
 
   return (
     <div style={S.page}>
-      {/* Month picker */}
-      <div style={S.monthRow}>
-        <button onClick={() => { const d = new Date(year, month - 2); setMonth(d.getMonth() + 1); setYear(d.getFullYear()) }} style={S.arrow}>‹</button>
-        <span style={S.monthLabel}>{MONTHS[month - 1]} {year}</span>
-        <button onClick={() => { const d = new Date(year, month); setMonth(d.getMonth() + 1); setYear(d.getFullYear()) }} style={S.arrow}>›</button>
+
+      {/* Year picker */}
+      <div style={S.yearRow}>
+        <button onClick={prevYear} style={S.arrow}>‹</button>
+        <span style={S.yearLabel}>{year}</span>
+        <button
+          onClick={nextYear}
+          style={{ ...S.arrow, opacity: isCurrentYear ? 0.3 : 1 }}
+          disabled={isCurrentYear}
+        >›</button>
       </div>
 
       {error && <div style={S.error}>{error}</div>}
 
-      {/* Summary card */}
-      <div style={S.card}>
-        <div style={S.cardRow}>
-          <span style={S.cardLabel}>Total Spent</span>
-          <span style={S.cardAmount}>RM {loading ? '—' : (summary?.expense ?? 0).toFixed(2)}</span>
-        </div>
-        <div style={S.divider} />
-        <div style={S.cardRow}>
-          <span style={S.cardLabel}>Tax Deductible entries</span>
-          <span style={{ ...S.cardAmount, color: '#16a34a', fontSize: 16 }}>{taxDeductibleCount}</span>
-        </div>
-        <div style={S.cardRow}>
-          <span style={S.cardLabel}>Total entries this month</span>
-          <span style={{ ...S.cardAmount, fontSize: 16 }}>{loading ? '—' : (summary?.entry_count ?? 0)}</span>
-        </div>
+      {/* Greeting / context */}
+      <div style={S.greeting}>
+        <div style={S.greetTitle}>Year in Review</div>
+        <div style={S.greetSub}>Your personal finance summary for {year}</div>
       </div>
 
-      {/* Quick action */}
-      <Link href="/personal/add" style={S.addBtn}>+ Add Expense</Link>
+      {/* Stat cards */}
+      <div style={S.cards}>
 
-      {/* Recent entries */}
-      <div style={S.section}>
-        <div style={S.sectionHeader}>
-          <span style={S.sectionTitle}>Recent</span>
-          <Link href="/personal/expenses" style={S.seeAll}>See all →</Link>
-        </div>
-
-        {loading && <div style={S.empty}>Loading…</div>}
-        {!loading && entries.length === 0 && (
-          <div style={S.empty}>No expenses yet this month.<br/>Tap + Add Expense to start.</div>
-        )}
-        {entries.map(entry => (
-          <div key={entry.id} style={S.entryRow}>
-            <div style={S.entryLeft}>
-              <span style={S.entryCategory}>{entry.category}</span>
-              {entry.is_tax_deductible && <span style={S.taxBadge}>Tax ✓</span>}
-              <span style={S.entryDate}>{entry.entry_date}</span>
-            </div>
-            <span style={S.entryAmount}>RM {Number(entry.amount).toFixed(2)}</span>
+        {/* Expenses */}
+        <div style={S.card}>
+          <div style={S.cardIcon}>💸</div>
+          <div style={S.cardLabel}>Total Expenses</div>
+          <div style={S.cardAmount}>
+            {loading ? '—' : fmt(summary?.expense ?? 0)}
           </div>
-        ))}
+          <div style={S.cardSub}>
+            {loading ? '' : `${summary?.entry_count ?? 0} entries`}
+          </div>
+        </div>
+
+        {/* Bills */}
+        <div style={S.card}>
+          <div style={S.cardIcon}>📋</div>
+          <div style={S.cardLabel}>Bills Paid</div>
+          <div style={{ ...S.cardAmount, color: '#0f172a' }}>
+            {loading ? '—' : fmt(summary?.bills_paid_total ?? 0)}
+          </div>
+          <div style={S.cardSub}>monthly commitments</div>
+        </div>
+
+        {/* Tax deductible */}
+        <div style={{ ...S.card, borderColor: '#bbf7d0' }}>
+          <div style={S.cardIcon}>🧾</div>
+          <div style={S.cardLabel}>Tax Deductible</div>
+          <div style={{ ...S.cardAmount, color: '#15803d' }}>
+            {loading ? '—' : fmt(summary?.tax_deductible_total ?? 0)}
+          </div>
+          <div style={{ ...S.cardSub, color: '#16a34a' }}>LHDN relief eligible</div>
+        </div>
+
       </div>
+
+      {/* Month hint strip */}
+      <div style={S.monthStrip}>
+        {MONTHS.map((m, i) => {
+          const isPast = year < now.getFullYear() || (year === now.getFullYear() && i <= now.getMonth())
+          return (
+            <div key={m} style={{ ...S.monthDot, backgroundColor: isPast ? '#0f172a' : '#e2e8f0' }}>
+              <span style={S.monthDotLabel}>{m.slice(0, 1)}</span>
+            </div>
+          )
+        })}
+      </div>
+      <div style={S.monthStripLabel}>
+        {year === now.getFullYear()
+          ? `${now.getMonth() + 1} of 12 months elapsed`
+          : year < now.getFullYear()
+            ? 'Full year'
+            : 'Future year'}
+      </div>
+
+      {/* Navigation hint */}
+      <div style={S.navHint}>
+        Use the tabs below to view Expenses, Bills, and Tax records
+      </div>
+
     </div>
   )
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
+
 const S: Record<string, React.CSSProperties> = {
-  page:          { display: 'flex', flexDirection: 'column', gap: 14 },
-  monthRow:      { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 },
-  arrow:         { fontSize: 22, background: 'none', border: 'none', cursor: 'pointer', color: '#475569', padding: '0 4px' },
-  monthLabel:    { fontSize: 16, fontWeight: 700, color: '#0f172a', minWidth: 100, textAlign: 'center' },
-  card:          { backgroundColor: '#ffffff', borderRadius: 16, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12 },
-  cardRow:       { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  cardLabel:     { fontSize: 13, color: '#64748b' },
-  cardAmount:    { fontSize: 22, fontWeight: 800, color: '#0f172a' },
-  divider:       { height: 1, backgroundColor: '#f1f5f9' },
-  addBtn:        { display: 'block', textAlign: 'center', backgroundColor: '#0f172a', color: '#ffffff', padding: '14px 0', borderRadius: 12, fontWeight: 700, fontSize: 15, textDecoration: 'none' },
-  section:       { backgroundColor: '#ffffff', borderRadius: 16, padding: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' },
-  sectionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sectionTitle:  { fontSize: 14, fontWeight: 700, color: '#0f172a' },
-  seeAll:        { fontSize: 12, color: '#64748b', textDecoration: 'none' },
-  entryRow:      { display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, paddingBottom: 10, borderBottom: '1px solid #f8fafc' },
-  entryLeft:     { display: 'flex', flexDirection: 'column', gap: 2 },
-  entryCategory: { fontSize: 14, fontWeight: 600, color: '#0f172a' },
-  entryDate:     { fontSize: 11, color: '#94a3b8' },
-  entryAmount:   { fontSize: 15, fontWeight: 700, color: '#0f172a' },
-  taxBadge:      { fontSize: 10, color: '#16a34a', backgroundColor: '#f0fdf4', borderRadius: 6, padding: '1px 6px', width: 'fit-content' },
-  empty:         { textAlign: 'center', color: '#94a3b8', fontSize: 13, padding: '24px 0', lineHeight: 1.6 },
-  error:         { backgroundColor: '#fef2f2', color: '#dc2626', borderRadius: 8, padding: '10px 14px', fontSize: 13 },
+  page:       { display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 20 },
+
+  yearRow:    { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20 },
+  arrow:      { fontSize: 26, background: 'none', border: 'none', cursor: 'pointer', color: '#475569', padding: '0 6px', lineHeight: 1 },
+  yearLabel:  { fontSize: 22, fontWeight: 800, color: '#0f172a', minWidth: 70, textAlign: 'center' },
+
+  greeting:   { textAlign: 'center', paddingBottom: 4 },
+  greetTitle: { fontSize: 18, fontWeight: 800, color: '#0f172a' },
+  greetSub:   { fontSize: 13, color: '#94a3b8', marginTop: 4 },
+
+  cards: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+  },
+  card: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: '18px 20px',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+    border: '1px solid #e2e8f0',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+  },
+  cardIcon:   { fontSize: 22, lineHeight: 1, marginBottom: 2 },
+  cardLabel:  { fontSize: 12, color: '#64748b', fontWeight: 500 },
+  cardAmount: { fontSize: 28, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.5px' },
+  cardSub:    { fontSize: 11, color: '#94a3b8' },
+
+  monthStrip: {
+    display: 'flex',
+    gap: 4,
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  monthDot:  {
+    width: 20,
+    height: 20,
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthDotLabel: { fontSize: 8, color: '#ffffff', fontWeight: 700 },
+  monthStripLabel: { textAlign: 'center', fontSize: 11, color: '#94a3b8' },
+
+  navHint: {
+    textAlign: 'center',
+    fontSize: 12,
+    color: '#cbd5e1',
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+
+  error: { backgroundColor: '#fef2f2', color: '#dc2626', borderRadius: 8, padding: '10px 14px', fontSize: 13 },
 }

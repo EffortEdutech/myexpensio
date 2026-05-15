@@ -26,9 +26,10 @@ export async function GET(req: Request) {
 
   // Get subscription status (may not exist for new orgs)
   const { data: subscription } = await db
-    .from('subscription_status')
-    .select('*')
-    .eq('org_id', orgId)
+    .from('subscriptions')
+    .select('tier, status, current_period_end, stripe_customer_id, seat_count')
+    .eq('entity_type', 'ORG')
+    .eq('entity_id', orgId)
     .maybeSingle()
 
   // Current month usage - period_start = first day of current month
@@ -53,17 +54,15 @@ export async function GET(req: Request) {
   const freeRoutesLimit = config?.free_routes_per_month ?? 2
 
   return NextResponse.json({
-    subscription: subscription ?? {
-      org_id:              orgId,
-      tier:                'FREE',
-      billing_status:      'INACTIVE',
-      provider:            'MANUAL',
-      period_start:        null,
-      period_end:          null,
-      cancel_at_period_end: false,
-      grace_until:         null,
-      last_invoice_at:     null,
-    },
+    subscription: subscription
+      ? { ...subscription, org_id: orgId }
+      : {
+          entity_type:        'ORG',
+          entity_id:          orgId,
+          tier:               'FREE',
+          status:             'TRIALING',
+          current_period_end: null,
+        },
     usage: {
       period_start:    periodStart,
       routes_calls:    usage?.routes_calls ?? 0,

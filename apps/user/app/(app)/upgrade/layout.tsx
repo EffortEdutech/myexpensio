@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 
 export const metadata: Metadata = {
-  title: 'Upgrade to Premium',
-  description: 'Unlock Business Space — tax-ready i/o tracker for solo business',
+  title: 'Choose Your Plan',
+  description: 'Upgrade to Pro or Premium — unlock exports, income tracking, and more.',
 }
 
 export default function UpgradeLayout({ children }: { children: ReactNode }) {

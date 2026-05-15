@@ -73,10 +73,12 @@ export async function GET() {
       .eq('period_start', periodStart)
       .maybeSingle(),
 
+    // ORG subscription (team workspace tier)
     supabase
-      .from('subscription_status')
+      .from('subscriptions')
       .select('tier')
-      .eq('org_id', org.org_id)
+      .eq('entity_type', 'ORG')
+      .eq('entity_id', org.org_id)
       .maybeSingle(),
 
     // platform_config: admin-editable Free tier baseline limits
@@ -86,25 +88,26 @@ export async function GET() {
       .eq('id', true)
       .maybeSingle(),
 
-    // Individual plan: PREMIUM users get unlimited Work Space claims even if org is FREE.
-    // This avoids double-charging solo gig workers who pay for PREMIUM personally
-    // and would otherwise also need to pay for org PRO just for unlimited claims.
+    // Individual USER subscription — PREMIUM/PRO users get unlimited Work Space claims
+    // even if their org is FREE. Prevents double-charging solo gig workers.
     supabase
-      .from('profiles')
-      .select('subscription_plan')
-      .eq('id', user.id)
+      .from('subscriptions')
+      .select('tier')
+      .eq('entity_type', 'USER')
+      .eq('entity_id', user.id)
       .maybeSingle(),
   ])
 
   if (usageRes.error) return err('SERVER_ERROR', usageRes.error.message, 500)
   if (subscriptionRes.error) return err('SERVER_ERROR', subscriptionRes.error.message, 500)
 
-  const tier             = subscriptionRes.data?.tier ?? 'FREE'
-  const subscriptionPlan = profileRes.data?.subscription_plan ?? 'FREE'
+  const orgTier  = subscriptionRes.data?.tier ?? 'FREE'
+  const userTier = profileRes.data?.tier      ?? 'FREE'
 
-  // Unlimited if: org is PRO (team/agency pays) OR individual is PREMIUM (self-pays).
-  // This prevents double-charging solo gig workers who need both Work Space and Business Space.
-  const isUnlimited = tier === 'PRO' || subscriptionPlan === 'PREMIUM'
+  // Unlimited if: org is PRO/PREMIUM (team pays) OR user is PRO/PREMIUM (self-pays).
+  const isPaid      = (t: string) => t === 'PRO' || t === 'PREMIUM'
+  const isUnlimited = isPaid(orgTier) || isPaid(userTier)
+  const tier        = orgTier !== 'FREE' ? orgTier : userTier
 
   // Resolve entitlements from tier + individual plan + platform_config
   let entitlements: EntitlementsShape
@@ -136,7 +139,6 @@ export async function GET() {
     },
     entitlements,
     tier,
-    subscription_plan: subscriptionPlan,
     is_unlimited: isUnlimited,
   })
 }

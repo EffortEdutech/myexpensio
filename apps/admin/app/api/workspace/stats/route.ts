@@ -85,9 +85,10 @@ export async function GET(req: Request) {
         .eq('org_id', orgId)
         .eq('period_start', monthStartDate)
         .maybeSingle(),
-      db.from('subscription_status')
+      db.from('subscriptions')
         .select('tier')
-        .eq('org_id', orgId)
+        .eq('entity_type', 'ORG')
+        .eq('entity_id', orgId)
         .maybeSingle(),
     ])
 

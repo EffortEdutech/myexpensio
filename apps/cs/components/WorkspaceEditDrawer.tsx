@@ -8,9 +8,9 @@ import { useState } from 'react'
 type WorkspaceType = 'TEAM' | 'AGENT' | 'INTERNAL'
 
 type Subscription = {
-  tier: 'FREE' | 'PRO'
-  billing_status: string
-  period_end: string | null
+  tier: 'FREE' | 'PRO' | 'PREMIUM'
+  status: string
+  current_period_end: string | null
 }
 
 export type EditableWorkspace = {
@@ -22,7 +22,7 @@ export type EditableWorkspace = {
   contact_phone: string | null
   address: string | null
   notes: string | null
-  subscription_status: Subscription | null
+  subscription: Subscription | null
 }
 
 const INPUT = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
@@ -55,9 +55,9 @@ export default function WorkspaceEditDrawer({
   const [address, setAddress]           = useState(workspace.address ?? '')
   const [notes, setNotes]               = useState(workspace.notes ?? '')
   const [status, setStatus]             = useState(workspace.status)
-  const [tier, setTier]                 = useState(workspace.subscription_status?.tier ?? 'FREE')
-  const [billingStatus, setBillingStatus] = useState(workspace.subscription_status?.billing_status ?? 'INACTIVE')
-  const [periodEnd, setPeriodEnd]         = useState(workspace.subscription_status?.period_end?.slice(0, 10) ?? '')
+  const [tier, setTier]                 = useState(workspace.subscription?.tier ?? 'FREE')
+  const [subStatus, setSubStatus]       = useState(workspace.subscription?.status ?? 'TRIALING')
+  const [periodEnd, setPeriodEnd]       = useState(workspace.subscription?.current_period_end?.slice(0, 10) ?? '')
 
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState<string | null>(null)
@@ -88,20 +88,20 @@ export default function WorkspaceEditDrawer({
       }
 
       // Update subscription if changed
-      const tierChanged   = tier !== workspace.subscription_status?.tier
-      const statusChanged = billingStatus !== workspace.subscription_status?.billing_status
-      const endChanged    = periodEnd !== (workspace.subscription_status?.period_end?.slice(0, 10) ?? '')
+      const tierChanged      = tier      !== workspace.subscription?.tier
+      const statusChanged    = subStatus !== workspace.subscription?.status
+      const endChanged       = periodEnd !== (workspace.subscription?.current_period_end?.slice(0, 10) ?? '')
 
       if (tierChanged || statusChanged || endChanged) {
         const subRes = await fetch('/api/console/subscriptions', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            org_id:         workspace.id,
+            org_id:              workspace.id,
             tier,
-            billing_status: billingStatus,
-            period_end:     periodEnd || undefined,
-            note:           'Updated via Console workspace editor',
+            status:              subStatus,
+            current_period_end:  periodEnd || undefined,
+            note:                'Updated via Console workspace editor',
           }),
         })
         if (!subRes.ok) {
@@ -201,15 +201,16 @@ export default function WorkspaceEditDrawer({
           <Section title="Subscription">
             <div>
               <label className={LABEL}>Plan tier</label>
-              <select value={tier} onChange={(e) => setTier(e.target.value as 'FREE' | 'PRO')} className={INPUT}>
+              <select value={tier} onChange={(e) => setTier(e.target.value as 'FREE' | 'PRO' | 'PREMIUM')} className={INPUT}>
                 <option value="FREE">Free — 2 route calculations/month</option>
-                <option value="PRO">Pro — unlimited route calculations</option>
+                <option value="PRO">Pro — unlimited routes (RM18/mo)</option>
+                <option value="PREMIUM">Premium — business suite (RM29/mo)</option>
               </select>
             </div>
             <div>
-              <label className={LABEL}>Billing status</label>
-              <select value={billingStatus} onChange={(e) => setBillingStatus(e.target.value)} className={INPUT}>
-                {['INACTIVE','TRIALING','ACTIVE','PAST_DUE','UNPAID','CANCELED','EXPIRED'].map((s) => (
+              <label className={LABEL}>Subscription status</label>
+              <select value={subStatus} onChange={(e) => setSubStatus(e.target.value)} className={INPUT}>
+                {['TRIALING','ACTIVE','PAST_DUE','CANCELLED','EXPIRED'].map((s) => (
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>

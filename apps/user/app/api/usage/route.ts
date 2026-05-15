@@ -26,16 +26,17 @@ export async function GET() {
   const is_admin = ['SUPER_ADMIN', 'SUPPORT'].includes(profile?.role ?? '')
 
   const { data: sub } = await supabase
-    .from('subscription_status')
-    .select('tier, period_start, period_end')
-    .eq('org_id', org.org_id)
+    .from('subscriptions')
+    .select('tier, current_period_end')
+    .eq('entity_type', 'ORG')
+    .eq('entity_id', org.org_id)
     .maybeSingle()
 
-  const tier = (sub?.tier ?? 'FREE') as 'FREE' | 'PRO'
+  const tier = (sub?.tier ?? 'FREE') as 'FREE' | 'PRO' | 'PREMIUM'
   const currentPeriod = getCurrentUsagePeriod()
 
-  const period_start = sub?.period_start ?? currentPeriod.period_start
-  const period_end = sub?.period_end ?? currentPeriod.period_end
+  const period_start = currentPeriod.period_start
+  const period_end   = sub?.current_period_end ?? currentPeriod.period_end
 
   const counters = await readUsageCounters(supabase, org.org_id, currentPeriod.period_key)
   const entitlements = await loadTierAndEntitlements(supabase, org.org_id, is_admin)

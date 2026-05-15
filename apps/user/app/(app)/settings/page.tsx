@@ -192,9 +192,9 @@ export default function SettingsPage() {
 
         if (summaryRes?.ok) {
           const sd = await summaryRes.json()
-          setTier(sd?.subscription_status?.tier ?? 'FREE')
-          setBillingStatus(sd?.subscription_status?.billing_status ?? null)
-          setPeriodEnd(sd?.subscription_status?.period_end ?? null)
+          setTier(sd?.subscription?.tier ?? sd?.tier ?? 'FREE')
+          setBillingStatus(sd?.subscription?.status ?? null)
+          setPeriodEnd(sd?.subscription?.period_end ?? null)
         }
       } catch {
         if (!active) return
@@ -223,7 +223,7 @@ export default function SettingsPage() {
   ], [lodging, mealAverage, mileage, perdiem])
 
   const billingPreview = useMemo(() => {
-    const planLabel = tier === 'PRO' ? 'Pro plan' : 'Free plan'
+    const planLabel = tier === 'PREMIUM' ? 'Premium plan' : tier === 'PRO' ? 'Pro plan' : 'Free plan'
     return [planLabel, 'Usage this month']
   }, [tier])
 
@@ -300,7 +300,7 @@ export default function SettingsPage() {
 
   if (loading) return <div style={S.loading}>Loading…</div>
 
-  const isFree = tier !== 'PRO'
+  const isFree = tier !== 'PRO' && tier !== 'PREMIUM'
   const routeLimit = usageData?.entitlements.routeCalculationsPerMonth ?? (isFree ? 2 : null)
   const routesUsed = usageData?.counters.routes_calls ?? 0
   const tripsUsed = usageData?.counters.trips_created ?? 0
@@ -420,7 +420,7 @@ export default function SettingsPage() {
         <div style={S.form}>
 
           {/* Plan status card */}
-          <Card icon={isFree ? '🆓' : '🚀'} title={isFree ? 'Free plan' : 'Pro plan'}
+          <Card icon={isFree ? '🆓' : tier === 'PREMIUM' ? '💎' : '🚀'} title={isFree ? 'Free plan' : tier === 'PREMIUM' ? 'Premium plan' : 'Pro plan'}
             sub={isFree ? 'Limited to 2 route calculations per month.' : `Active subscription${periodEnd ? ` · renews ${new Date(periodEnd).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}`}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               {billingStatus && billingStatus !== 'INACTIVE' && (

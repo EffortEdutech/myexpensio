@@ -1,13 +1,17 @@
 // apps/user/app/api/billing/summary/route.ts
 //
 // GET /api/billing/summary
-// Returns the current user's org subscription status + usage + limits.
-// Used by the Settings page billing section and the billing/page.
+// Returns the current user's subscription status + usage + limits.
+// Used by the Settings billing section.
 // Never throws — always returns a valid JSON response.
 //
-// NOTE: apps/user uses different Supabase client exports than apps/admin:
-//   Session client:      createClient()             from '@/lib/supabase/server'
-//   Service role client: createServiceRoleClient()  from '@/lib/supabase/admin'
+// Source of truth: unified `subscriptions` table
+//   USER subscription → entity_type='USER', entity_id=user.id
+//   ORG  subscription → entity_type='ORG',  entity_id=org_id  (team workspace)
+//
+// Unlimited routes/trips/exports if:
+//   • Org is PRO or PREMIUM (team workspace pays)
+//   • Individual user is PRO or PREMIUM (self-pays)
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
@@ -15,17 +19,13 @@ import { createServiceRoleClient } from '@/lib/supabase/admin'
 
 export async function GET() {
   try {
-    // Get the current user via session cookie
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 })
-    }
+    if (!user) return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 })
 
     const db = createServiceRoleClient()
 
-    // Get the user's active org membership
+    // Get the user's active org membership (may be null for solo users)
     const { data: membership } = await db
       .from('org_members')
       .select('org_id')
@@ -36,63 +36,52 @@ export async function GET() {
 
     const orgId = membership?.org_id ?? null
 
-    // ── Individual plan ───────────────────────────────────────────────────────
-    // Needed to determine if user is PREMIUM (gives unlimited Work claims even
-    // if their org is FREE — prevents double-charging solo gig workers).
+    // Fetch USER and ORG subscriptions in parallel
+    const [userSubRes, orgSubRes] = await Promise.all([
+      db.from('subscriptions')
+        .select('tier, status, current_period_end, stripe_customer_id')
+        .eq('entity_type', 'USER')
+        .eq('entity_id', user.id)
+        .maybeSingle(),
 
-    const { data: profileData } = await db
-      .from('profiles')
-      .select('subscription_plan')
-      .eq('id', user.id)
-      .maybeSingle()
+      orgId
+        ? db.from('subscriptions')
+            .select('tier, status, current_period_end, stripe_customer_id, seat_count')
+            .eq('entity_type', 'ORG')
+            .eq('entity_id', orgId)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+    ])
 
-    const subscriptionPlan = profileData?.subscription_plan ?? 'FREE'
+    const userSub = userSubRes.data
+    const orgSub  = orgSubRes.data
 
-    // ── Subscription status ──────────────────────────────────────────────────
+    // Build subscription shape for response (prefer ORG if present, else USER)
+    const activeSub = orgSub ?? userSub
 
-    let subscription = {
-      tier:                 'FREE' as 'FREE' | 'PRO',
-      billing_status:       'INACTIVE',
-      provider:             'MANUAL',
-      period_start:         null as string | null,
-      period_end:           null as string | null,
+    const subscription = {
+      tier:            activeSub?.tier           ?? 'FREE',
+      status:          activeSub?.status         ?? 'TRIALING',
+      period_end:      activeSub?.current_period_end ?? null,
+      // legacy compat fields (settings page reads these)
+      billing_status:  activeSub?.status         ?? 'TRIALING',
+      period_start:    null as string | null,
       cancel_at_period_end: false,
-      grace_until:          null as string | null,
-      last_invoice_at:      null as string | null,
+      grace_until:     null as string | null,
+      last_invoice_at: null as string | null,
     }
 
-    if (orgId) {
-      const { data: sub } = await db
-        .from('subscription_status')
-        .select('tier, billing_status, provider, period_start, period_end, cancel_at_period_end, grace_until, last_invoice_at')
-        .eq('org_id', orgId)
-        .maybeSingle()
-
-      if (sub) {
-        subscription = {
-          tier:                 (sub.tier as 'FREE' | 'PRO') ?? 'FREE',
-          billing_status:       sub.billing_status ?? 'INACTIVE',
-          provider:             sub.provider ?? 'MANUAL',
-          period_start:         sub.period_start ?? null,
-          period_end:           sub.period_end ?? null,
-          cancel_at_period_end: sub.cancel_at_period_end ?? false,
-          grace_until:          sub.grace_until ?? null,
-          last_invoice_at:      sub.last_invoice_at ?? null,
-        }
-      }
-    }
-
-    // ── Platform config limits ────────────────────────────────────────────────
-
+    // Platform config limits
     const { data: config } = await db
       .from('platform_config')
       .select('free_routes_per_month, free_trips_per_month, free_exports_per_month')
       .limit(1)
       .maybeSingle()
 
-    // Unlimited if org is PRO (team/agency pays) OR individual is PREMIUM (self-pays).
-    // Prevents double-charging: a PREMIUM solo gig worker does not need a separate org PRO plan.
-    const isUnlimited = subscription.tier === 'PRO' || subscriptionPlan === 'PREMIUM'
+    const orgTier  = orgSub?.tier  ?? 'FREE'
+    const userTier = userSub?.tier ?? 'FREE'
+    const isPaid   = (t: string) => t === 'PRO' || t === 'PREMIUM'
+    const isUnlimited = isPaid(orgTier) || isPaid(userTier)
 
     const limits = {
       routes_per_month:  isUnlimited ? null : (config?.free_routes_per_month ?? 2),
@@ -100,17 +89,11 @@ export async function GET() {
       exports_per_month: isUnlimited ? null : (config?.free_exports_per_month ?? null),
     }
 
-    // ── Usage this month ──────────────────────────────────────────────────────
-
+    // Usage this month
     const now         = new Date()
     const periodStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
 
-    let usage = {
-      period_start:    periodStart,
-      routes_calls:    0,
-      trips_created:   0,
-      exports_created: 0,
-    }
+    let usage = { period_start: periodStart, routes_calls: 0, trips_created: 0, exports_created: 0 }
 
     if (orgId) {
       const { data: usageRow } = await db
@@ -132,19 +115,26 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json({ subscription, usage, limits, subscription_plan: subscriptionPlan, is_unlimited: isUnlimited })
+    return NextResponse.json({
+      subscription,
+      usage,
+      limits,
+      // Individual user tier (for feature-gating checks)
+      tier:         userTier,
+      is_unlimited: isUnlimited,
+    })
 
   } catch (e) {
     console.error('[api/billing/summary] error:', e)
-    // Always return valid JSON — never let the settings page crash
     return NextResponse.json({
       subscription: {
-        tier: 'FREE', billing_status: 'INACTIVE', provider: 'MANUAL',
-        period_start: null, period_end: null, cancel_at_period_end: false,
-        grace_until: null, last_invoice_at: null,
+        tier: 'FREE', status: 'TRIALING', billing_status: 'TRIALING',
+        period_end: null, period_start: null,
+        cancel_at_period_end: false, grace_until: null, last_invoice_at: null,
       },
       usage: { period_start: '', routes_calls: 0, trips_created: 0, exports_created: 0 },
       limits: { routes_per_month: 2, trips_per_month: null, exports_per_month: null },
+      tier: 'FREE', is_unlimited: false,
     })
   }
 }

@@ -5,7 +5,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 
 type WorkspaceType = 'TEAM' | 'AGENT'
-type Tier = 'FREE' | 'PRO'
+type Tier = 'FREE' | 'PRO' | 'PREMIUM'
 
 type ProvisionResult = {
   org_id: string
@@ -171,7 +171,8 @@ export default function CreateWorkspacePage() {
   const [contactPhone, setContactPhone]   = useState('')
   const [address, setAddress]             = useState('')
   const [notes, setNotes]                 = useState('')
-  const [initialTier, setInitialTier]     = useState<Tier>('FREE')
+  const [initialTier, setInitialTier]     = useState<Tier>('PRO')
+  const [seatCount, setSeatCount]         = useState(1)
   const [loading, setLoading]             = useState(false)
   const [error, setError]                 = useState<string | null>(null)
   const [result, setResult]               = useState<ProvisionResult | null>(null)
@@ -179,7 +180,7 @@ export default function CreateWorkspacePage() {
   function handleReset() {
     setName(''); setOwnerEmail(''); setOwnerName('')
     setContactEmail(''); setContactPhone(''); setAddress(''); setNotes('')
-    setInitialTier('FREE'); setWorkspaceType('TEAM')
+    setInitialTier('PRO'); setSeatCount(1); setWorkspaceType('TEAM')
     setResult(null); setError(null)
   }
 
@@ -201,6 +202,7 @@ export default function CreateWorkspacePage() {
           address:             address.trim() || undefined,
           notes:               notes.trim() || undefined,
           initial_tier:        initialTier,
+          seat_count:          seatCount,
         }),
       })
       const json = await res.json()
@@ -317,23 +319,46 @@ export default function CreateWorkspacePage() {
 
         {/* Section 4: Plan */}
         <div className="bg-white border border-gray-200 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-gray-900 mb-4">Initial Plan</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {(['FREE', 'PRO'] as Tier[]).map((tier) => (
+          <h2 className="text-sm font-semibold text-gray-900 mb-1">Initial Plan</h2>
+          <p className="text-xs text-gray-400 mb-4">
+            Team workspaces are billed per seat. PRO = RM18/seat/month · Premium = RM29/seat/month.
+          </p>
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            {([
+              { tier: 'FREE',    label: 'Free',    desc: '3-month trial — limited access',              color: 'border-gray-400 bg-gray-50 text-gray-700' },
+              { tier: 'PRO',     label: 'Pro',     desc: 'RM18/seat/month — claims + exports',           color: 'border-blue-600 bg-blue-50 text-blue-700' },
+              { tier: 'PREMIUM', label: 'Premium', desc: 'RM29/seat/month — full suite incl. My Earning', color: 'border-violet-600 bg-violet-50 text-violet-700' },
+            ] as { tier: Tier; label: string; desc: string; color: string }[]).map(({ tier, label, desc, color }) => (
               <button key={tier} type="button" onClick={() => setInitialTier(tier)}
-                className={`p-4 rounded-xl border-2 text-left transition-all ${
-                  initialTier === tier ? 'border-blue-600 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                className={`p-3 rounded-xl border-2 text-left transition-all ${
+                  initialTier === tier ? color : 'border-gray-200 bg-white hover:border-gray-300'
                 }`}
               >
-                <div className={`text-sm font-semibold mb-1 ${initialTier === tier ? 'text-blue-700' : 'text-gray-900'}`}>
-                  {tier}
+                <div className={`text-sm font-semibold mb-1 ${initialTier === tier ? '' : 'text-gray-900'}`}>
+                  {label}
                 </div>
-                <div className="text-xs text-gray-500">
-                  {tier === 'FREE' ? '2 route calculations/month (Phase 1 default)' : 'Unlimited route calculations'}
-                </div>
+                <div className="text-xs text-gray-500">{desc}</div>
               </button>
             ))}
           </div>
+
+          {/* Seat count (only relevant for paid plans) */}
+          {initialTier !== 'FREE' && (
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                Number of seats
+              </label>
+              <input
+                type="number" min={1} max={500}
+                value={seatCount}
+                onChange={(e) => setSeatCount(Math.max(1, Number(e.target.value) || 1))}
+                className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Monthly total: RM{(initialTier === 'PRO' ? 18 : 29) * seatCount} / month
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Error */}
@@ -351,7 +376,8 @@ export default function CreateWorkspacePage() {
               { label: 'Type',   value: workspaceType === 'TEAM' ? 'Team Workspace' : 'Agent / Partner Workspace' },
               { label: 'Name',   value: name || '—' },
               { label: 'Owner',  value: ownerEmail || '—' },
-              { label: 'Plan',   value: initialTier },
+              { label: 'Plan',  value: initialTier },
+              { label: 'Seats', value: initialTier === 'FREE' ? '—' : String(seatCount) },
             ].map(({ label, value }) => (
               <div key={label} className="flex items-center justify-between text-sm">
                 <span className="text-gray-500">{label}</span>

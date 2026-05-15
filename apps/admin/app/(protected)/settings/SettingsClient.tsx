@@ -28,7 +28,7 @@ type Org = {
 
 type Sub = {
   org_id: string
-  tier: 'FREE' | 'PRO'
+  tier: 'FREE' | 'PRO' | 'PREMIUM'
   billing_status: string | null
   period_start: string | null
   period_end: string | null
@@ -90,8 +90,9 @@ const TYPE_CFG: Record<string, { label: string; cls: string }> = {
 }
 
 const TIER_CFG: Record<string, { label: string; cls: string }> = {
-  PRO:  { label: 'Pro',  cls: 'bg-blue-50 text-blue-700 font-semibold' },
-  FREE: { label: 'Free', cls: 'bg-gray-100 text-gray-500' },
+  PREMIUM: { label: 'Premium', cls: 'bg-purple-50 text-purple-700 font-semibold' },
+  PRO:     { label: 'Pro',     cls: 'bg-blue-50 text-blue-700 font-semibold' },
+  FREE:    { label: 'Free',    cls: 'bg-gray-100 text-gray-500' },
 }
 
 const STATUS_CFG: Record<string, { label: string; cls: string }> = {
@@ -165,7 +166,7 @@ type PlatformConfig = {
 
 type DrawerState = {
   org: Org
-  tier: 'FREE' | 'PRO'
+  tier: 'FREE' | 'PRO' | 'PREMIUM'
   preset: 'DEFAULT' | 'BETA_UNLIMITED' | 'CUSTOM'
   routes: string
   trips: string
@@ -548,9 +549,10 @@ function InternalView({
               <section className="space-y-3">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Plan</p>
                 <Field label="Subscription tier">
-                  <select value={drawer.tier} onChange={e => setD({ tier: e.target.value as 'FREE' | 'PRO' })} className={SELECT}>
+                  <select value={drawer.tier} onChange={e => setD({ tier: e.target.value as 'FREE' | 'PRO' | 'PREMIUM' })} className={SELECT}>
                     <option value="FREE">Free</option>
-                    <option value="PRO">Pro</option>
+                    <option value="PRO">Pro (RM18/mo)</option>
+                    <option value="PREMIUM">Premium (RM29/mo)</option>
                   </select>
                 </Field>
                 <Field label="Rate template reference">
@@ -762,7 +764,7 @@ function WorkspaceView({
         <CardBody>
           <div className="flex items-center gap-3">
             <span className={`inline-flex px-3 py-1 rounded-full text-sm font-semibold ${TIER_CFG[tier].cls}`}>
-              {tier === 'PRO' ? 'Pro Plan' : 'Free Plan'}
+              {tier === 'PREMIUM' ? 'Premium Plan' : tier === 'PRO' ? 'Pro Plan' : 'Free Plan'}
             </span>
             {billingStatus && billingStatus !== 'INACTIVE' && (
               <span className="text-xs text-gray-500 capitalize">{billingStatus.toLowerCase()}</span>

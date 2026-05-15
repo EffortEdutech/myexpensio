@@ -1,6 +1,9 @@
 // apps/console/app/api/console/users/route.ts
 // GET   /api/console/users — all platform users, searchable
 // PATCH /api/console/users — update platform role (SUPER_ADMIN only)
+//
+// NOTE: individual subscription tier is read from the unified `subscriptions`
+// table (entity_type='USER') — NOT from profiles.subscription_plan (dropped).
 
 import { NextResponse } from 'next/server'
 import { requireConsoleAuth } from '@/lib/auth'
@@ -27,7 +30,7 @@ export async function GET(req: Request) {
     .from('profiles')
     .select(
       `
-      id, email, display_name, role, department, subscription_plan, created_at,
+      id, email, display_name, role, department, created_at,
       org_members (
         org_id, org_role, status,
         organizations ( id, name, workspace_type )
@@ -50,6 +53,22 @@ export async function GET(req: Request) {
     return err('SERVER_ERROR', 'Failed to fetch users', 500)
   }
 
+  const userIds = (data ?? []).map((u) => u.id)
+
+  // Batch-fetch USER subscriptions from the unified subscriptions table
+  const { data: subRows } = userIds.length
+    ? await db
+        .from('subscriptions')
+        .select('entity_id, tier, status, is_trial:status, trial_days_left:trial_expires_at')
+        .eq('entity_type', 'USER')
+        .in('entity_id', userIds)
+    : { data: [] }
+
+  // We just need tier + status per user
+  const subByUser = Object.fromEntries(
+    (subRows ?? []).map((s) => [s.entity_id, { tier: s.tier, status: s.status }]),
+  )
+
   const users = (data ?? []).map((row) => {
     const memberships = (row.org_members ?? []).map((m: Record<string, unknown>) => ({
       org_id:         m.org_id,
@@ -59,7 +78,8 @@ export async function GET(req: Request) {
         ? m.organizations[0] ?? null
         : m.organizations,
     }))
-    return { ...row, org_members: undefined, memberships }
+    const sub = subByUser[row.id] ?? { tier: 'FREE', status: 'TRIALING' }
+    return { ...row, org_members: undefined, memberships, tier: sub.tier, sub_status: sub.status }
   })
 
   return NextResponse.json({ users, total: count ?? 0, page, pageSize })

@@ -9,7 +9,7 @@ import WorkspaceMembersDrawer from '@/components/WorkspaceMembersDrawer'
 import WorkspaceEditDrawer, { type EditableWorkspace } from '@/components/WorkspaceEditDrawer'
 import AgentReferralsDrawer from '@/components/AgentReferralsDrawer'
 
-type Subscription = { tier: 'FREE' | 'PRO'; billing_status: string; period_end: string | null }
+type Subscription = { tier: 'FREE' | 'PRO' | 'PREMIUM'; status: string; current_period_end: string | null }
 
 type Workspace = {
   id: string
@@ -21,7 +21,7 @@ type Workspace = {
   address: string | null
   notes: string | null
   created_at: string
-  subscription_status: Subscription | null
+  subscription: Subscription | null
   active_member_count: number
   total_member_count: number
 }
@@ -54,13 +54,14 @@ function StatusBadge({ status }: { status: string }) {
 
 function TierBillingCell({ sub }: { sub: Subscription | null }) {
   if (!sub) return <span className="text-xs text-gray-300">—</span>
+  const tierCls = sub.tier === 'PREMIUM' ? 'bg-purple-50 text-purple-700' : sub.tier === 'PRO' ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-500'
   return (
     <>
-      <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${sub.tier === 'PRO' ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+      <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${tierCls}`}>
         {sub.tier}
       </span>
-      <div className={`text-xs mt-0.5 ${sub.billing_status === 'PAST_DUE' ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
-        {sub.billing_status}
+      <div className={`text-xs mt-0.5 ${sub.status === 'PAST_DUE' ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+        {sub.status}
       </div>
     </>
   )
@@ -154,7 +155,7 @@ export default function WorkspacesPage() {
       contact_phone:       w.contact_phone ?? null,
       address:             w.address ?? null,
       notes:               w.notes ?? null,
-      subscription_status: w.subscription_status,
+      subscription: w.subscription,
     }
   }
 
@@ -261,7 +262,7 @@ export default function WorkspacesPage() {
                       </td>
                       <td className="px-4 py-3"><TypeBadge type={w.workspace_type} /></td>
                       <td className="px-4 py-3"><StatusBadge status={w.status} /></td>
-                      <td className="px-4 py-3"><TierBillingCell sub={w.subscription_status} /></td>
+                      <td className="px-4 py-3"><TierBillingCell sub={w.subscription} /></td>
                       <td className="px-4 py-3"><MemberAvatars count={w.active_member_count} /></td>
                       <td className="px-4 py-3 text-xs text-gray-400">{fmt(w.created_at)}</td>
                       <td className="px-4 py-3">

@@ -46,7 +46,7 @@ export default async function ConsoleDashboardPage() {
     db.from('export_jobs').select('status').gte('created_at', monthStart),
     db.from('invitation_requests').select('id', { count: 'exact', head: true }).eq('status', 'PENDING'),
     db.from('export_jobs').select('id', { count: 'exact', head: true }).eq('status', 'FAILED').gte('created_at', monthStart),
-    db.from('subscription_status').select('org_id', { count: 'exact', head: true }).eq('billing_status', 'PAST_DUE'),
+    db.from('subscriptions').select('entity_id', { count: 'exact', head: true }).eq('entity_type', 'ORG').eq('status', 'PAST_DUE'),
   ])
 
   const orgs   = orgsRes.data ?? []

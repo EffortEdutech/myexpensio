@@ -74,12 +74,16 @@ export async function PATCH(req: Request, { params }: Params) {
 
   const patch: Record<string, unknown> = {}
 
-  if (body.name      !== undefined) patch.name       = body.name?.trim() || null
-  if (body.amount    !== undefined) patch.amount      = Number(body.amount)
-  if (body.due_day   !== undefined) patch.due_day     = Number(body.due_day)
-  if (body.end_date  !== undefined) patch.end_date    = body.end_date || null
-  if (body.notes     !== undefined) patch.notes       = body.notes?.trim() || null
-  if (body.is_active !== undefined) patch.is_active   = Boolean(body.is_active)
+  if (body.name                 !== undefined) patch.name                  = body.name?.trim() || null
+  if (body.amount               !== undefined) patch.amount                 = Number(body.amount)
+  if (body.due_day              !== undefined) patch.due_day                = Number(body.due_day)
+  if (body.end_date             !== undefined) patch.end_date               = body.end_date || null
+  if (body.notes                !== undefined) patch.notes                  = body.notes?.trim() || null
+  if (body.is_active            !== undefined) patch.is_active              = Boolean(body.is_active)
+  if (body.is_tax_relief        !== undefined) patch.is_tax_relief          = Boolean(body.is_tax_relief)
+  if (body.tax_category         !== undefined) patch.tax_category           = body.tax_category?.trim() || null
+  if (body.document_url         !== undefined) patch.document_url           = body.document_url?.trim() || null
+  if (body.document_storage_path !== undefined) patch.document_storage_path = body.document_storage_path?.trim() || null
   if (body.category  !== undefined) {
     if (!VALID_CATEGORIES.includes(body.category))
       return err('VALIDATION_ERROR', `Invalid category`, 400)

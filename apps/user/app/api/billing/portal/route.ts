@@ -4,6 +4,10 @@
 // Creates a Stripe Customer Portal session so the user can manage
 // their subscription (cancel, update card, download invoices, etc.)
 //
+// Looks up Stripe customer ID from the unified subscriptions table:
+//   1. Check USER subscription (individual plan)
+//   2. Fall back to ORG subscription (team workspace plan)
+//
 // Body: { return_url }
 
 import { NextResponse } from 'next/server'
@@ -16,41 +20,52 @@ function err(code: string, message: string, status: number) {
 }
 
 export async function POST(req: Request) {
-  // Auth
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return err('UNAUTHORIZED', 'Not authenticated', 401)
 
   const body = await req.json().catch(() => null)
   const return_url = body?.return_url
-
   if (!return_url) return err('VALIDATION_ERROR', 'return_url required', 400)
 
-  // Get org_id
   const db = createServiceRoleClient()
-  const { data: membership } = await db
-    .from('org_members')
-    .select('org_id')
-    .eq('user_id', user.id)
-    .eq('status', 'ACTIVE')
-    .limit(1)
-    .maybeSingle()
 
-  if (!membership?.org_id) return err('NOT_FOUND', 'No active workspace found', 404)
-
-  // Get Stripe customer ID
-  const { data: subStatus } = await db
-    .from('subscription_status')
+  // Try USER subscription first (individual Stripe customer)
+  const { data: userSub } = await db
+    .from('subscriptions')
     .select('stripe_customer_id')
-    .eq('org_id', membership.org_id)
+    .eq('entity_type', 'USER')
+    .eq('entity_id', user.id)
     .maybeSingle()
 
-  const customerId = subStatus?.stripe_customer_id
+  let customerId = userSub?.stripe_customer_id ?? null
+
+  // Fall back to ORG subscription (team workspace)
+  if (!customerId) {
+    const { data: membership } = await db
+      .from('org_members')
+      .select('org_id')
+      .eq('user_id', user.id)
+      .eq('status', 'ACTIVE')
+      .limit(1)
+      .maybeSingle()
+
+    if (membership?.org_id) {
+      const { data: orgSub } = await db
+        .from('subscriptions')
+        .select('stripe_customer_id')
+        .eq('entity_type', 'ORG')
+        .eq('entity_id', membership.org_id)
+        .maybeSingle()
+
+      customerId = orgSub?.stripe_customer_id ?? null
+    }
+  }
+
   if (!customerId) {
     return err('NOT_FOUND', 'No billing account found. Please upgrade first.', 404)
   }
 
-  // Create portal session
   const stripeKey = process.env.STRIPE_SECRET_KEY
   if (!stripeKey) return err('CONFIGURATION_ERROR', 'Stripe is not configured', 500)
 

@@ -11,7 +11,8 @@ export type EditableUser = {
   display_name: string | null
   role: string
   department: string | null
-  subscription_plan: string | null
+  tier: string | null          // from subscriptions table (FREE | PRO | PREMIUM)
+  sub_status: string | null    // TRIALING | ACTIVE | PAST_DUE | CANCELLED | EXPIRED
   memberships: Array<{
     org_id: string
     org_role: string
@@ -60,26 +61,26 @@ const PLATFORM_ROLE_DESCRIPTIONS: Record<string, string> = {
   SUPER_ADMIN: 'Super Admin — full platform control',
 }
 
-const SUBSCRIPTION_PLAN_DESCRIPTIONS: Record<string, string> = {
-  FREE:     'Personal Space + Work Space only. No Business Space.',
-  STANDARD: 'Reserved — same as FREE for now (future mid-tier).',
-  PREMIUM:  'Full access — Personal, Business, and Work Spaces.',
+const SUBSCRIPTION_TIER_DESCRIPTIONS: Record<string, string> = {
+  FREE:    '3-month trial only. Limited access — no exports, no Business Space.',
+  PRO:     'RM18/month — unlocks Advanced Exports (PDF / Excel).',
+  PREMIUM: 'RM29/month — full suite incl. My Earning (Business Space + P&L + LHDN tax).',
 }
 
 const PLAN_CLS: Record<string, string> = {
-  FREE:     'border-gray-200 hover:border-gray-300',
-  STANDARD: 'border-amber-200 hover:border-amber-300',
-  PREMIUM:  'border-violet-200 hover:border-violet-300',
+  FREE:    'border-gray-200 hover:border-gray-300',
+  PRO:     'border-blue-200 hover:border-blue-300',
+  PREMIUM: 'border-violet-200 hover:border-violet-300',
 }
 const PLAN_ACTIVE_CLS: Record<string, string> = {
-  FREE:     'border-gray-500 bg-gray-50',
-  STANDARD: 'border-amber-500 bg-amber-50',
-  PREMIUM:  'border-violet-600 bg-violet-50',
+  FREE:    'border-gray-500 bg-gray-50',
+  PRO:     'border-blue-600 bg-blue-50',
+  PREMIUM: 'border-violet-600 bg-violet-50',
 }
 const PLAN_TEXT_CLS: Record<string, string> = {
-  FREE:     'text-gray-700',
-  STANDARD: 'text-amber-700',
-  PREMIUM:  'text-violet-700',
+  FREE:    'text-gray-700',
+  PRO:     'text-blue-700',
+  PREMIUM: 'text-violet-700',
 }
 
 // ── Membership role row ────────────────────────────────────────────────────────
@@ -231,7 +232,7 @@ export default function UserEditDrawer({
   const [displayName, setDisplayName] = useState(user.display_name ?? '')
   const [department, setDepartment]   = useState(user.department ?? '')
   const [platformRole, setPlatformRole] = useState(user.role)
-  const [subscriptionPlan, setSubscriptionPlan] = useState(user.subscription_plan ?? 'FREE')
+  const [subscriptionTier, setSubscriptionTier] = useState(user.tier ?? 'FREE')
   const [planNote, setPlanNote] = useState('')
 
   // Local memberships state — updated when org_role changes succeed
@@ -252,13 +253,13 @@ export default function UserEditDrawer({
   async function handleSave() {
     setLoading(true); setError(null)
     try {
-      // 1. Update profile (name + department + subscription_plan if changed)
+      // 1. Update profile (name + department) and optionally tier
       const profilePayload: Record<string, unknown> = {
         display_name: displayName.trim() || null,
         department:   department.trim() || null,
       }
-      if (subscriptionPlan !== (user.subscription_plan ?? 'FREE') && isSuperAdmin) {
-        profilePayload.subscription_plan = subscriptionPlan
+      if (subscriptionTier !== (user.tier ?? 'FREE') && isSuperAdmin) {
+        profilePayload.tier = subscriptionTier
         profilePayload.note = planNote.trim() || undefined
       }
 
@@ -415,24 +416,24 @@ export default function UserEditDrawer({
             </p>
             {isSuperAdmin ? (
               <div className="space-y-2">
-                {(['FREE', 'STANDARD', 'PREMIUM'] as const).map((plan) => (
-                  <label key={plan}
+                {(['FREE', 'PRO', 'PREMIUM'] as const).map((t) => (
+                  <label key={t}
                     className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
-                      subscriptionPlan === plan ? PLAN_ACTIVE_CLS[plan] : PLAN_CLS[plan]
+                      subscriptionTier === t ? PLAN_ACTIVE_CLS[t] : PLAN_CLS[t]
                     }`}>
-                    <input type="radio" name="subscriptionPlan" value={plan} checked={subscriptionPlan === plan}
-                      onChange={() => setSubscriptionPlan(plan)} className="mt-0.5 flex-shrink-0" />
+                    <input type="radio" name="subscriptionTier" value={t} checked={subscriptionTier === t}
+                      onChange={() => setSubscriptionTier(t)} className="mt-0.5 flex-shrink-0" />
                     <div>
-                      <div className={`text-sm font-semibold ${subscriptionPlan === plan ? PLAN_TEXT_CLS[plan] : 'text-gray-900'}`}>
-                        {plan}
+                      <div className={`text-sm font-semibold ${subscriptionTier === t ? PLAN_TEXT_CLS[t] : 'text-gray-900'}`}>
+                        {t}
                       </div>
-                      <div className="text-xs text-gray-500 mt-0.5">{SUBSCRIPTION_PLAN_DESCRIPTIONS[plan]}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{SUBSCRIPTION_TIER_DESCRIPTIONS[t]}</div>
                     </div>
                   </label>
                 ))}
-                {subscriptionPlan !== (user.subscription_plan ?? 'FREE') && (
+                {subscriptionTier !== (user.tier ?? 'FREE') && (
                   <div className="mt-2">
-                    <label className={`block text-xs font-medium text-gray-500 mb-1`}>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">
                       Reason / note for audit log
                     </label>
                     <input
@@ -443,7 +444,7 @@ export default function UserEditDrawer({
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
                     />
                     <p className="mt-1.5 text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">
-                      ⚠️ Changing from <strong>{user.subscription_plan ?? 'FREE'}</strong> → <strong>{subscriptionPlan}</strong>. This will immediately affect the user&apos;s feature access.
+                      ⚠️ Changing from <strong>{user.tier ?? 'FREE'}</strong> → <strong>{subscriptionTier}</strong>. This will immediately affect the user&apos;s feature access.
                     </p>
                   </div>
                 )}
@@ -451,7 +452,7 @@ export default function UserEditDrawer({
             ) : (
               <div className="flex items-center gap-2 px-3 py-3 border border-gray-200 rounded-lg bg-gray-50">
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">
-                  {user.subscription_plan ?? 'FREE'}
+                  {user.tier ?? 'FREE'}
                 </span>
                 <span className="text-xs text-gray-500">Plan changes require SUPER_ADMIN</span>
               </div>

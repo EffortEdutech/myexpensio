@@ -12,7 +12,9 @@ type Membership = {
 
 type User = {
   id: string; email: string | null; display_name: string | null
-  role: string; department: string | null; subscription_plan: string | null; created_at: string
+  role: string; department: string | null
+  tier: string | null; sub_status: string | null
+  created_at: string
   memberships: Membership[]
 }
 
@@ -55,16 +57,21 @@ function TypePill({ type }: { type: string }) {
   return <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${cls[type] ?? 'bg-gray-100 text-gray-500'}`}>{type}</span>
 }
 
-function PlanBadge({ plan }: { plan: string | null }) {
-  const p = plan ?? 'FREE'
+function TierBadge({ tier, subStatus }: { tier: string | null; subStatus: string | null }) {
+  const t = tier ?? 'FREE'
   const cls: Record<string, string> = {
-    FREE:     'bg-gray-100 text-gray-500',
-    STANDARD: 'bg-amber-50 text-amber-700',
-    PREMIUM:  'bg-violet-100 text-violet-700',
+    FREE:    'bg-gray-100 text-gray-500',
+    PRO:     'bg-blue-50 text-blue-700',
+    PREMIUM: 'bg-violet-100 text-violet-700',
   }
+  const label = t === 'FREE'
+    ? (subStatus === 'EXPIRED' ? 'Expired' : 'Trial')
+    : t
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cls[p] ?? 'bg-gray-100 text-gray-500'}`}>
-      {p === 'PREMIUM' && <span className="mr-1">★</span>}{p}
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${cls[t] ?? 'bg-gray-100 text-gray-500'}`}>
+      {t === 'PREMIUM' && <span>★</span>}
+      {t === 'PRO'     && <span>★</span>}
+      {label}
     </span>
   )
 }
@@ -97,7 +104,8 @@ export default function UsersPage() {
   const PAGE_SIZE = 25
   const superAdminCount = users.filter((u) => u.role === 'SUPER_ADMIN').length
   const supportCount    = users.filter((u) => u.role === 'SUPPORT').length
-  const premiumCount    = users.filter((u) => u.subscription_plan === 'PREMIUM').length
+  const paidCount       = users.filter((u) => u.tier === 'PRO' || u.tier === 'PREMIUM').length
+  const premiumCount    = users.filter((u) => u.tier === 'PREMIUM').length
 
   const fetchUsers = useCallback(async (p: number) => {
     setLoading(true)
@@ -146,10 +154,10 @@ export default function UsersPage() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <KPICard label="Total users"    value={total}           sub="across all workspaces" />
-        <KPICard label="Premium"        value={premiumCount}    sub="Business Space enabled" variant="up" />
-        <KPICard label="Super Admins"   value={superAdminCount} sub="EffortEdutech staff"    variant="warn" />
-        <KPICard label="Support staff"  value={supportCount}    sub="Console access" />
+        <KPICard label="Total users"   value={total}           sub="across all workspaces" />
+        <KPICard label="Paid users"    value={paidCount}       sub={`Pro + Premium (${premiumCount} Premium)`} variant="up" />
+        <KPICard label="Super Admins"  value={superAdminCount} sub="EffortEdutech staff"    variant="warn" />
+        <KPICard label="Support staff" value={supportCount}    sub="Console access" />
       </div>
 
       {/* Filters */}
@@ -211,7 +219,7 @@ export default function UsersPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3"><PlanBadge plan={u.subscription_plan} /></td>
+                      <td className="px-4 py-3"><TierBadge tier={u.tier} subStatus={u.sub_status} /></td>
                       <td className="px-4 py-3"><PlatformRoleBadge role={u.role} /></td>
                       <td className="px-4 py-3">
                         {activeMemberships.length === 0 ? (
@@ -241,13 +249,14 @@ export default function UsersPage() {
                       <td className="px-4 py-3">
                         <button
                           onClick={() => setEditTarget({
-                            id:                u.id,
-                            email:             u.email,
-                            display_name:      u.display_name,
-                            role:              u.role,
-                            department:        u.department,
-                            subscription_plan: u.subscription_plan,
-                            memberships:       u.memberships,
+                            id:           u.id,
+                            email:        u.email,
+                            display_name: u.display_name,
+                            role:         u.role,
+                            department:   u.department,
+                            tier:         u.tier,
+                            sub_status:   u.sub_status,
+                            memberships:  u.memberships,
                           })}
                           className="text-xs text-blue-600 hover:text-blue-800 font-medium"
                         >

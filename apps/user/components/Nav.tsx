@@ -1,8 +1,8 @@
 'use client'
 // apps/user/components/Nav.tsx
 // Bottom tab navigation bar — shared across all (app) pages.
-// 6 tabs: Home · Trips · Claims · Transactions · Exports · Settings
-// Slightly smaller icons + labels to fit 6 tabs on narrow screens.
+// 5 tabs: Home · Trips · Claims · Transactions · Export
+// Settings moved to header profile dropdown.
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -20,7 +20,6 @@ const TABS: Tab[] = [
   { href: '/claims',       label: 'Claims',       icon: '📋',  iconActive: '📋'  },
   { href: '/transactions', label: 'Transactions', icon: '💳',  iconActive: '💳'  },
   { href: '/exports',      label: 'Export',       icon: '📤',  iconActive: '📤'  },
-  { href: '/settings',     label: 'Settings',     icon: '⚙️',  iconActive: '⚙️'  },
 ]
 
 export function Nav() {

@@ -3,7 +3,6 @@
 // Business Space profit dashboard — monthly snapshot + 12-month bar chart.
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -143,21 +142,6 @@ export default function BusinessDashboard() {
         </div>
       )}
 
-      {/* Quick actions */}
-      <div style={S.actions}>
-        <Link href="/business/add-income"  style={{ ...S.actionBtn, backgroundColor: '#f0fdf4', color: '#15803d' }}>
-          + Add Income
-        </Link>
-        <Link href="/business/add-expense" style={{ ...S.actionBtn, backgroundColor: '#fef2f2', color: '#dc2626' }}>
-          + Add Expense
-        </Link>
-      </div>
-
-      {/* Quick links */}
-      <div style={S.linksRow}>
-        <Link href="/business/income"   style={S.linkBtn}>View Income →</Link>
-        <Link href="/business/expenses" style={S.linkBtn}>View Expenses →</Link>
-      </div>
     </div>
   )
 }
@@ -189,8 +173,4 @@ const S: Record<string, React.CSSProperties> = {
   chartLegend:  { display: 'flex', gap: 16, marginTop: 10 },
   legendIncome: { fontSize: 11, color: '#16a34a' },
   legendExpense:{ fontSize: 11, color: '#dc2626' },
-  actions:      { display: 'flex', gap: 10 },
-  actionBtn:    { flex: 1, display: 'block', textAlign: 'center', padding: '14px 0', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none' },
-  linksRow:     { display: 'flex', gap: 10 },
-  linkBtn:      { flex: 1, display: 'block', textAlign: 'center', padding: '12px 0', borderRadius: 12, backgroundColor: '#f8fafc', color: '#475569', fontWeight: 600, fontSize: 13, textDecoration: 'none' },
 }

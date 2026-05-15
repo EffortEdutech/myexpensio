@@ -10,7 +10,7 @@
 //   4. Upsert org_members           (idempotent)
 //   5. Mark invitation ACCEPTED
 //   6. Write audit log              (INVITE_ACCEPTED)
-//   7. Ensure subscription_status row exists for the org (FREE default)
+//   7. Ensure subscriptions row exists for the org (FREE/TRIALING default)
 //
 // Response (200): { success: true, org_member: { org_id, user_id, org_role } }
 //
@@ -190,12 +190,14 @@ export async function POST(request: NextRequest) {
     },
   })
 
-  // ── 8. Ensure subscription_status row exists for the org ────────────────
+  // ── 8. Ensure subscriptions row exists for the org (FREE/TRIALING default) ──
   // Idempotent — org may already have been provisioned by a previous member.
   await admin
-    .from('subscription_status')
-    .upsert({ org_id: invite.org_id, tier: 'FREE' }, { onConflict: 'org_id' })
-    .select()    // suppress "no rows affected" warning
+    .from('subscriptions')
+    .upsert(
+      { entity_type: 'ORG', entity_id: invite.org_id, tier: 'FREE', status: 'TRIALING' },
+      { onConflict: 'entity_type,entity_id', ignoreDuplicates: true }
+    )
 
   // ── Done ─────────────────────────────────────────────────────────────────
   return NextResponse.json({
