@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.2.0](https://github.com/EffortEdutech/myexpensio/compare/v4.1.3...v4.2.0) (2026-05-17)
+
+
+### Features
+
+* polish 3 tier UX ([4767dde](https://github.com/EffortEdutech/myexpensio/commit/4767dde058b639e5f44df5399294dac388d51a47))
+
+
+### Bug Fixes
+
+* add PREMIUM to entitlements tier type — resolves TS build error ([9181553](https://github.com/EffortEdutech/myexpensio/commit/9181553458e0299370decf0428cfd7aaa747f7e5))
+
 ### [4.1.3](https://github.com/EffortEdutech/myexpensio/compare/v4.1.2...v4.1.3) (2026-05-15)
 
 ### [4.1.2](https://github.com/EffortEdutech/myexpensio/compare/v4.1.1...v4.1.2) (2026-05-14)
