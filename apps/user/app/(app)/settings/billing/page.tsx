@@ -78,7 +78,7 @@ const PLANS: PlanOption[] = [
 const FREE_FEATURES = [
   '2 route calculations / month',
   'Unlimited trips',
-  'Unlimited exports',
+  'Exports not included',
   'Claims management',
   'TNG statement import',
   'Receipt scanning',
@@ -212,7 +212,7 @@ export default function BillingPage() {
       {/* Checkout result banners */}
       {checkoutResult === 'success' && (
         <div style={banner('green')}>
-          ✓ Payment confirmed! Your plan will be upgraded shortly. Refresh in a moment if it hasn't updated.
+          ✓ Payment confirmed! Your plan will be upgraded shortly. Refresh in a moment if it hasn&apos;t updated.
         </div>
       )}
       {checkoutResult === 'cancel' && (
@@ -267,7 +267,7 @@ export default function BillingPage() {
             </button>
             {portalErr && <div style={{ marginTop: 8, fontSize: 12, color: '#dc2626' }}>{portalErr}</div>}
             <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
-              Opens Stripe's secure portal to update payment method, switch plans, or cancel.
+              Opens Stripe&apos;s secure portal to update payment method, switch plans, or cancel.
             </div>
           </div>
         </div>
@@ -293,79 +293,71 @@ export default function BillingPage() {
         </div>
       )}
 
-      {/* ── Free plan features ── */}
-      {!isPaid && (
-        <div style={{ ...card, marginBottom: 20 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', marginBottom: 8 }}>What you have now (Free)</div>
-          <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {FREE_FEATURES.map((f) => (
-              <li key={f} style={{ fontSize: 13, color: '#374151', display: 'flex', gap: 8 }}>
-                <span style={{ color: '#94a3b8' }}>—</span> {f}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       {/* ── Upgrade section (FREE users) ── */}
       {!isPaid && (
         <div style={card}>
           <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>
-            Upgrade your plan
+            Compare plans
           </div>
           <div style={{ fontSize: 13, color: '#64748b', marginBottom: 20 }}>
-            Unlock unlimited access and powerful business tools.
+            Free is for trial use. Upgrade to Pro or Premium to export claims.
           </div>
 
           {/* Plan cards */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(180px, 1fr))', gap: 12, marginBottom: 20, overflowX: 'auto' }}>
+            <div style={{ padding: 16, borderRadius: 12, border: '1px solid #e2e8f0', background: '#f8fafc', minWidth: 180 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 18 }}>🆓</span>
+                <span style={{ fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Free</span>
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', marginBottom: 6 }}>
+                RM0<span style={{ fontSize: 12, fontWeight: 400, color: '#94a3b8' }}>/mo</span>
+              </div>
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10 }}>Trial plan with export locked.</div>
+              <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {FREE_FEATURES.map((f) => (
+                  <li key={f} style={{ fontSize: 12, color: f === 'Exports not included' ? '#dc2626' : '#374151', display: 'flex', gap: 6 }}>
+                    <span style={{ color: f === 'Exports not included' ? '#dc2626' : '#94a3b8', fontWeight: 700 }}>{f === 'Exports not included' ? '×' : '✓'}</span> {f}
+                  </li>
+                ))}
+              </ul>
+            </div>
             {PLANS.map((plan) => {
               const isSelected = selected.tier === plan.tier
               return (
                 <label
                   key={plan.tier}
                   style={{
-                    display:        'flex',
-                    alignItems:     'flex-start',
-                    gap:            14,
                     padding:        '16px',
                     borderRadius:   12,
                     cursor:         'pointer',
                     border:         isSelected ? '2px solid #4f46e5' : '1px solid #e2e8f0',
                     background:     isSelected ? '#f5f3ff' : '#fff',
                     position:       'relative',
+                    minWidth:       180,
                   }}
                 >
-                  <input
-                    type="radio"
-                    name="plan"
-                    checked={isSelected}
-                    onChange={() => setSelected(plan)}
-                    style={{ marginTop: 3, accentColor: '#4f46e5', width: 16, height: 16, flexShrink: 0 }}
-                  />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <span style={{ fontSize: 18 }}>{plan.icon}</span>
-                      <span style={{ fontSize: 16, fontWeight: 800, color: '#0f172a' }}>{plan.name}</span>
-                      {plan.badge && (
-                        <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: '#d1fae5', color: '#065f46' }}>
-                          {plan.badge}
-                        </span>
-                      )}
-                      <span style={{ marginLeft: 'auto', fontSize: 18, fontWeight: 800, color: '#0f172a' }}>
-                        RM{plan.price}
-                        <span style={{ fontSize: 12, fontWeight: 400, color: '#94a3b8' }}>/mo</span>
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>{plan.description}</div>
-                    <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {plan.features.map((f) => (
-                        <li key={f} style={{ fontSize: 12, color: '#374151', display: 'flex', gap: 6 }}>
-                          <span style={{ color: '#059669', fontWeight: 700 }}>✓</span> {f}
-                        </li>
-                      ))}
-                    </ul>
+                  <input type="radio" name="plan" checked={isSelected} onChange={() => setSelected(plan)} style={{ position: 'absolute', top: 14, right: 14, accentColor: '#4f46e5' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, paddingRight: 20 }}>
+                    <span style={{ fontSize: 18 }}>{plan.icon}</span>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: '#0f172a' }}>{plan.name}</span>
                   </div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', marginBottom: 6 }}>
+                    RM{plan.price}<span style={{ fontSize: 12, fontWeight: 400, color: '#94a3b8' }}>/mo</span>
+                  </div>
+                  {plan.badge && (
+                    <span style={{ display: 'inline-flex', fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: '#d1fae5', color: '#065f46', marginBottom: 8 }}>
+                      {plan.badge}
+                    </span>
+                  )}
+                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10 }}>{plan.description}</div>
+                  <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {plan.features.map((f) => (
+                      <li key={f} style={{ fontSize: 12, color: '#374151', display: 'flex', gap: 6 }}>
+                        <span style={{ color: '#059669', fontWeight: 700 }}>✓</span> {f}
+                      </li>
+                    ))}
+                  </ul>
                 </label>
               )
             })}

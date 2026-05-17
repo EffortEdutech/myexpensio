@@ -41,6 +41,20 @@ function generateTempPassword(): string {
   return pwd
 }
 
+function getUserAppLoginUrl(): string {
+  return process.env.USER_APP_LOGIN_URL?.trim()
+    || `${process.env.NEXT_PUBLIC_USER_APP_URL?.trim() || 'https://myexpensio-jade.vercel.app'}/login`
+}
+
+function getWorkspaceAppLoginUrl(): string {
+  return process.env.WORKSPACE_APP_LOGIN_URL?.trim()
+    || `${process.env.NEXT_PUBLIC_WORKSPACE_APP_URL?.trim() || 'https://myexpensio-admin.vercel.app'}/login`
+}
+
+function getLoginUrl(orgRole: string): string {
+  return orgRole === 'EMPLOYEE' ? getUserAppLoginUrl() : getWorkspaceAppLoginUrl()
+}
+
 export async function PATCH(req: Request, { params }: Params) {
   const ctx = await requireConsoleAuth('api')
   if (!ctx) return err('UNAUTHORIZED', 'Access denied', 403)
@@ -133,14 +147,14 @@ export async function PATCH(req: Request, { params }: Params) {
   // ── EXECUTE ──────────────────────────────────────────────────────────────────
 
   if (action === 'execute') {
-    if (request.status !== 'APPROVED') {
-      return err('CONFLICT', `Request must be APPROVED before executing. Current status: ${request.status}`, 409)
+    if (!['APPROVED', 'FAILED'].includes(request.status)) {
+      return err('CONFLICT', `Request must be APPROVED or FAILED before executing. Current status: ${request.status}`, 409)
     }
 
     const email       = request.requested_email as string
     const workspaceId = request.workspace_id    as string
     const orgRole     = request.requested_role  as string
-    const userAppUrl  = process.env.NEXT_PUBLIC_USER_APP_URL ?? 'https://myexpensio-jade.vercel.app'
+    const loginUrl    = getLoginUrl(orgRole)
 
     async function markFailed(reason: string) {
       await db
@@ -229,7 +243,7 @@ export async function PATCH(req: Request, { params }: Params) {
           to:                      email,
           orgName,
           tempPassword,
-          loginUrl:                `${userAppUrl}/login`,
+          loginUrl,
           displayName:             null,
           defaultRateTemplateName: null,
         })
@@ -237,6 +251,14 @@ export async function PATCH(req: Request, { params }: Params) {
       } catch (mailErr) {
         emailError = String(mailErr)
         console.error('[execute] sendOnboardingEmail failed:', mailErr)
+        await db
+          .from('org_members')
+          .delete()
+          .eq('org_id', workspaceId)
+          .eq('user_id', userId)
+        if (!userExisted) await db.auth.admin.deleteUser(userId).catch(() => undefined)
+        await markFailed(`onboarding email failed: ${emailError}`)
+        return err('SERVER_ERROR', 'Onboarding email could not be sent. The request was marked FAILED for retry.', 500)
       }
     }
 

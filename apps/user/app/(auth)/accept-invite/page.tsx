@@ -64,10 +64,12 @@ function AcceptInviteContent() {
   const [errorMsg, setErrorMsg]     = useState<string>('')
 
   // Form fields
-  const [displayName,     setDisplayName]     = useState('')
-  const [password,        setPassword]        = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [formError,       setFormError]       = useState<string | null>(null)
+  const [displayName,      setDisplayName]      = useState('')
+  const [password,         setPassword]         = useState('')
+  const [confirmPassword,  setConfirmPassword]  = useState('')
+  const [consentTerms,     setConsentTerms]     = useState(false)
+  const [consentMarketing, setConsentMarketing] = useState(false)
+  const [formError,        setFormError]        = useState<string | null>(null)
 
   // ── Step 1: validate the invite on mount ──────────────────────────────────
   useEffect(() => {
@@ -102,6 +104,10 @@ function AcceptInviteContent() {
     setFormError(null)
 
     // Client-side validation
+    if (!consentTerms) {
+      setFormError('You must agree to the Terms of Service and Privacy Policy to continue.')
+      return
+    }
     if (!password) {
       setFormError('Password is required.')
       return
@@ -127,11 +133,16 @@ function AcceptInviteContent() {
       return
     }
 
-    // Provision org membership server-side
+    // Provision org membership server-side (includes PDPA consent)
     const res  = await fetch('/api/invite/accept', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ invite_id: inviteId, display_name: displayName }),
+      body:    JSON.stringify({
+        invite_id:          inviteId,
+        display_name:       displayName,
+        consent_terms:      consentTerms,
+        consent_marketing:  consentMarketing,
+      }),
     })
     const json = await res.json()
 
@@ -237,12 +248,66 @@ function AcceptInviteContent() {
           />
         </Field>
 
+        {/* ── PDPA Consent Section ── */}
+        <div style={S.consentBox}>
+          <p style={S.consentTitle}>🇲🇾 Your consent</p>
+
+          {/* Data summary — informed consent */}
+          <p style={S.consentSummary}>
+            By joining, myexpensio will collect your <strong>name, email address</strong>, and{' '}
+            <strong>trip / mileage data</strong> to provide expense tracking and reimbursement services.
+            We do not sell your data.
+          </p>
+
+          {/* Required: Terms + Privacy */}
+          <label style={S.checkRow}>
+            <input
+              type="checkbox"
+              checked={consentTerms}
+              onChange={e => setConsentTerms(e.target.checked)}
+              disabled={isSubmitting}
+              style={S.checkbox}
+            />
+            <span style={S.checkLabel}>
+              I have read and agree to the{' '}
+              <a href="/terms" target="_blank" style={S.checkLink}>Terms of Service</a>
+              {' '}and{' '}
+              <a href="/privacy" target="_blank" style={S.checkLink}>Privacy Policy</a>
+              , and I consent to the collection, use and disclosure of my personal data
+              in accordance with the Privacy Policy.{' '}
+              <span style={{ color: '#dc2626', fontWeight: 700 }}>*</span>
+            </span>
+          </label>
+
+          {/* Optional: Marketing */}
+          <label style={{ ...S.checkRow, marginTop: 10 }}>
+            <input
+              type="checkbox"
+              checked={consentMarketing}
+              onChange={e => setConsentMarketing(e.target.checked)}
+              disabled={isSubmitting}
+              style={S.checkbox}
+            />
+            <span style={S.checkLabel}>
+              I agree to receive product updates and occasional communications from myexpensio.
+              I can unsubscribe at any time.{' '}
+              <span style={S.optionalTag}>Optional</span>
+            </span>
+          </label>
+        </div>
+
+        <p style={S.consentHelper}>
+          By creating an account you confirm the information above is accurate and that you are
+          at least <strong>18 years old</strong>. You can withdraw consent anytime at{' '}
+          <a href="mailto:support@myexpensio.com" style={S.checkLink}>support@myexpensio.com</a>.
+        </p>
+
         {formError && <p style={S.errorText}>{formError}</p>}
 
         <button
           type="submit"
-          style={{ ...S.primaryBtn, opacity: isSubmitting ? 0.65 : 1 }}
-          disabled={isSubmitting}
+          style={{ ...S.primaryBtn, opacity: (isSubmitting || !consentTerms) ? 0.55 : 1 }}
+          disabled={isSubmitting || !consentTerms}
         >
           {isSubmitting ? 'Joining…' : `Join ${invite?.org_name ?? 'Workspace'}`}
         </button>
@@ -401,6 +466,68 @@ const S: Record<string, React.CSSProperties> = {
     color:    '#64748b',
     fontSize: 14,
     margin:   0,
+  },
+
+  // ── PDPA consent styles ──────────────────────────────────────────────────
+  consentBox: {
+    background:   '#eff6ff',
+    border:       '1px solid #bfdbfe',
+    borderRadius: 10,
+    padding:      '14px 16px',
+  },
+  consentTitle: {
+    fontSize:     12,
+    fontWeight:   700,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.08em',
+    color:        '#1e40af',
+    margin:       '0 0 10px',
+  },
+  consentSummary: {
+    fontSize:     13,
+    color:        '#1e3a8a',
+    lineHeight:   1.55,
+    margin:       '0 0 12px',
+  },
+  checkRow: {
+    display:    'flex',
+    alignItems: 'flex-start',
+    gap:        10,
+    cursor:     'pointer',
+  },
+  checkbox: {
+    width:     16,
+    height:    16,
+    flexShrink: 0,
+    marginTop: 2,
+    accentColor: '#1a56db',
+    cursor:    'pointer',
+  },
+  checkLabel: {
+    fontSize:   13,
+    color:      '#1e3a8a',
+    lineHeight: 1.55,
+  },
+  checkLink: {
+    color:          '#1a56db',
+    textDecoration: 'underline',
+  },
+  optionalTag: {
+    display:         'inline-block',
+    background:      '#e0e7ff',
+    color:           '#3730a3',
+    fontSize:        11,
+    fontWeight:      600,
+    padding:         '1px 7px',
+    borderRadius:    10,
+    marginLeft:      4,
+    verticalAlign:   'middle',
+  },
+  consentHelper: {
+    fontSize:   12,
+    color:      '#94a3b8',
+    lineHeight: 1.5,
+    margin:     '10px 0 0',
   },
 }
 

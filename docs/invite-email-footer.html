@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Invite Email Footer — MyExpensio</title>
+  <style>
+    :root {
+      --brand: #1a56db;
+      --text: #111827;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --bg: #ffffff;
+      --section-bg: #f9fafb;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f3f4f6;
+      color: var(--text);
+      padding: 48px 16px;
+    }
+
+    .page-header {
+      max-width: 660px;
+      margin: 0 auto 36px;
+      text-align: center;
+    }
+    .page-header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .page-header p {
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .badge {
+      display: inline-block;
+      background: #dbeafe;
+      color: #1e40af;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 20px;
+      margin-top: 10px;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── Email preview card ── */
+    .email-preview {
+      max-width: 600px;
+      margin: 0 auto 48px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+    }
+
+    /* Email chrome */
+    .email-chrome {
+      background: var(--section-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 18px;
+      font-size: 12.5px;
+      color: var(--muted);
+    }
+    .email-chrome .row { margin-bottom: 4px; }
+    .email-chrome .row:last-child { margin-bottom: 0; }
+    .email-chrome strong { color: var(--text); }
+
+    /* Email body */
+    .email-body {
+      padding: 32px 40px;
+    }
+
+    .email-logo {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--brand);
+      margin-bottom: 24px;
+    }
+
+    .email-heading {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+    .email-body-text {
+      font-size: 15px;
+      color: #374151;
+      line-height: 1.6;
+      margin-bottom: 16px;
+    }
+
+    /* CTA button */
+    .email-cta {
+      display: inline-block;
+      background: var(--brand);
+      color: #fff !important;
+      text-decoration: none;
+      padding: 12px 28px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      margin: 16px 0 28px;
+    }
+
+    /* ═══════════════════════════════
+       LEGAL FOOTER — EMBED THIS PART
+       ═══════════════════════════════ */
+    .legal-footer {
+      border-top: 1px solid var(--border);
+      padding-top: 20px;
+      margin-top: 8px;
+    }
+
+    .legal-footer-text {
+      font-size: 12.5px;
+      color: #6b7280;
+      line-height: 1.65;
+      margin-bottom: 14px;
+    }
+
+    .legal-footer-text a {
+      color: var(--brand);
+      text-decoration: underline;
+      text-underline-offset: 1px;
+    }
+
+    .legal-footer-meta {
+      font-size: 11.5px;
+      color: #9ca3af;
+      line-height: 1.6;
+    }
+
+    .legal-divider {
+      width: 32px;
+      height: 2px;
+      background: var(--border);
+      margin: 14px 0;
+    }
+
+    /* ── Full template ── */
+    .template-block {
+      max-width: 660px;
+      margin: 0 auto 48px;
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 24px 28px;
+      color: #e2e8f0;
+      font-size: 13.5px;
+      line-height: 1.65;
+    }
+    .template-block h3 {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      margin-bottom: 14px;
+    }
+    .template-block pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      color: #cbd5e1;
+    }
+    .template-block .placeholder-var {
+      color: #fbbf24;
+      font-style: italic;
+    }
+
+    /* ── Notes ── */
+    .notes-block {
+      max-width: 660px;
+      margin: 0 auto;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px 28px;
+    }
+    .notes-block h3 {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 14px;
+    }
+    .notes-block ul {
+      list-style: none;
+    }
+    .notes-block ul li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13.5px;
+      color: #374151;
+    }
+    .notes-block ul li:last-child { border-bottom: none; }
+    .notes-block ul li .icon { flex-shrink: 0; font-size: 15px; margin-top: 1px; }
+    .notes-block code {
+      background: #f3f4f6;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-family: monospace;
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    .placeholder {
+      color: #b45309;
+      background: #fffbeb;
+      border: 1px dashed #f59e0b;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-style: italic;
+      font-size: 12px;
+    }
+
+    @media (max-width: 560px) {
+      .email-body { padding: 24px 20px; }
+      .template-block { padding: 18px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Page header -->
+  <div class="page-header">
+    <h1>Invite Email — Legal Footer</h1>
+    <p>Add this footer to every invite email sent by MyExpensio. PDPA applies from the moment you send an email, before signup.</p>
+    <span class="badge">🇲🇾 PDPA Pre-Consent Notice — Required</span>
+  </div>
+
+  <!-- ══════════════════════════
+       LIVE EMAIL PREVIEW
+       ══════════════════════════ -->
+  <div class="email-preview">
+
+    <!-- Email client header bar -->
+    <div class="email-chrome">
+      <div class="row"><strong>From:</strong> MyExpensio &lt;noreply@myexpensio.com&gt;</div>
+      <div class="row"><strong>To:</strong> invitee@example.com</div>
+      <div class="row"><strong>Subject:</strong> You've been invited to MyExpensio</div>
+    </div>
+
+    <!-- Email body -->
+    <div class="email-body">
+
+      <div class="email-logo">MyExpensio</div>
+      <div class="email-heading">You've been invited 👋</div>
+
+      <p class="email-body-text">
+        <strong>Ahmad bin Abdullah</strong> has invited you to join <strong>MyExpensio</strong> — a mileage tracking and expense claims platform for their team.
+      </p>
+      <p class="email-body-text">
+        Click below to accept your invitation and create your account. Your invitation expires in <strong>7 days</strong>.
+      </p>
+
+      <a class="email-cta" href="accept-invite.html">Accept invitation →</a>
+
+      <!-- ════════════════════════════════════════
+           LEGAL FOOTER — COPY THIS INTO YOUR EMAILS
+           ════════════════════════════════════════ -->
+      <div class="legal-footer">
+
+        <div class="legal-divider"></div>
+
+        <p class="legal-footer-text">
+          You are receiving this email because <strong>Ahmad bin Abdullah</strong> added your email address to
+          <strong>MyExpensio</strong>, an invite-only mileage tracking and expense claims platform.
+          Your email address was used solely to send this invitation.
+        </p>
+
+        <p class="legal-footer-text">
+          If you choose not to join, your email address will be deleted within <strong>14 days</strong>.
+          By accepting the invitation and creating an account, you agree to our
+          <a href="https://myexpensio.com/terms">Terms of Service</a> and
+          <a href="https://myexpensio.com/privacy">Privacy Policy</a>.
+        </p>
+
+        <p class="legal-footer-text">
+          If you believe this email was sent to you in error, you may ignore it —
+          or request immediate deletion of your email by contacting us at
+          <a href="mailto:support@myexpensio.com">support@myexpensio.com</a>.
+        </p>
+
+        <div class="legal-divider"></div>
+
+        <p class="legal-footer-meta">
+          <span class="placeholder">[Company Legal Name] Sdn Bhd</span> &nbsp;·&nbsp;
+          <span class="placeholder">[Company Address, City, Malaysia]</span>
+          <br />
+          MyExpensio &nbsp;·&nbsp; support@myexpensio.com
+        </p>
+
+      </div>
+      <!-- end legal-footer -->
+
+    </div>
+    <!-- end email-body -->
+
+  </div>
+  <!-- end email-preview -->
+
+  <!-- ══════════════════════════
+       PLAIN TEXT TEMPLATE
+       ══════════════════════════ -->
+  <div class="template-block">
+    <h3>📋 Plain Text Version (copy for your email template)</h3>
+    <pre>---
+
+You are receiving this email because <span class="placeholder-var">{{inviter_name}}</span> added your email address to MyExpensio, an invite-only mileage tracking and expense claims platform. Your email address was used solely to send this invitation.
+
+If you choose not to join, your email address will be deleted within 14 days. By accepting the invitation and creating an account, you agree to our Terms of Service (https://myexpensio.com/terms) and Privacy Policy (https://myexpensio.com/privacy).
+
+If you believe this email was sent in error, you may ignore it or request deletion of your email by contacting: support@myexpensio.com
+
+<span class="placeholder-var">{{company_legal_name}}</span>
+<span class="placeholder-var">{{company_address}}</span>
+MyExpensio · support@myexpensio.com</pre>
+  </div>
+
+  <!-- ══════════════════════════
+       INTEGRATION NOTES
+       ══════════════════════════ -->
+  <div class="notes-block">
+    <h3>📋 Integration Notes</h3>
+    <ul>
+      <li><span class="icon">🔄</span> Replace <code>{{inviter_name}}</code> dynamically with the name of the admin or user who sent the invite.</li>
+      <li><span class="icon">🗓️</span> Set deletion period consistently — 14 days is a safe default. Make sure your system actually deletes unused invite emails after this window.</li>
+      <li><span class="icon">🔗</span> Update the Terms and Privacy links to your live URLs before launch.</li>
+      <li><span class="icon">🏢</span> Fill in the company legal name and registered address before go-live — required under PDPA.</li>
+      <li><span class="icon">📩</span> Use a <code>noreply@</code> sender but always provide a reply-to or contact email for deletion requests.</li>
+      <li><span class="icon">🗄️</span> Log invite sends server-side: <code>invitee_email</code>, <code>invited_at</code>, <code>invited_by</code>, <code>expires_at</code>, <code>legal_footer_version</code>.</li>
+      <li><span class="icon">🌏</span> If you send to non-Malaysians in future, this footer may need localisation for GDPR or other frameworks.</li>
+    </ul>
+  </div>
+
+</body>
+</html>

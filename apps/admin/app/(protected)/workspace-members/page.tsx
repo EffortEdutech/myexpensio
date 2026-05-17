@@ -12,6 +12,7 @@ type Profile = {
 type Member = {
   org_id: string; user_id: string; org_role: string
   status: 'ACTIVE' | 'REMOVED'; created_at: string; profiles: Profile | null
+  workspace_type?: string | null
 }
 
 function fmtDate(val: string) {
@@ -34,6 +35,12 @@ const AVATAR_COLORS = [
   { bg: '#f3e8ff', text: '#6b21a8' }, { bg: '#fef3c7', text: '#92400e' },
   { bg: '#fee2e2', text: '#991b1b' },
 ]
+
+function roleLabel(role: string, workspaceType?: string | null) {
+  if (workspaceType === 'AGENT' && role === 'EMPLOYEE') return 'Subscriber'
+  if (role === 'EMPLOYEE') return 'Employee'
+  return role
+}
 
 function MembersList({ orgId, orgName, onChangeWorkspace }: {
   orgId: string; orgName: string | null; onChangeWorkspace?: () => void
@@ -125,7 +132,7 @@ function MembersList({ orgId, orgName, onChangeWorkspace }: {
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${ROLE_CLS[m.org_role] ?? 'bg-gray-100 text-gray-500'}`}>
-                        {m.org_role}
+                        {roleLabel(m.org_role, m.workspace_type)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">{m.profiles?.department ?? '—'}</td>

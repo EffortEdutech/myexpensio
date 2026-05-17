@@ -27,12 +27,11 @@ export async function GET() {
 
   const { data: sub } = await supabase
     .from('subscriptions')
-    .select('tier, current_period_end')
+    .select('current_period_end')
     .eq('entity_type', 'ORG')
     .eq('entity_id', org.org_id)
     .maybeSingle()
 
-  const tier = (sub?.tier ?? 'FREE') as 'FREE' | 'PRO' | 'PREMIUM'
   const currentPeriod = getCurrentUsagePeriod()
 
   const period_start = currentPeriod.period_start
@@ -42,7 +41,7 @@ export async function GET() {
   const entitlements = await loadTierAndEntitlements(supabase, org.org_id, is_admin)
 
   return NextResponse.json({
-    tier,
+    tier: entitlements.tier,
     is_admin,
     period_start,
     period_end,

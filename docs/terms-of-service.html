@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Terms of Service — MyExpensio</title>
+  <style>
+    :root {
+      --brand: #1a56db;
+      --brand-light: #eff6ff;
+      --text: #111827;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --bg: #ffffff;
+      --section-bg: #f9fafb;
+      --tag-bg: #dbeafe;
+      --tag-text: #1e40af;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      font-size: 15px;
+    }
+
+    header {
+      background: #111827;
+      color: #fff;
+      padding: 48px 24px 40px;
+      text-align: center;
+    }
+    header .logo {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      opacity: 0.6;
+      margin-bottom: 12px;
+    }
+    header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    header .meta {
+      font-size: 13px;
+      opacity: 0.6;
+    }
+    header .badge {
+      display: inline-block;
+      margin-top: 16px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 20px;
+      letter-spacing: 0.05em;
+    }
+
+    .container {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+    }
+
+    .intro-box {
+      background: #fef3c7;
+      border-left: 4px solid #f59e0b;
+      border-radius: 8px;
+      padding: 18px 20px;
+      margin-bottom: 40px;
+      font-size: 14px;
+      color: #78350f;
+      line-height: 1.6;
+    }
+
+    .toc {
+      background: var(--section-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px 28px;
+      margin-bottom: 48px;
+    }
+    .toc h2 {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+    .toc ol {
+      padding-left: 20px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px 24px;
+    }
+    .toc ol li { font-size: 14px; }
+    .toc ol li a {
+      color: var(--brand);
+      text-decoration: none;
+    }
+    .toc ol li a:hover { text-decoration: underline; }
+
+    section {
+      margin-bottom: 44px;
+      scroll-margin-top: 24px;
+    }
+    section h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    section h2 .num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      background: #111827;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    section p { margin-bottom: 12px; color: #374151; }
+    section p:last-child { margin-bottom: 0; }
+
+    .rule-list {
+      list-style: none;
+      margin-top: 12px;
+    }
+    .rule-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+      color: #374151;
+    }
+    .rule-list li:last-child { border-bottom: none; }
+    .rule-list li .icon {
+      font-size: 15px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .liability-box {
+      background: var(--section-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin-top: 14px;
+    }
+    .liability-box p {
+      font-size: 14px;
+      color: #374151;
+      margin-bottom: 10px;
+    }
+    .liability-box p:last-child { margin-bottom: 0; }
+
+    .warning-box {
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      border-radius: 8px;
+      padding: 14px 18px;
+      font-size: 14px;
+      color: #7f1d1d;
+      margin-top: 14px;
+    }
+
+    .tag {
+      display: inline-block;
+      background: var(--tag-bg);
+      color: var(--tag-text);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 9px;
+      border-radius: 12px;
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+    }
+
+    .contact-card {
+      background: #111827;
+      color: #fff;
+      border-radius: 10px;
+      padding: 24px 28px;
+      margin-top: 16px;
+    }
+    .contact-card .label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      opacity: 0.5;
+      margin-bottom: 2px;
+      display: block;
+    }
+    .contact-card .value {
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .contact-card a { color: #93c5fd; }
+    .contact-row { margin-bottom: 12px; }
+    .contact-row:last-child { margin-bottom: 0; }
+
+    .placeholder {
+      color: #b45309;
+      background: #fffbeb;
+      border: 1px dashed #f59e0b;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-style: italic;
+      font-size: 13px;
+    }
+
+    .inline-link { color: var(--brand); }
+
+    footer {
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+      padding: 32px 24px;
+      border-top: 1px solid var(--border);
+    }
+
+    @media (max-width: 560px) {
+      .toc ol { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">MyExpensio</div>
+  <h1>Terms of Service</h1>
+  <p class="meta">Last updated: 15 May 2026</p>
+  <span class="badge">🇲🇾 Governed by the Laws of Malaysia</span>
+</header>
+
+<div class="container">
+
+  <div class="intro-box">
+    ⚠️ Please read these Terms carefully before using MyExpensio. By accepting an invitation and creating an account, you agree to be bound by these Terms. If you do not agree, do not use the Service.
+  </div>
+
+  <nav class="toc">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#s1">Acceptance of Terms</a></li>
+      <li><a href="#s2">Invite-Only Access</a></li>
+      <li><a href="#s3">Description of Service</a></li>
+      <li><a href="#s4">User Responsibilities</a></li>
+      <li><a href="#s5">Personal Data &amp; Privacy</a></li>
+      <li><a href="#s6">Data Accuracy Disclaimer</a></li>
+      <li><a href="#s7">Account Suspension &amp; Termination</a></li>
+      <li><a href="#s8">Limitation of Liability</a></li>
+      <li><a href="#s9">Changes to the Service</a></li>
+      <li><a href="#s10">Governing Law</a></li>
+      <li><a href="#s11">Contact</a></li>
+    </ol>
+  </nav>
+
+  <!-- 1 -->
+  <section id="s1">
+    <h2><span class="num">1</span> Acceptance of Terms</h2>
+    <p>
+      These Terms of Service ("Terms") govern your access to and use of the <strong>MyExpensio</strong> platform (the "Service"), operated by <span class="placeholder">[Company Legal Name] Sdn Bhd</span> ("we", "our", "us").
+    </p>
+    <p>
+      By accepting an invitation, creating an account, or using any part of the Service, you acknowledge that you have read, understood, and agree to be bound by these Terms and our <a class="inline-link" href="privacy-policy.html">Privacy Policy</a>.
+    </p>
+  </section>
+
+  <!-- 2 -->
+  <section id="s2">
+    <h2><span class="num">2</span> Invite-Only Access</h2>
+    <p>Access to MyExpensio is currently limited to invited users only. By accepting an invitation you agree that:</p>
+    <ul class="rule-list">
+      <li><span class="icon">📩</span> Invitations are personal and issued to a specific email address.</li>
+      <li><span class="icon">🚫</span> You may not share, forward, or transfer your invitation without prior written permission from us.</li>
+      <li><span class="icon">🔐</span> You are responsible for any activity that occurs under your account.</li>
+      <li><span class="icon">⚙️</span> We reserve the right to revoke access or invitations at our sole discretion.</li>
+    </ul>
+  </section>
+
+  <!-- 3 -->
+  <section id="s3">
+    <h2><span class="num">3</span> Description of Service</h2>
+    <p>MyExpensio provides the following features to authorised users:</p>
+    <ul class="rule-list">
+      <li><span class="icon">🗺️</span> Trip and mileage logging</li>
+      <li><span class="icon">💳</span> Touch 'n Go transaction linking and import</li>
+      <li><span class="icon">📋</span> Expense claims creation and management</li>
+      <li><span class="icon">📄</span> Report generation and data exports</li>
+      <li><span class="icon">⚙️</span> Rate and settings management</li>
+    </ul>
+    <p style="margin-top:14px;">
+      The Service is provided <strong>"as is"</strong> during this invite-only phase. Features may be added, modified, or removed as the platform develops.
+    </p>
+  </section>
+
+  <!-- 4 -->
+  <section id="s4">
+    <h2><span class="num">4</span> User Responsibilities</h2>
+    <p>As a user of the Service, you agree to:</p>
+    <ul class="rule-list">
+      <li><span class="icon">✅</span> Provide accurate, current, and complete information when registering and using the Service.</li>
+      <li><span class="icon">🔑</span> Keep your login credentials secure and confidential. Notify us immediately of any unauthorised access.</li>
+      <li><span class="icon">⚖️</span> Use the Service in compliance with all applicable Malaysian laws and regulations.</li>
+      <li><span class="icon">🚫</span> Not attempt to hack, reverse-engineer, scrape, or disrupt the Service or its infrastructure.</li>
+      <li><span class="icon">🗑️</span> Not upload, store, or transmit any unlawful, harmful, or offensive content through the Service.</li>
+      <li><span class="icon">📊</span> Take responsibility for the accuracy of all trip data and entries you submit.</li>
+    </ul>
+    <div class="warning-box">
+      You are solely responsible for any data you enter into the Service. We are not liable for errors resulting from inaccurate user input.
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section id="s5">
+    <h2><span class="num">5</span> Personal Data &amp; Privacy</h2>
+    <span class="tag">PDPA 2010</span>
+    <p>
+      Your use of the Service involves the collection and processing of personal data. This is governed by our <a class="inline-link" href="privacy-policy.html">Privacy Policy</a>, which is incorporated into these Terms by reference.
+    </p>
+    <p>
+      By using the Service, you consent to the collection, use, and disclosure of your personal data in accordance with the Privacy Policy and the Malaysian Personal Data Protection Act 2010 (PDPA).
+    </p>
+  </section>
+
+  <!-- 6 -->
+  <section id="s6">
+    <h2><span class="num">6</span> Data Accuracy Disclaimer</h2>
+    <p>
+      Mileage calculations, expense tallies, and generated reports are provided for <strong>convenience and reference only</strong>. MyExpensio does not guarantee the accuracy, completeness, or fitness of this information for any specific purpose, including:
+    </p>
+    <ul class="rule-list">
+      <li><span class="icon">🧾</span> Tax filings or deductions</li>
+      <li><span class="icon">⚖️</span> Legal proceedings or documentation</li>
+      <li><span class="icon">💰</span> Official reimbursement or expense claims</li>
+    </ul>
+    <p style="margin-top:14px;"><strong>You are responsible for verifying all data before using it for any official, financial, or legal purpose.</strong></p>
+  </section>
+
+  <!-- 7 -->
+  <section id="s7">
+    <h2><span class="num">7</span> Account Suspension &amp; Termination</h2>
+    <p>We may suspend or permanently terminate your account without prior notice if you:</p>
+    <ul class="rule-list">
+      <li><span class="icon">🚫</span> Violate these Terms or our Privacy Policy</li>
+      <li><span class="icon">🛡️</span> Pose a security or legal risk to the platform or other users</li>
+      <li><span class="icon">⚠️</span> Misuse the Service in any way we determine at our discretion</li>
+    </ul>
+    <p style="margin-top:14px;">
+      You may request deletion of your account and associated data at any time by contacting <a class="inline-link" href="mailto:support@myexpensio.com">support@myexpensio.com</a>. Upon deletion, your data will be removed subject to any legal retention obligations.
+    </p>
+  </section>
+
+  <!-- 8 -->
+  <section id="s8">
+    <h2><span class="num">8</span> Limitation of Liability</h2>
+    <p>To the maximum extent permitted by Malaysian law:</p>
+    <div class="liability-box">
+      <p>🔹 The Service is provided <strong>without warranties</strong> of any kind, express or implied, including warranties of merchantability or fitness for a particular purpose.</p>
+      <p>🔹 We are <strong>not liable</strong> for any indirect, incidental, special, consequential, or punitive damages arising from your use of or inability to use the Service.</p>
+      <p>🔹 Our total aggregate liability to you for any claim shall not exceed the <strong>total fees paid by you</strong> to MyExpensio in the 12 months preceding the claim (or RM 100.00 if no fees were paid).</p>
+      <p>🔹 We are not liable for any <strong>loss of data</strong> arising from user error, device failure, or circumstances beyond our reasonable control.</p>
+    </div>
+  </section>
+
+  <!-- 9 -->
+  <section id="s9">
+    <h2><span class="num">9</span> Changes to the Service</h2>
+    <p>
+      We reserve the right to modify, suspend, or discontinue any feature or aspect of the Service at any time, with or without notice, and without liability to you.
+    </p>
+    <p>
+      We may also update these Terms from time to time. Material changes will be notified via the app or email at least 14 days before they take effect. Continued use of the Service after the effective date constitutes acceptance of the updated Terms.
+    </p>
+  </section>
+
+  <!-- 10 -->
+  <section id="s10">
+    <h2><span class="num">10</span> Governing Law &amp; Disputes</h2>
+    <p>
+      These Terms are governed by and construed in accordance with the <strong>laws of Malaysia</strong>, without regard to its conflict of law provisions.
+    </p>
+    <p>
+      Any dispute arising out of or in connection with these Terms shall be subject to the exclusive jurisdiction of the courts of Malaysia.
+    </p>
+  </section>
+
+  <!-- 11 -->
+  <section id="s11">
+    <h2><span class="num">11</span> Contact</h2>
+    <p>For questions about these Terms or your account, please contact us:</p>
+    <div class="contact-card">
+      <div class="contact-row">
+        <span class="label">Platform</span>
+        <span class="value">MyExpensio</span>
+      </div>
+      <div class="contact-row">
+        <span class="label">Company</span>
+        <span class="value"><span style="color:#fde68a;font-style:italic;">[Company Legal Name] Sdn Bhd</span></span>
+      </div>
+      <div class="contact-row">
+        <span class="label">Email</span>
+        <span class="value"><a href="mailto:support@myexpensio.com">support@myexpensio.com</a></span>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  &copy; 2026 MyExpensio &nbsp;·&nbsp; <span class="placeholder">[Company Legal Name] Sdn Bhd</span> &nbsp;·&nbsp; Malaysia
+  <br /><br />
+  This document was prepared for informational purposes. Please consult a qualified legal professional for formal compliance advice.
+</footer>
+
+</body>
+</html>

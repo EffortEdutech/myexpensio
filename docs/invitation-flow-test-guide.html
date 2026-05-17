@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Invitation Flow — Test Guide · MyExpensio</title>
+  <style>
+    :root {
+      --brand:        #1a56db;
+      --brand-light:  #eff6ff;
+      --text:         #0f172a;
+      --muted:        #64748b;
+      --border:       #e2e8f0;
+      --bg:           #ffffff;
+      --section-bg:   #f8fafc;
+      --green:        #16a34a;
+      --green-bg:     #f0fdf4;
+      --green-border: #bbf7d0;
+      --amber:        #d97706;
+      --amber-bg:     #fffbeb;
+      --amber-border: #fde68a;
+      --red:          #dc2626;
+      --red-bg:       #fef2f2;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--section-bg);
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    /* ── Header ── */
+    header {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 40px 24px 36px;
+      text-align: center;
+    }
+    header .eyebrow {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.14em;
+      text-transform: uppercase; color: #94a3b8; margin-bottom: 10px;
+    }
+    header h1 { font-size: 26px; font-weight: 800; margin-bottom: 8px; }
+    header p { font-size: 14px; color: #94a3b8; max-width: 520px; margin: 0 auto; }
+    .header-pills { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 18px; }
+    .pill {
+      background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.15);
+      color: #e2e8f0; font-size: 12px; font-weight: 600;
+      padding: 4px 13px; border-radius: 20px;
+    }
+
+    /* ── Layout ── */
+    .page { max-width: 860px; margin: 0 auto; padding: 44px 24px 80px; }
+
+    /* ── URL reference bar ── */
+    .url-bar {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 10px; padding: 18px 22px; margin-bottom: 36px;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;
+    }
+    .url-item { font-size: 13px; }
+    .url-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--muted); margin-bottom: 3px;
+    }
+    .url-value {
+      font-family: monospace; font-size: 13px; color: var(--brand);
+      background: var(--brand-light); padding: 3px 8px; border-radius: 5px;
+    }
+
+    /* ── Phase card ── */
+    .phase {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 14px; margin-bottom: 28px; overflow: hidden;
+    }
+    .phase-header {
+      padding: 16px 24px; display: flex; align-items: center; gap: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .phase-num {
+      width: 36px; height: 36px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 800; flex-shrink: 0; color: #fff;
+    }
+    .phase-meta { flex: 1; }
+    .phase-title { font-size: 17px; font-weight: 700; color: var(--text); }
+    .phase-who {
+      font-size: 12px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.07em; margin-top: 1px;
+    }
+    .phase-app {
+      font-size: 12px; font-family: monospace;
+      background: var(--section-bg); border: 1px solid var(--border);
+      padding: 4px 10px; border-radius: 6px; color: var(--muted); flex-shrink: 0;
+    }
+    .phase-body { padding: 6px 0 14px; }
+
+    /* ── Step ── */
+    .step {
+      display: flex; align-items: flex-start; gap: 14px;
+      padding: 12px 24px; border-bottom: 1px solid #f1f5f9;
+    }
+    .step:last-child { border-bottom: none; }
+    .step-num {
+      width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; color: #fff; margin-top: 2px;
+    }
+    .step-content { flex: 1; }
+    .step-action {
+      font-size: 14.5px; font-weight: 600; color: var(--text); margin-bottom: 3px;
+    }
+    .step-detail { font-size: 13.5px; color: #475569; line-height: 1.55; }
+    .step-detail code {
+      background: #f1f5f9; border: 1px solid var(--border);
+      border-radius: 4px; padding: 1px 6px;
+      font-family: monospace; font-size: 12.5px; color: #0f172a;
+    }
+
+    /* ── Expect box ── */
+    .expect {
+      margin: 8px 0 0; background: var(--green-bg);
+      border: 1px solid var(--green-border); border-radius: 7px;
+      padding: 8px 12px; font-size: 13px; color: #14532d;
+    }
+    .expect::before { content: "✓ Expected: "; font-weight: 700; }
+
+    /* ── PDPA callout ── */
+    .pdpa-callout {
+      margin: 8px 0 0; background: var(--brand-light);
+      border: 1px solid #bfdbfe; border-radius: 7px;
+      padding: 8px 12px; font-size: 13px; color: #1e3a8a;
+    }
+    .pdpa-callout::before { content: "🇲🇾 PDPA: "; font-weight: 700; }
+
+    /* ── Warning box ── */
+    .warn {
+      margin: 8px 0 0; background: var(--amber-bg);
+      border: 1px solid var(--amber-border); border-radius: 7px;
+      padding: 8px 12px; font-size: 13px; color: #78350f;
+    }
+    .warn::before { content: "⚠️ Note: "; font-weight: 700; }
+
+    /* ── Screenshot placeholder ── */
+    .screenshot {
+      margin: 10px 0 0; background: var(--section-bg);
+      border: 2px dashed var(--border); border-radius: 8px;
+      padding: 12px 16px; font-size: 12.5px; color: var(--muted);
+      text-align: center;
+    }
+    .screenshot::before { content: "📸 "; }
+
+    /* ── Verify table ── */
+    .verify-table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 14px; }
+    .verify-table th {
+      text-align: left; padding: 9px 14px;
+      background: var(--section-bg); border-bottom: 2px solid var(--border);
+      font-size: 11.5px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--muted);
+    }
+    .verify-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: #374151; }
+    .verify-table tr:last-child td { border-bottom: none; }
+    .verify-table code {
+      background: #f1f5f9; border: 1px solid var(--border);
+      border-radius: 4px; padding: 1px 6px; font-size: 12px; font-family: monospace;
+    }
+    .tag-green {
+      display: inline-block; background: var(--green-bg); color: var(--green);
+      font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px;
+    }
+    .tag-amber {
+      display: inline-block; background: var(--amber-bg); color: var(--amber);
+      font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px;
+    }
+
+    /* ── Flow diagram ── */
+    .flow-diagram {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 0;
+      padding: 18px 24px; background: var(--section-bg);
+      border-bottom: 1px solid var(--border);
+    }
+    .flow-box {
+      background: var(--bg); border: 1.5px solid var(--border);
+      border-radius: 8px; padding: 8px 14px; font-size: 12.5px;
+      font-weight: 600; color: var(--text); text-align: center; white-space: nowrap;
+    }
+    .flow-box .sub { font-size: 10.5px; color: var(--muted); font-weight: 400; display: block; margin-top: 1px; }
+    .flow-arrow { color: var(--muted); padding: 0 8px; font-size: 16px; }
+
+    /* ── Color palette per phase ── */
+    .c1 { background: #1a56db; }
+    .c2 { background: #7c3aed; }
+    .c3 { background: #0891b2; }
+    .c4 { background: #16a34a; }
+    .c5 { background: #d97706; }
+    .c6 { background: #0f172a; }
+
+    .ph1 .step-num { background: #1a56db; }
+    .ph2 .step-num { background: #7c3aed; }
+    .ph3 .step-num { background: #0891b2; }
+    .ph4 .step-num { background: #16a34a; }
+    .ph5 .step-num { background: #d97706; }
+    .ph6 .step-num { background: #0f172a; }
+
+    /* ── Summary section ── */
+    .summary-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px; margin-top: 16px;
+    }
+    .summary-card {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px 16px;
+    }
+    .summary-card .sc-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--muted); margin-bottom: 6px;
+    }
+    .summary-card .sc-val { font-size: 14px; font-weight: 600; color: var(--text); }
+    .summary-card .sc-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    footer {
+      text-align: center; font-size: 12px; color: var(--muted);
+      padding: 24px; border-top: 1px solid var(--border);
+    }
+
+    @media (max-width: 600px) {
+      .flow-diagram { flex-direction: column; align-items: flex-start; }
+      .flow-arrow { transform: rotate(90deg); }
+      .url-bar { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">MyExpensio · Internal QA</div>
+  <h1>Invitation Flow — End-to-End Test Guide</h1>
+  <p>From Agent submitting a request to the new user landing on the dashboard. Follow every step in order.</p>
+  <div class="header-pills">
+    <span class="pill">👤 Agent → Admin App</span>
+    <span class="pill">🛡️ Console Staff → CS App</span>
+    <span class="pill">📧 Gmail Onboarding Email</span>
+    <span class="pill">🔑 User App Login</span>
+  </div>
+</header>
+
+<div class="page">
+
+  <!-- App URLs -->
+  <div class="url-bar">
+    <div class="url-item">
+      <div class="url-label">Admin App (Agent / Team Owner)</div>
+      <div class="url-value">localhost:3101</div>
+    </div>
+    <div class="url-item">
+      <div class="url-label">CS Console (Platform Staff)</div>
+      <div class="url-value">localhost:3102</div>
+    </div>
+    <div class="url-item">
+      <div class="url-label">User App (End User)</div>
+      <div class="url-value">localhost:3100</div>
+    </div>
+    <div class="url-item">
+      <div class="url-label">Gmail Sender</div>
+      <div class="url-value">effort.myexpensio@gmail.com</div>
+    </div>
+  </div>
+
+  <!-- Full flow diagram -->
+  <div class="phase" style="margin-bottom:28px;">
+    <div class="phase-header" style="border-bottom:none;">
+      <div>
+        <div class="phase-title">Full Flow Overview</div>
+        <div class="phase-who">6 phases · ~10 minutes to complete</div>
+      </div>
+    </div>
+    <div class="flow-diagram">
+      <div class="flow-box">Phase 1<span class="sub">Agent submits<br/>request</span></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">Phase 2<span class="sub">CS Console<br/>executes</span></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">Phase 3<span class="sub">Gmail email<br/>received</span></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">Phase 4<span class="sub">First login +<br/>temp password</span></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">Phase 5<span class="sub">Change<br/>password</span></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">Phase 6<span class="sub">Final login →<br/>Dashboard ✓</span></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       PHASE 1 — Agent submits invitation request
+       ═══════════════════════════════════════════ -->
+  <div class="phase ph1">
+    <div class="phase-header">
+      <div class="phase-num c1">1</div>
+      <div class="phase-meta">
+        <div class="phase-title">Agent Submits Invitation Request</div>
+        <div class="phase-who">Who: Agent or Team Owner (Admin App)</div>
+      </div>
+      <div class="phase-app">localhost:3101</div>
+    </div>
+    <div class="phase-body">
+
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <div class="step-action">Open the Admin App</div>
+          <div class="step-detail">Go to <code>http://localhost:3101</code> in your browser. Use a separate browser window from the CS Console and User App.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <div class="step-action">Log in as Agent or Team Owner</div>
+          <div class="step-detail">Go to <code>/login</code>. Enter credentials for an account that has <strong>OWNER, ADMIN, MANAGER,</strong> or <strong>SALES</strong> role in a workspace. You must be an active org member to submit invitation requests.</div>
+          <div class="expect">Redirected to the workspace dashboard after login.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <div class="step-action">Navigate to Invitations</div>
+          <div class="step-detail">Click <strong>Invitations</strong> in the sidebar, or go to <code>/invitations</code> directly. You will land on the <strong>"+ New Request"</strong> tab by default.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <div class="step-action">Enter the invitee's email address</div>
+          <div class="step-detail">Type the test user's email address in the <strong>Email address</strong> field. Use a real email inbox you can access to receive the Gmail onboarding email.</div>
+          <div class="warn">Do not use an email already registered in the system — it will still work, but no onboarding email will be sent (user_existed = true).</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-content">
+          <div class="step-action">Select a role</div>
+          <div class="step-detail">
+            For an <strong>AGENT workspace</strong>: choose from Sales, Finance, or Individual Subscriber.<br />
+            For a <strong>TEAM workspace</strong>: choose from Manager, Admin, or Employee.<br />
+            Select one by clicking the radio card.
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">6</div>
+        <div class="step-content">
+          <div class="step-action">Add optional notes (skip if not needed)</div>
+          <div class="step-detail">The Notes field is visible to CS Console staff when they review the request. Add context like <em>"New sales staff onboarding"</em> if relevant.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">7</div>
+        <div class="step-content">
+          <div class="step-action">Read the PDPA data notice</div>
+          <div class="step-detail">A blue notice appears above the Submit button confirming that by submitting, you acknowledge having the right to share this person's email with myexpensio.</div>
+          <div class="pdpa-callout">Confirm the blue PDPA notice is visible before submitting. This is the sender disclosure required under Malaysian PDPA 2010.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">8</div>
+        <div class="step-content">
+          <div class="step-action">Click "Submit Request"</div>
+          <div class="step-detail">The button is active only when email + role are filled in.</div>
+          <div class="expect">A green or blue banner appears at the top of the page.<br />
+            <strong>If auto_approve = OFF:</strong> "Your request has been sent to the platform team for review." Tab switches to Active. Status = <code>PENDING</code>.<br />
+            <strong>If auto_approve = ON:</strong> "Onboarding email sent to [email] with login instructions and a temporary password." Status = <code>EXECUTED</code> → skip to Phase 3.
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">9</div>
+        <div class="step-content">
+          <div class="step-action">Confirm in the Active tab</div>
+          <div class="step-detail">Click the <strong>Active</strong> tab. The request should appear with status <span style="background:#fef9c3;color:#854d0e;font-size:12px;padding:1px 7px;border-radius:8px;font-weight:600;">Pending</span>. Note the email and role match what you entered.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       PHASE 2 — CS Console executes
+       ═══════════════════════════════════════ -->
+  <div class="phase ph2">
+    <div class="phase-header">
+      <div class="phase-num c2">2</div>
+      <div class="phase-meta">
+        <div class="phase-title">CS Console Reviews &amp; Executes</div>
+        <div class="phase-who">Who: Platform / Console Staff (CS App)</div>
+      </div>
+      <div class="phase-app">localhost:3102</div>
+    </div>
+    <div class="phase-body">
+
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <div class="step-action">Open the CS Console in a new browser window</div>
+          <div class="step-detail">Go to <code>http://localhost:3102</code>. Use a different browser or an incognito window so you don't conflict with the Admin App session.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <div class="step-action">Log in as Console staff</div>
+          <div class="step-detail">Go to <code>/login</code>. Use credentials for an account with Console (CS) staff access.</div>
+          <div class="expect">Redirected to the CS Console dashboard.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <div class="step-action">Go to Invitation Queue</div>
+          <div class="step-detail">Click <strong>Invitation Queue</strong> in the sidebar or navigate to <code>/invitation-queue</code>. The <strong>Pending</strong> tab is shown by default.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <div class="step-action">Find the request from Phase 1</div>
+          <div class="step-detail">Locate the row with the email address you just submitted. Check the Workspace, Type, Role, and Requested By columns match what you expect.</div>
+          <div class="expect">Status shows <span style="background:#fef9c3;color:#854d0e;font-size:12px;padding:1px 7px;border-radius:8px;font-weight:600;">Pending</span> with the correct email and role.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-content">
+          <div class="step-action">Click "Approve &amp; Execute"</div>
+          <div class="step-detail">Click the green <strong>Approve &amp; Execute</strong> button on the right side of the row. A confirmation modal will appear.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">6</div>
+        <div class="step-content">
+          <div class="step-action">Review the modal and confirm</div>
+          <div class="step-detail">The modal shows a summary: Email, Workspace, Type, Role. Read the three bullet points — it will create the user, assign them to the workspace, and send an invite email. Click <strong>Approve &amp; Execute</strong> inside the modal.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">7</div>
+        <div class="step-content">
+          <div class="step-action">Wait for execution to complete</div>
+          <div class="step-detail">The button will show "Executing…" for a moment while it creates the user in Supabase Auth, sets up the profile, assigns workspace membership, and sends the Gmail email.</div>
+          <div class="expect">Green success banner: <em>"User account created — invite email sent successfully."</em><br />The request moves to the <strong>Executed</strong> tab with status <span style="background:#f0fdf4;color:#16a34a;font-size:12px;padding:1px 7px;border-radius:8px;font-weight:600;">Executed</span>.</div>
+          <div class="warn">If the banner says "email_warning" or email_sent = false, the Gmail SMTP credentials may be missing or incorrect. Check GMAIL_SMTP_USER and GMAIL_SMTP_APP_PASSWORD env vars.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">8</div>
+        <div class="step-content">
+          <div class="step-action">Check the Audit Log (optional)</div>
+          <div class="step-detail">Go to <strong>Audit</strong> in the CS Console sidebar. Find the <code>INVITATION_REQUEST_EXECUTED</code> entry. The metadata should show <code>email_sent: true</code>, <code>user_existed: false</code>.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       PHASE 3 — Gmail onboarding email
+       ═══════════════════════════════════════ -->
+  <div class="phase ph3">
+    <div class="phase-header">
+      <div class="phase-num c3">3</div>
+      <div class="phase-meta">
+        <div class="phase-title">Check the Gmail Onboarding Email</div>
+        <div class="phase-who">Who: The invited user (check their inbox)</div>
+      </div>
+      <div class="phase-app">Gmail inbox</div>
+    </div>
+    <div class="phase-body">
+
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <div class="step-action">Open the invitee's Gmail inbox</div>
+          <div class="step-detail">Check the inbox for the email address you invited. Allow up to 1–2 minutes for delivery. Also check the Spam / Promotions folder if it doesn't appear in Primary.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <div class="step-action">Verify the sender and subject</div>
+          <div class="step-detail">
+            <strong>From:</strong> <code>effort.myexpensio@gmail.com</code><br />
+            <strong>Subject:</strong> <code>Your myexpensio account for [Org Name]</code>
+          </div>
+          <div class="expect">Email arrives from the correct Gmail sender with the correct subject.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <div class="step-action">Verify the email body contains all required fields</div>
+          <div class="step-detail">
+            Check the email contains all of the following:<br /><br />
+            ✓ Greeting with email address or display name<br />
+            ✓ Organisation name<br />
+            ✓ <strong>Login URL:</strong> <code>http://localhost:3100/login</code><br />
+            ✓ <strong>Email:</strong> the invitee's email address<br />
+            ✓ <strong>Temporary password:</strong> a 10-character code (no ambiguous chars like 0/O/l/I)<br />
+            ✓ <strong>Default rate template</strong> line<br />
+            ✓ Post-login setup instructions (4 items)
+          </div>
+          <div class="expect">All fields present and readable. <strong>Copy the temporary password — you need it in Phase 4.</strong></div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <div class="step-action">Verify the PDPA legal footer</div>
+          <div class="step-detail">
+            Scroll to the bottom of the email. Below the signature, after a horizontal line, confirm the following are present:<br /><br />
+            ✓ Sentence explaining their email was added by their organisation admin<br />
+            ✓ Mention of <strong>Malaysian Personal Data Protection Act 2010 (PDPA)</strong><br />
+            ✓ Link to <strong>Privacy Policy</strong><br />
+            ✓ Link to <strong>Terms of Service</strong><br />
+            ✓ Contact email for deletion requests: <code>support@myexpensio.com</code>
+          </div>
+          <div class="pdpa-callout">This footer is legally required under PDPA before the user has given consent. Confirm it is present on every invite email.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       PHASE 4 — First login with temp password
+       ═══════════════════════════════════════ -->
+  <div class="phase ph4">
+    <div class="phase-header">
+      <div class="phase-num c4">4</div>
+      <div class="phase-meta">
+        <div class="phase-title">First Login with Temporary Password</div>
+        <div class="phase-who">Who: The invited user (User App)</div>
+      </div>
+      <div class="phase-app">localhost:3100</div>
+    </div>
+    <div class="phase-body">
+
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <div class="step-action">Open the User App in a fresh browser window</div>
+          <div class="step-detail">Open a new <strong>incognito / private window</strong> to avoid any session conflicts with the Admin App or CS Console. Go to <code>http://localhost:3100/login</code>.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <div class="step-action">Enter email and temporary password</div>
+          <div class="step-detail">
+            <strong>Email:</strong> the invited email address<br />
+            <strong>Password:</strong> the 10-character temporary password from the email (copy-paste to avoid typos)<br /><br />
+            Click <strong>Login</strong> or press Enter.
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <div class="step-action">Confirm automatic redirect to /change-password</div>
+          <div class="step-detail">The middleware detects <code>must_change_password: true</code> in the user's auth metadata and immediately redirects to <code>/change-password</code> — you do not reach the dashboard.</div>
+          <div class="expect">Page shows: <em>"Set your new password — This is your first login with a temporary password. Please set your own password before continuing."</em></div>
+          <div class="warn">If you land on /home instead of /change-password, the must_change_password flag was not set correctly during execution. Check the Supabase auth.users app_metadata for this user.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       PHASE 5 — Change password
+       ═══════════════════════════════════════ -->
+  <div class="phase ph5">
+    <div class="phase-header">
+      <div class="phase-num c5">5</div>
+      <div class="phase-meta">
+        <div class="phase-title">Set a New Password</div>
+        <div class="phase-who">Who: The invited user (User App)</div>
+      </div>
+      <div class="phase-app">localhost:3100/change-password</div>
+    </div>
+    <div class="phase-body">
+
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <div class="step-action">Enter a new password</div>
+          <div class="step-detail">Type a new password in the <strong>New password</strong> field. Must be at least <strong>8 characters</strong>. Use the 👁 toggle to verify the input. Do not reuse the temporary password.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <div class="step-action">Confirm the password</div>
+          <div class="step-detail">Re-enter the same password in <strong>Confirm new password</strong>. Both must match exactly.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <div class="step-action">Review and accept the PDPA Data &amp; Privacy Notice</div>
+          <div class="step-detail">
+            A blue <strong>Data &amp; Privacy Notice</strong> box appears above the submit button. It explains that myexpensio collects name, email, and expense data solely to provide the service, under the Malaysian PDPA 2010.
+            <br/><br/>
+            ✓ Check <strong>"I have read and agree to the Terms of Service and Privacy Policy"</strong> — this is <strong>required</strong> and unlocks the submit button.<br/>
+            ✓ Optionally check <strong>"I agree to receive product updates"</strong> for marketing emails.
+          </div>
+          <div class="expect">The "Save password and continue" button is <strong>disabled and greyed out</strong> until the required checkbox is ticked. Once ticked, the button becomes active.</div>
+          <div class="warn">If the button is clickable without ticking the checkbox, the consent guard has not been applied. Verify <code>change-password/page.tsx</code> state and the <code>complete-first-login</code> API validation.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <div class="step-action">Click "Save password and continue"</div>
+          <div class="step-detail">The app calls Supabase to update the password, then calls <code>/api/auth/complete-first-login</code> with <code>consent_terms: true</code> and <code>consent_marketing</code>. The API clears the <code>must_change_password</code> flag, writes consent to the <code>profiles</code> table, and writes a <code>PDPA_CONSENT_RECORDED</code> entry to <code>audit_logs</code>.</div>
+          <div class="expect">Green banner: <em>"Password updated successfully. You will be logged out now."</em><br />After ~1 second the app signs you out and redirects to <code>/login?passwordChanged=1</code>.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-content">
+          <div class="step-action">Check the login page confirmation</div>
+          <div class="step-detail">The login page at <code>/login?passwordChanged=1</code> should show a success notice indicating the password was changed and the user can now log in.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       PHASE 6 — Final login → Dashboard
+       ═══════════════════════════════════════ -->
+  <div class="phase ph6">
+    <div class="phase-header">
+      <div class="phase-num c6">6</div>
+      <div class="phase-meta">
+        <div class="phase-title">Final Login → Dashboard</div>
+        <div class="phase-who">Who: The invited user (User App)</div>
+      </div>
+      <div class="phase-app">localhost:3100</div>
+    </div>
+    <div class="phase-body">
+
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <div class="step-action">Log in with the new password</div>
+          <div class="step-detail">
+            <strong>Email:</strong> the invited email<br />
+            <strong>Password:</strong> the <em>new</em> password you just set (not the temp password)<br /><br />
+            Click <strong>Login</strong>.
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <div class="step-action">Confirm landing on /home (not /change-password)</div>
+          <div class="step-detail">The middleware now sees <code>must_change_password = false</code> and routes the user directly to <code>/home</code>. The dashboard loads with the user's workspace data.</div>
+          <div class="expect">User lands on <code>/home</code> and can see the myexpensio dashboard. The workspace name matches the organisation they were invited to.</div>
+          <div class="warn">If redirected back to /change-password, the complete-first-login API did not clear the flag. Check <code>/api/auth/complete-first-login</code> route and Supabase auth.users app_metadata.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <div class="step-action">Verify workspace membership is active</div>
+          <div class="step-detail">The user should see their workspace in the dashboard. Confirm the role shown (Employee, Sales, etc.) matches what was set in Phase 1. Try navigating to <strong>Trips</strong>, <strong>Claims</strong>, or <strong>Settings</strong> to verify access.</div>
+          <div class="expect">Navigation works and the correct role is displayed. No "access denied" or empty state errors.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <div class="step-action">Check Settings → confirm profile is set up</div>
+          <div class="step-detail">Go to <code>/settings</code>. The email should be pre-filled. The user can complete the 4 setup items mentioned in the onboarding email: change password (already done), review rate, set department/location, and set company name.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       VERIFY IN SUPABASE
+       ═══════════════════════════════════════ -->
+  <div class="phase" style="margin-bottom:28px;">
+    <div class="phase-header">
+      <div class="phase-num" style="background:#475569;">✓</div>
+      <div class="phase-meta">
+        <div class="phase-title">Verification Checklist — Supabase Dashboard</div>
+        <div class="phase-who">Optional but recommended for production readiness</div>
+      </div>
+    </div>
+    <div style="padding:0 24px 20px;">
+      <table class="verify-table">
+        <thead>
+          <tr>
+            <th>Where to check</th>
+            <th>What to verify</th>
+            <th>Expected value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>auth.users</strong></td>
+            <td>User exists with the invited email</td>
+            <td><span class="tag-green">Present</span></td>
+          </tr>
+          <tr>
+            <td><strong>auth.users</strong> → app_metadata</td>
+            <td><code>must_change_password</code> flag after Phase 5</td>
+            <td><code>false</code> or absent</td>
+          </tr>
+          <tr>
+            <td><strong>profiles</strong></td>
+            <td>Row exists for the new user</td>
+            <td><span class="tag-green">Present</span></td>
+          </tr>
+          <tr>
+            <td><strong>profiles</strong> → <code>consent_terms</code></td>
+            <td>PDPA consent recorded after Phase 5 (change-password flow)</td>
+            <td><code>true</code></td>
+          </tr>
+          <tr>
+            <td><strong>profiles</strong> → <code>consent_terms_at</code></td>
+            <td>Timestamp of consent (set during Phase 5)</td>
+            <td>UTC timestamp <span class="tag-green">Not null</span></td>
+          </tr>
+          <tr>
+            <td><strong>org_members</strong></td>
+            <td>User is member of the correct org with correct role</td>
+            <td><code>status: ACTIVE</code>, <code>org_role: [selected role]</code></td>
+          </tr>
+          <tr>
+            <td><strong>invitation_requests</strong></td>
+            <td>Request status after execution</td>
+            <td><span class="tag-green">EXECUTED</span></td>
+          </tr>
+          <tr>
+            <td><strong>audit_logs</strong></td>
+            <td><code>INVITATION_REQUEST_EXECUTED</code> entry</td>
+            <td><code>email_sent: true</code>, <code>user_existed: false</code></td>
+          </tr>
+          <tr>
+            <td><strong>audit_logs</strong></td>
+            <td><code>PDPA_CONSENT_RECORDED</code> entry (written during Phase 5)</td>
+            <td><code>consent_terms: true</code>, <code>flow: "change_password_first_login"</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       COMMON ISSUES
+       ═══════════════════════════════════════ -->
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-num" style="background:#dc2626;">!</div>
+      <div class="phase-meta">
+        <div class="phase-title">Common Issues &amp; Fixes</div>
+        <div class="phase-who">If something goes wrong, check here first</div>
+      </div>
+    </div>
+    <div style="padding:0 24px 20px;">
+      <table class="verify-table">
+        <thead>
+          <tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Submit Request button stays disabled</td>
+            <td>Email or role not filled in</td>
+            <td>Fill both email and select a role radio card</td>
+          </tr>
+          <tr>
+            <td>Request stays PENDING, no auto-execute</td>
+            <td><code>auto_approve_invitations = false</code> in platform_config</td>
+            <td>Expected — proceed to Phase 2 (CS Console)</td>
+          </tr>
+          <tr>
+            <td>CS Console execute fails with "CONFLICT"</td>
+            <td>Request status must be APPROVED before execute</td>
+            <td>Click "Approve" first if the execute button shows separately</td>
+          </tr>
+          <tr>
+            <td>Email not received</td>
+            <td>SMTP env vars missing or incorrect; check spam folder</td>
+            <td>Verify <code>GMAIL_SMTP_USER</code> and <code>GMAIL_SMTP_APP_PASSWORD</code> in <code>apps/cs/.env.local</code></td>
+          </tr>
+          <tr>
+            <td>Login fails with temp password</td>
+            <td>Password copied with extra space; user already existed</td>
+            <td>Copy-paste directly; check audit log for <code>user_existed: true</code></td>
+          </tr>
+          <tr>
+            <td>After login, goes to /home not /change-password</td>
+            <td><code>must_change_password</code> not set in app_metadata</td>
+            <td>Check Supabase auth.users → app_metadata for this user</td>
+          </tr>
+          <tr>
+            <td>After changing password, goes to /change-password again</td>
+            <td><code>complete-first-login</code> API failed to clear the flag</td>
+            <td>Check server logs for the <code>/api/auth/complete-first-login</code> route</td>
+          </tr>
+          <tr>
+            <td>User lands on /home but sees no workspace data</td>
+            <td><code>org_members</code> row missing or status ≠ ACTIVE</td>
+            <td>Check <code>org_members</code> table in Supabase for the user_id</td>
+          </tr>
+          <tr>
+            <td>PDPA footer missing from email</td>
+            <td>Old build / cached version of send-onboarding-email.ts</td>
+            <td>Restart the CS app server — the footer was added to the source file</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Summary stats -->
+  <div style="margin-top:32px;">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);margin-bottom:12px;">Test Summary</div>
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="sc-label">Total Phases</div>
+        <div class="sc-val">6 phases</div>
+        <div class="sc-sub">~10 min end-to-end</div>
+      </div>
+      <div class="summary-card">
+        <div class="sc-label">Apps Involved</div>
+        <div class="sc-val">3 apps</div>
+        <div class="sc-sub">Admin · CS Console · User</div>
+      </div>
+      <div class="summary-card">
+        <div class="sc-label">PDPA Checkpoints</div>
+        <div class="sc-val">3 points</div>
+        <div class="sc-sub">Invite form · Email footer · Consent</div>
+      </div>
+      <div class="summary-card">
+        <div class="sc-label">DB Tables Touched</div>
+        <div class="sc-val">5 tables</div>
+        <div class="sc-sub">auth.users · profiles · org_members · invitation_requests · audit_logs</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  MyExpensio · Invitation Flow Test Guide · Internal QA Document<br />
+  Generated May 2026 · Update this guide when the invitation flow changes.
+</footer>
+
+</body>
+</html>

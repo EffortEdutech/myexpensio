@@ -67,7 +67,7 @@ export default function SystemConfigPage() {
   const [form, setForm]       = useState({
     free_routes_per_month:    2,
     free_trips_per_month:     '',
-    free_exports_per_month:   '',
+    free_exports_per_month:   '0',
     auto_approve_invitations: false,
   })
   const [loading, setLoading]   = useState(true)
@@ -86,7 +86,7 @@ export default function SystemConfigPage() {
         setForm({
           free_routes_per_month:    cfg.free_routes_per_month,
           free_trips_per_month:     cfg.free_trips_per_month !== null ? String(cfg.free_trips_per_month) : '',
-          free_exports_per_month:   cfg.free_exports_per_month !== null ? String(cfg.free_exports_per_month) : '',
+          free_exports_per_month:   cfg.free_exports_per_month !== null ? String(cfg.free_exports_per_month) : '0',
           auto_approve_invitations: cfg.auto_approve_invitations ?? false,
         })
       })
@@ -103,8 +103,9 @@ export default function SystemConfigPage() {
       }
       if (String(form.free_trips_per_month).trim() !== '')
         payload.free_trips_per_month = Number(form.free_trips_per_month)
-      if (String(form.free_exports_per_month).trim() !== '')
-        payload.free_exports_per_month = Number(form.free_exports_per_month)
+      payload.free_exports_per_month = String(form.free_exports_per_month).trim() !== ''
+        ? Number(form.free_exports_per_month)
+        : 0
 
       const res = await fetch('/api/console/system', {
         method: 'PATCH',
@@ -183,7 +184,7 @@ export default function SystemConfigPage() {
       <div className="bg-white border border-gray-200 rounded-xl px-5">
         <div className="py-3 border-b border-gray-100">
           <h2 className="text-sm font-semibold text-gray-900">Free Tier Limits</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Applies to all FREE workspaces immediately. Leave blank for unlimited.</p>
+          <p className="text-xs text-gray-400 mt-0.5">Applies to all FREE workspaces immediately. Use 0 to block a feature.</p>
         </div>
 
         <SettingRow
@@ -213,13 +214,13 @@ export default function SystemConfigPage() {
 
         <SettingRow
           label="Exports / month"
-          description="Leave blank for unlimited exports on the Free plan."
+          description="Free plan should be 0. Pro and Premium users can export."
         >
           <input
             type="number" min={0} step={1}
             value={form.free_exports_per_month}
             onChange={(e) => setForm((f) => ({ ...f, free_exports_per_month: e.target.value }))}
-            placeholder="Unlimited"
+            placeholder="0"
             className={INPUT}
           />
         </SettingRow>

@@ -82,12 +82,19 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({})) as {
     invite_id?: string
     display_name?: string
+    consent_terms?: boolean
+    consent_marketing?: boolean
   }
 
-  const { invite_id, display_name } = body
+  const { invite_id, display_name, consent_terms, consent_marketing } = body
 
   if (!invite_id) {
     return err('VALIDATION_ERROR', 'invite_id is required.', 400)
+  }
+
+  // PDPA: consent_terms is mandatory before account activation
+  if (!consent_terms) {
+    return err('VALIDATION_ERROR', 'You must agree to the Terms of Service and Privacy Policy to continue.', 400)
   }
 
   const admin = serviceClient()
@@ -131,18 +138,26 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // ── 4. Update display_name (optional) ───────────────────────────────────
+  // ── 4. Update display_name + PDPA consent in profiles ───────────────────
   const trimmedName = display_name?.trim()
-  if (trimmedName) {
-    const { error: profileError } = await admin
-      .from('profiles')
-      .update({ display_name: trimmedName })
-      .eq('id', user.id)
+  const consentAt   = new Date().toISOString()
 
-    if (profileError) {
-      // Non-fatal — log but continue
-      console.warn('[invite/accept] profile update failed:', profileError.message)
-    }
+  const profileUpdate: Record<string, unknown> = {
+    // PDPA: store consent timestamp and flags regardless of display_name
+    consent_terms:     true,
+    consent_marketing: consent_marketing === true,
+    consent_terms_at:  consentAt,
+  }
+  if (trimmedName) profileUpdate.display_name = trimmedName
+
+  const { error: profileError } = await admin
+    .from('profiles')
+    .update(profileUpdate)
+    .eq('id', user.id)
+
+  if (profileError) {
+    // Non-fatal — log but continue; consent is also captured in audit_logs below
+    console.warn('[invite/accept] profile update failed:', profileError.message)
   }
 
   // ── 5. Provision org membership (upsert = idempotent) ───────────────────
@@ -177,7 +192,7 @@ export async function POST(request: NextRequest) {
     console.error('[invite/accept] invitation status update failed:', updateError.message)
   }
 
-  // ── 7. Audit log ─────────────────────────────────────────────────────────
+  // ── 7. Audit log (includes PDPA consent record) ──────────────────────────
   await admin.from('audit_logs').insert({
     org_id:        invite.org_id,
     actor_user_id: user.id,
@@ -185,8 +200,12 @@ export async function POST(request: NextRequest) {
     entity_id:     invite.id,
     action:        'INVITE_ACCEPTED',
     metadata: {
-      email:    user.email,
-      org_role: invite.org_role,
+      email:              user.email,
+      org_role:           invite.org_role,
+      // PDPA consent audit trail
+      consent_terms:      true,
+      consent_marketing:  consent_marketing === true,
+      consent_terms_at:   consentAt,
     },
   })
 

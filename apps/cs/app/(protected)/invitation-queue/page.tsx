@@ -7,6 +7,7 @@ type InviteRequest = {
   id: string; workspace_id: string; workspace_type: string
   requested_email: string; requested_role: string
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXECUTED' | 'FAILED'
+  onboarding_status?: string
   rejection_reason: string | null; notes: string | null
   created_at: string; approved_at: string | null; executed_at: string | null
   organizations: { id: string; name: string; workspace_type: string } | null
@@ -25,12 +26,18 @@ const STATUS_CFG: Record<string, { label: string; cls: string }> = {
   PENDING:  { label: 'Pending',   cls: 'bg-yellow-50 text-yellow-700 border border-yellow-200' },
   APPROVED: { label: 'Approved',  cls: 'bg-blue-50 text-blue-700 border border-blue-200' },
   REJECTED: { label: 'Rejected',  cls: 'bg-red-50 text-red-700 border border-red-200' },
-  EXECUTED: { label: 'Executed',  cls: 'bg-green-50 text-green-700 border border-green-200' },
+  EXECUTED: { label: 'Email sent', cls: 'bg-blue-50 text-blue-700 border border-blue-200' },
   FAILED:   { label: 'Failed',    cls: 'bg-red-50 text-red-600 border border-red-200' },
+  AWAITING_FIRST_LOGIN: { label: 'Awaiting first login', cls: 'bg-blue-50 text-blue-700 border border-blue-200' },
+  COMPLETED: { label: 'Completed', cls: 'bg-green-50 text-green-700 border border-green-200' },
 }
 const TYPE_BADGE: Record<string, string> = {
   TEAM:  'bg-blue-50 text-blue-700',
   AGENT: 'bg-purple-50 text-purple-700',
+}
+
+function workflowKey(request: InviteRequest) {
+  return request.onboarding_status ?? request.status
 }
 
 function RejectModal({ request, onClose, onDone }: { request: InviteRequest; onClose: () => void; onDone: () => void }) {
@@ -159,7 +166,7 @@ function RequestRow({ request, onExec, onReject }: {
   onExec: (r: InviteRequest) => void
   onReject: (r: InviteRequest) => void
 }) {
-  const cfg = STATUS_CFG[request.status] ?? STATUS_CFG.PENDING
+  const cfg = STATUS_CFG[workflowKey(request)] ?? STATUS_CFG[request.status] ?? STATUS_CFG.PENDING
   return (
     <tr className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
       <td className="px-4 py-3">
@@ -198,7 +205,9 @@ function RequestRow({ request, onExec, onReject }: {
             </button>
           )}
           {request.status === 'EXECUTED' && (
-            <span className="text-xs text-green-600">✓ Done — {fmt(request.executed_at)}</span>
+            <span className={`text-xs ${request.onboarding_status === 'COMPLETED' ? 'text-green-600' : 'text-blue-600'}`}>
+              {request.onboarding_status === 'COMPLETED' ? 'Done' : 'Email sent'} - {fmt(request.executed_at)}
+            </span>
           )}
           {request.status === 'REJECTED' && (
             <span className="text-xs text-red-500">✕ Rejected</span>
@@ -209,11 +218,12 @@ function RequestRow({ request, onExec, onReject }: {
   )
 }
 
-type TabKey = 'pending' | 'approved' | 'executed' | 'rejected'
+type TabKey = 'pending' | 'approved' | 'awaiting' | 'completed' | 'rejected'
 const TABS: { key: TabKey; label: string; status: string }[] = [
   { key: 'pending',  label: 'Pending',  status: 'PENDING' },
   { key: 'approved', label: 'Approved', status: 'APPROVED' },
-  { key: 'executed', label: 'Executed', status: 'EXECUTED' },
+  { key: 'awaiting', label: 'Awaiting First Login', status: 'EXECUTED' },
+  { key: 'completed', label: 'Completed', status: 'EXECUTED' },
   { key: 'rejected', label: 'Rejected', status: 'REJECTED' },
 ]
 
@@ -244,11 +254,17 @@ export default function InvitationQueuePage() {
 
   function handleExecDone({ user_existed }: { user_existed: boolean }) {
     setSuccessMsg(user_existed
-      ? 'User already existed — workspace membership granted and invite email sent.'
-      : 'User account created — invite email sent successfully.')
+      ? 'User already existed — workspace membership granted and invite email sent, awaiting first login.'
+      : 'User account created — invite email sent, awaiting first login.')
     setTimeout(() => setSuccessMsg(null), 6000)
     fetchQueue()
   }
+
+  const visibleRequests = requests.filter((r) => {
+    if (tab === 'awaiting') return r.onboarding_status !== 'COMPLETED'
+    if (tab === 'completed') return r.onboarding_status === 'COMPLETED'
+    return true
+  })
 
   return (
     <div className="space-y-5">
@@ -285,7 +301,7 @@ export default function InvitationQueuePage() {
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center h-48 text-sm text-gray-400">Loading…</div>
-        ) : requests.length === 0 ? (
+        ) : visibleRequests.length === 0 ? (
           <div className="flex items-center justify-center h-48 text-sm text-gray-400">
             {tab === 'pending' ? '✓ No pending requests — queue is clear' : `No ${currentTab.label.toLowerCase()} requests`}
           </div>
@@ -300,7 +316,7 @@ export default function InvitationQueuePage() {
                 </tr>
               </thead>
               <tbody>
-                {requests.map((r) => (
+                {visibleRequests.map((r) => (
                   <RequestRow key={r.id} request={r} onExec={setExecTarget} onReject={setRejectTarget} />
                 ))}
               </tbody>

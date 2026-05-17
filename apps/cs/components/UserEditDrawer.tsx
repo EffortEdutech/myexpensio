@@ -24,7 +24,7 @@ export type EditableUser = {
 const INPUT = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
 const LABEL = 'block text-xs font-medium text-gray-500 mb-1'
 
-// ── Role sets per workspace type ──────────────────────────────────────────────
+// â”€â”€ Role sets per workspace type â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const TEAM_ROLES  = ['OWNER', 'ADMIN', 'MANAGER', 'EMPLOYEE']
 const AGENT_ROLES = ['OWNER', 'SALES', 'FINANCE', 'EMPLOYEE']
@@ -37,6 +37,11 @@ const ROLE_LABELS: Record<string, string> = {
   SALES:    'Sales',
   FINANCE:  'Finance',
   MEMBER:   'Member',
+}
+
+function roleLabel(role: string, workspaceType?: string | null) {
+  if (workspaceType === 'AGENT' && role === 'EMPLOYEE') return 'Subscriber'
+  return ROLE_LABELS[role] ?? role
 }
 
 const ROLE_CLS: Record<string, string> = {
@@ -56,15 +61,15 @@ const WORKSPACE_TYPE_CLS: Record<string, string> = {
 }
 
 const PLATFORM_ROLE_DESCRIPTIONS: Record<string, string> = {
-  USER:        'Standard user — access MyExpensio only',
-  SUPPORT:     'Support staff — Console access (read)',
-  SUPER_ADMIN: 'Super Admin — full platform control',
+  USER:        'Standard user â€” access MyExpensio only',
+  SUPPORT:     'Support staff â€” Console access (read)',
+  SUPER_ADMIN: 'Super Admin â€” full platform control',
 }
 
 const SUBSCRIPTION_TIER_DESCRIPTIONS: Record<string, string> = {
-  FREE:    '3-month trial only. Limited access — no exports, no Business Space.',
-  PRO:     'RM18/month — unlocks Advanced Exports (PDF / Excel).',
-  PREMIUM: 'RM29/month — full suite incl. My Earning (Business Space + P&L + LHDN tax).',
+  FREE:    '3-month trial only. Limited access â€” no exports, no Business Space.',
+  PRO:     'RM18/month â€” unlocks Advanced Exports (PDF / Excel).',
+  PREMIUM: 'RM29/month â€” full suite incl. My Earning (Business Space + P&L + LHDN tax).',
 }
 
 const PLAN_CLS: Record<string, string> = {
@@ -83,7 +88,7 @@ const PLAN_TEXT_CLS: Record<string, string> = {
   PREMIUM: 'text-violet-700',
 }
 
-// ── Membership role row ────────────────────────────────────────────────────────
+// â”€â”€ Membership role row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function MembershipRoleRow({
   userId,
@@ -149,12 +154,12 @@ function MembershipRoleRow({
           )}
         </div>
 
-        {/* Role — editable */}
+        {/* Role â€” editable */}
         <div className="flex-shrink-0">
           {!editing ? (
             <div className="flex items-center gap-2">
               <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${ROLE_CLS[membership.org_role] ?? 'bg-gray-100 text-gray-500'}`}>
-                {ROLE_LABELS[membership.org_role] ?? membership.org_role}
+                {roleLabel(membership.org_role, wsType)}
               </span>
               {membership.status === 'ACTIVE' && (
                 <button
@@ -178,7 +183,7 @@ function MembershipRoleRow({
               >
                 {availRoles.map((r) => (
                   <option key={r} value={r}>
-                    {ROLE_LABELS[r]}{wsType === 'AGENT' && r === 'EMPLOYEE' ? ' — Subscriber' : ''}
+                    {roleLabel(r, wsType)}
                   </option>
                 ))}
               </select>
@@ -205,7 +210,7 @@ function MembershipRoleRow({
                   disabled={loading || newRole === membership.org_role}
                   className="flex-1 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded px-2 py-1 disabled:opacity-50"
                 >
-                  {loading ? '…' : 'Save'}
+                  {loading ? 'â€¦' : 'Save'}
                 </button>
               </div>
             </div>
@@ -216,7 +221,7 @@ function MembershipRoleRow({
   )
 }
 
-// ── Main drawer ────────────────────────────────────────────────────────────────
+// â”€â”€ Main drawer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function UserEditDrawer({
   user,
@@ -235,7 +240,7 @@ export default function UserEditDrawer({
   const [subscriptionTier, setSubscriptionTier] = useState(user.tier ?? 'FREE')
   const [planNote, setPlanNote] = useState('')
 
-  // Local memberships state — updated when org_role changes succeed
+  // Local memberships state â€” updated when org_role changes succeed
   const [memberships, setMemberships] = useState(user.memberships)
 
   const [loading, setLoading]           = useState(false)
@@ -347,14 +352,14 @@ export default function UserEditDrawer({
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
 
-          {/* ── Profile ── */}
+          {/* â”€â”€ Profile â”€â”€ */}
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Profile</p>
             <div className="space-y-3">
               <div>
                 <label className={LABEL}>Email address</label>
                 <div className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-500 bg-gray-50 flex items-center justify-between">
-                  <span>{user.email ?? '—'}</span>
+                  <span>{user.email ?? 'â€”'}</span>
                   <span className="text-xs text-gray-400">managed by Supabase Auth</span>
                 </div>
               </div>
@@ -371,7 +376,7 @@ export default function UserEditDrawer({
             </div>
           </div>
 
-          {/* ── Platform Role ── */}
+          {/* â”€â”€ Platform Role â”€â”€ */}
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Platform Role</p>
             <p className="text-xs text-gray-400 mb-3">
@@ -394,7 +399,7 @@ export default function UserEditDrawer({
                 ))}
                 {platformRole === 'SUPER_ADMIN' && user.role !== 'SUPER_ADMIN' && (
                   <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
-                    ⚠️ This gives full platform control including Console. Use with care.
+                    âš ï¸ This gives full platform control including Console. Use with care.
                   </div>
                 )}
               </div>
@@ -408,11 +413,11 @@ export default function UserEditDrawer({
             )}
           </div>
 
-          {/* ── Subscription Plan ── */}
+          {/* â”€â”€ Subscription Plan â”€â”€ */}
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Individual Subscription Plan</p>
             <p className="text-xs text-gray-400 mb-3">
-              Controls Personal &amp; Business Space access. Normally set by Stripe — only override for support escalations.
+              Controls Personal &amp; Business Space access. Normally set by Stripe â€” only override for support escalations.
             </p>
             {isSuperAdmin ? (
               <div className="space-y-2">
@@ -444,7 +449,7 @@ export default function UserEditDrawer({
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
                     />
                     <p className="mt-1.5 text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">
-                      ⚠️ Changing from <strong>{user.tier ?? 'FREE'}</strong> → <strong>{subscriptionTier}</strong>. This will immediately affect the user&apos;s feature access.
+                      âš ï¸ Changing from <strong>{user.tier ?? 'FREE'}</strong> â†’ <strong>{subscriptionTier}</strong>. This will immediately affect the user&apos;s feature access.
                     </p>
                   </div>
                 )}
@@ -459,13 +464,13 @@ export default function UserEditDrawer({
             )}
           </div>
 
-          {/* ── Workspace Memberships — EDITABLE org_role ── */}
+          {/* â”€â”€ Workspace Memberships â€” EDITABLE org_role â”€â”€ */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                 Workspace Memberships
               </p>
-              <p className="text-xs text-blue-600">Click ✏️ to change role</p>
+              <p className="text-xs text-blue-600">Click âœï¸ to change role</p>
             </div>
 
             {activeMemberships.length === 0 ? (
@@ -500,7 +505,7 @@ export default function UserEditDrawer({
             )}
           </div>
 
-          {/* ── Security ── */}
+          {/* â”€â”€ Security â”€â”€ */}
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Security</p>
             <div className="border border-gray-200 rounded-lg p-3">
@@ -511,7 +516,7 @@ export default function UserEditDrawer({
                 </div>
                 <button onClick={handlePasswordReset} disabled={resetLoading || resetSent}
                   className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-                  {resetLoading ? 'Sending…' : resetSent ? '✓ Sent' : 'Send reset'}
+                  {resetLoading ? 'Sendingâ€¦' : resetSent ? 'âœ“ Sent' : 'Send reset'}
                 </button>
               </div>
             </div>
@@ -526,7 +531,7 @@ export default function UserEditDrawer({
           )}
           {success && (
             <div className="mb-3 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-              ✓ User profile updated successfully
+              âœ“ User profile updated successfully
             </div>
           )}
           <div className="flex gap-3">
@@ -536,7 +541,7 @@ export default function UserEditDrawer({
             </button>
             <button onClick={handleSave} disabled={loading}
               className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
-              {loading ? 'Saving…' : 'Save Changes'}
+              {loading ? 'Savingâ€¦' : 'Save Changes'}
             </button>
           </div>
         </div>

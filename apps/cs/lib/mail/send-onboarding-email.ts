@@ -47,9 +47,22 @@ function escapeHtml(value: string) {
     .replaceAll("'", '&#039;')
 }
 
+function getUserAppBaseUrl() {
+  const loginUrl = process.env.USER_APP_LOGIN_URL?.trim()
+  if (loginUrl) {
+    try {
+      return new URL(loginUrl).origin
+    } catch {
+      return loginUrl.replace(/\/login\/?$/, '').replace(/\/$/, '')
+    }
+  }
+
+  return process.env.NEXT_PUBLIC_USER_APP_URL?.trim() || 'https://myexpensio-jade.vercel.app'
+}
+
 export async function sendOnboardingEmail(input: SendOnboardingEmailInput) {
   const smtpUser = getRequiredEnv('GMAIL_SMTP_USER')
-  const fromName = process.env.MAIL_FROM_NAME?.trim() || 'myexpensio'
+  const fromName = process.env.MAIL_FROM_NAME?.trim() || 'myexpensio - trusted assistant for your expenses'
 
   const safeOrg      = escapeHtml(input.orgName)
   const safeLogin    = escapeHtml(input.loginUrl)
@@ -61,6 +74,11 @@ export async function sendOnboardingEmail(input: SendOnboardingEmailInput) {
     : 'Assigned by admin'
 
   const subject = `Your myexpensio account for ${input.orgName}`
+
+  const userAppUrl   = getUserAppBaseUrl()
+  const privacyUrl   = `${userAppUrl}/privacy`
+  const termsUrl     = `${userAppUrl}/terms`
+  const supportEmail = 'support@myexpensio.com'
 
   const text = [
     `Hello ${safeName},`,
@@ -80,6 +98,15 @@ export async function sendOnboardingEmail(input: SendOnboardingEmailInput) {
     '',
     'Regards,',
     fromName,
+    '',
+    '---',
+    'You are receiving this email because your organisation admin added your email address to myexpensio, an invite-only mileage tracking and expense claims platform. Your personal data is processed in accordance with the Malaysian Personal Data Protection Act 2010 (PDPA).',
+    '',
+    `Privacy Policy: ${privacyUrl}`,
+    `Terms of Service: ${termsUrl}`,
+    '',
+    `If you believe this email was sent in error, or wish to have your email removed, contact: ${supportEmail}`,
+    'myexpensio | support@myexpensio.com',
   ].join('\n')
 
   const html = `
@@ -108,6 +135,24 @@ export async function sendOnboardingEmail(input: SendOnboardingEmailInput) {
 
   <p style="margin-top:24px;color:#6b7280;font-size:13px;">
     Regards,<br/>${escapeHtml(fromName)}
+  </p>
+
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
+
+  <p style="font-size:12px;color:#6b7280;line-height:1.6;margin:0 0 8px;">
+    You are receiving this email because your organisation admin added your email address to
+    <strong>myexpensio</strong>, an invite-only mileage tracking and expense claims platform.
+    Your personal data is processed in accordance with the
+    <strong>Malaysian Personal Data Protection Act 2010 (PDPA)</strong>.
+  </p>
+  <p style="font-size:12px;color:#6b7280;line-height:1.6;margin:0 0 8px;">
+    <a href="${escapeHtml(privacyUrl)}" style="color:#1a56db;">Privacy Policy</a>
+    &nbsp;&middot;&nbsp;
+    <a href="${escapeHtml(termsUrl)}" style="color:#1a56db;">Terms of Service</a>
+  </p>
+  <p style="font-size:12px;color:#6b7280;line-height:1.6;margin:0;">
+    If you believe this email was sent in error, or wish to have your email removed, contact us at
+    <a href="mailto:${escapeHtml(supportEmail)}" style="color:#1a56db;">${escapeHtml(supportEmail)}</a>.
   </p>
 </div>`
 

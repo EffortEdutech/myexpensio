@@ -8,7 +8,7 @@
 //   - Disclaimer footer
 //   - Print / Share button
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 type Category = {
@@ -26,6 +26,11 @@ type TaxSummary = {
   disclaimer:  string
 }
 
+type UsageInfo = {
+  tier: 'FREE' | 'PRO' | 'PREMIUM'
+  is_admin: boolean
+}
+
 const CATEGORY_ICONS: Record<string, string> = {
   LIFESTYLE:            '🛍️',
   MEDICAL:              '🏥',
@@ -38,34 +43,56 @@ const CATEGORY_ICONS: Record<string, string> = {
 
 export default function PersonalTaxPage() {
   const router  = useRouter()
-  const printRef = useRef<HTMLDivElement>(null)
-
   const currentYear = new Date().getFullYear()
   const minYear = currentYear - 4
   const [year,    setYear]    = useState(currentYear)
   const [summary, setSummary] = useState<TaxSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
+  const [usage,   setUsage]   = useState<UsageInfo | null>(null)
+  const [usageLoading, setUsageLoading] = useState(true)
+  const [printNotice, setPrintNotice] = useState<string | null>(null)
 
   useEffect(() => {
-    setLoading(true)
-    setError(null)
+    let active = true
     fetch(`/api/reports/tax-personal?year=${year}`)
       .then(r => r.json())
       .then(d => {
+        if (!active) return
         if (d.error) setError(d.error.message)
-        else setSummary(d)
+        else {
+          setSummary(d)
+          setError(null)
+        }
       })
-      .catch(() => setError('Failed to load tax summary.'))
-      .finally(() => setLoading(false))
+      .catch(() => { if (active) setError('Failed to load tax summary.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
   }, [year])
 
+  useEffect(() => {
+    let active = true
+    fetch('/api/usage')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (active) setUsage(d ? { tier: d.tier, is_admin: d.is_admin } : null) })
+      .catch(() => { if (active) setUsage(null) })
+      .finally(() => { if (active) setUsageLoading(false) })
+    return () => { active = false }
+  }, [])
+
+  const printDisabled = usageLoading || usage === null || (!usage.is_admin && usage.tier === 'FREE')
+
   function handlePrint() {
+    if (printDisabled) {
+      setPrintNotice('Upgrade to Pro or Premium to print or save this tax summary.')
+      return
+    }
+    setPrintNotice(null)
     window.print()
   }
 
-  const prevYear = () => { if (year > minYear) setYear(y => y - 1) }
-  const nextYear = () => { if (year < currentYear) setYear(y => y + 1) }
+  const prevYear = () => { if (year > minYear) { setLoading(true); setYear(y => y - 1) } }
+  const nextYear = () => { if (year < currentYear) { setLoading(true); setYear(y => y + 1) } }
 
   return (
     <>
@@ -88,10 +115,16 @@ export default function PersonalTaxPage() {
         <div style={S.headerRow} className="no-print">
           <button onClick={() => router.back()} style={S.back}>‹</button>
           <h1 style={S.title}>Tax Summary</h1>
-          <button onClick={handlePrint} style={S.printBtn} title="Print or save as PDF">
-            🖨️ Print
+          <button
+            onClick={handlePrint}
+            disabled={printDisabled}
+            style={{ ...S.printBtn, ...(printDisabled ? S.printBtnDisabled : {}) }}
+            title={printDisabled ? 'Upgrade to Pro or Premium to print or save as PDF' : 'Print or save as PDF'}
+          >
+            {printDisabled ? 'Upgrade to Print' : '🖨️ Print'}
           </button>
         </div>
+        {printNotice && <div style={S.error} className="no-print">{printNotice}</div>}
 
         {/* Year selector */}
         <div style={S.yearNav} className="no-print">
@@ -125,7 +158,7 @@ export default function PersonalTaxPage() {
                 <div style={{ fontSize: 32, marginBottom: 8 }}>🧾</div>
                 <div style={S.emptyTitle}>No tax-deductible entries for {year}</div>
                 <div style={S.emptyHint}>
-                  When adding expenses, toggle "Tax Deductible" and select the LHDN relief category.
+                  When adding expenses, toggle &quot;Tax Deductible&quot; and select the LHDN relief category.
                   They will appear here.
                 </div>
               </div>
@@ -171,6 +204,7 @@ const S: Record<string, React.CSSProperties> = {
   back:        { fontSize: 24, background: 'none', border: 'none', cursor: 'pointer', color: '#475569', padding: 0, lineHeight: 1 },
   title:       { fontSize: 20, fontWeight: 800, color: '#0f172a', margin: 0, flex: 1 },
   printBtn:    { fontSize: 13, fontWeight: 600, padding: '7px 14px', borderRadius: 10, border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', cursor: 'pointer', color: '#0f172a', whiteSpace: 'nowrap' },
+  printBtnDisabled: { cursor: 'not-allowed', opacity: 0.55, color: '#64748b' },
   yearNav:     { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 },
   arrow:       { fontSize: 22, background: 'none', border: 'none', cursor: 'pointer', color: '#475569', padding: '0 4px', lineHeight: 1 },
   yearLabel:   { fontSize: 16, fontWeight: 700, color: '#0f172a', minWidth: 80, textAlign: 'center' },

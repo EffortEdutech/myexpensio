@@ -12,6 +12,7 @@
 import { NextResponse } from 'next/server'
 import { requireConsoleAuth } from '@/lib/auth'
 import { createServiceRoleClient } from '@/lib/supabase/server'
+import { sendOnboardingEmail } from '@/lib/mail/send-onboarding-email'
 
 type Params = { params: Promise<{ orgId: string }> }
 
@@ -19,11 +20,35 @@ function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
 }
 
+function getUserAppLoginUrl(): string {
+  return process.env.USER_APP_LOGIN_URL?.trim()
+    || `${process.env.NEXT_PUBLIC_USER_APP_URL?.trim() || 'https://myexpensio-jade.vercel.app'}/login`
+}
+
+function getWorkspaceAppLoginUrl(): string {
+  return process.env.WORKSPACE_APP_LOGIN_URL?.trim()
+    || `${process.env.NEXT_PUBLIC_WORKSPACE_APP_URL?.trim() || 'https://myexpensio-admin.vercel.app'}/login`
+}
+
+function getConsoleAppLoginUrl(): string {
+  return process.env.CS_APP_LOGIN_URL?.trim()
+    || `${process.env.NEXT_PUBLIC_CS_APP_URL?.trim() || 'https://myexpensio-admin.vercel.app'}/login`
+}
+
+function generateTempPassword(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+  let pwd = ''
+  for (let i = 0; i < 10; i++) {
+    pwd += chars[Math.floor(Math.random() * chars.length)]
+  }
+  return pwd
+}
+
 // Role-aware redirect URL
 function getRedirectUrl(orgRole: string, workspaceType: string, platformRole?: string): string {
-  const workspaceAppUrl = process.env.NEXT_PUBLIC_WORKSPACE_APP_URL ?? 'http://localhost:3101'
-  const userAppUrl      = process.env.NEXT_PUBLIC_USER_APP_URL      ?? 'http://localhost:3100'
-  const consoleAppUrl   = process.env.NEXT_PUBLIC_CS_APP_URL        ?? 'http://localhost:3102'
+  const workspaceAppUrl = getWorkspaceAppLoginUrl()
+  const userAppUrl      = getUserAppLoginUrl()
+  const consoleAppUrl   = getConsoleAppLoginUrl()
 
   // Internal workspace: staff log into Console
   if (workspaceType === 'INTERNAL') return consoleAppUrl
@@ -136,9 +161,7 @@ export async function POST(req: Request, { params }: Params) {
   const profilesRole =
     org.workspace_type === 'INTERNAL' && platform_role ? platform_role : 'USER'
 
-  // Determine redirect URL based on role
-  const redirectBase = getRedirectUrl(org_role, org.workspace_type, profilesRole)
-  const redirectTo   = `${redirectBase}/auth/callback`
+  const loginUrl = getRedirectUrl(org_role, org.workspace_type, profilesRole)
 
   // Check if user already exists
   const { data: existingUsers } = await db.auth.admin.listUsers()
@@ -148,6 +171,7 @@ export async function POST(req: Request, { params }: Params) {
 
   let userId: string
   let userExisted = false
+  let tempPassword: string | null = null
 
   if (existingUser) {
     userId = existingUser.id
@@ -169,23 +193,26 @@ export async function POST(req: Request, { params }: Params) {
       )
     }
   } else {
-    const { data: inviteData, error: inviteError } = await db.auth.admin.inviteUserByEmail(
-      cleanEmail,
-      {
-        redirectTo,
-        data: {
-          display_name:   display_name?.trim() || cleanEmail,
-          workspace_name: org.name,
-          workspace_type: org.workspace_type,
-        },
-      },
-    )
+    tempPassword = generateTempPassword()
 
-    if (inviteError || !inviteData?.user?.id) {
-      return err('SERVER_ERROR', `Failed to invite user: ${inviteError?.message ?? 'unknown'}`, 500)
+    const { data: newUser, error: createError } = await db.auth.admin.createUser({
+      email:         cleanEmail,
+      password:      tempPassword,
+      email_confirm: true,
+      app_metadata:  { must_change_password: true },
+      user_metadata: {
+        display_name:   display_name?.trim() || cleanEmail,
+        workspace_name: org.name,
+        workspace_type: org.workspace_type,
+        invited_role:   org_role,
+      },
+    })
+
+    if (createError || !newUser?.user?.id) {
+      return err('SERVER_ERROR', `Failed to create user account: ${createError?.message ?? 'unknown'}`, 500)
     }
 
-    userId = inviteData.user.id
+    userId = newUser.user.id
   }
 
   // Upsert profile
@@ -209,6 +236,30 @@ export async function POST(req: Request, { params }: Params) {
     return err('SERVER_ERROR', `Failed to add member: ${memberError.message}`, 500)
   }
 
+  let emailSent = false
+  if (!userExisted && tempPassword) {
+    try {
+      await sendOnboardingEmail({
+        to: cleanEmail,
+        orgName: org.name,
+        tempPassword,
+        loginUrl,
+        displayName: display_name?.trim() || null,
+        defaultRateTemplateName: null,
+      })
+      emailSent = true
+    } catch (mailErr) {
+      await db
+        .from('org_members')
+        .delete()
+        .eq('org_id', orgId)
+        .eq('user_id', userId)
+      await db.auth.admin.deleteUser(userId).catch(() => undefined)
+      console.error('[console/workspaces/members] onboarding email failed:', mailErr)
+      return err('SERVER_ERROR', 'User was not added because the onboarding email could not be sent.', 500)
+    }
+  }
+
   // Audit log
   await db.from('audit_logs').insert({
     org_id:        orgId,
@@ -221,8 +272,9 @@ export async function POST(req: Request, { params }: Params) {
       org_role,
       platform_role:  profilesRole,
       user_existed:   userExisted,
+      email_sent:     emailSent,
       workspace_type: org.workspace_type,
-      redirect_to:    redirectTo,
+      login_url:      loginUrl,
       added_by:       ctx.email,
     },
   })
@@ -243,9 +295,10 @@ export async function POST(req: Request, { params }: Params) {
       success:      true,
       user_id:      userId,
       user_existed: userExisted,
+      email_sent:   emailSent,
       org_role,
       platform_role: profilesRole,
-      redirect_to:  redirectTo,
+      login_url:    loginUrl,
       message:      `${cleanEmail} added as ${roleLabel[org_role] ?? org_role}${inviteNote}`,
     },
     { status: 201 },

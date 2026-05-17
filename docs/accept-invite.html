@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>You've been invited — MyExpensio</title>
+  <style>
+    :root {
+      --brand: #1a56db;
+      --brand-hover: #1648c0;
+      --brand-light: #eff6ff;
+      --text: #111827;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --bg: #ffffff;
+      --section-bg: #f9fafb;
+      --green: #16a34a;
+      --green-bg: #f0fdf4;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: linear-gradient(135deg, #f0f4ff 0%, #f9fafb 60%, #fff 100%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 16px;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 460px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      text-align: center;
+    }
+
+    /* ── Logo ── */
+    .logo {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--brand);
+      margin-bottom: 28px;
+    }
+
+    /* ── Invite avatar ── */
+    .invite-avatar {
+      width: 64px;
+      height: 64px;
+      background: var(--brand-light);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      margin: 0 auto 20px;
+      border: 2px solid #bfdbfe;
+    }
+
+    /* ── Heading ── */
+    .invite-heading {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .invite-sub {
+      font-size: 15px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .invite-from {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--brand);
+      margin-bottom: 24px;
+    }
+
+    /* ── Platform description ── */
+    .platform-desc {
+      background: var(--section-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 18px;
+      text-align: left;
+      margin-bottom: 22px;
+    }
+
+    .platform-desc h3 {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .platform-desc ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .platform-desc ul li {
+      font-size: 13.5px;
+      color: #374151;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ── PDPA Pre-consent notice ── */
+    .pdpa-notice {
+      background: var(--brand-light);
+      border: 1px solid #bfdbfe;
+      border-radius: 10px;
+      padding: 14px 16px;
+      text-align: left;
+      margin-bottom: 24px;
+    }
+
+    .pdpa-notice .notice-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: #1e40af;
+      margin-bottom: 8px;
+    }
+
+    .pdpa-notice p {
+      font-size: 13px;
+      color: #1e3a8a;
+      line-height: 1.6;
+    }
+
+    .pdpa-notice p + p { margin-top: 8px; }
+
+    .pdpa-notice a {
+      color: var(--brand);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    /* ── Expiry notice ── */
+    .expiry-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #fef3c7;
+      border: 1px solid #fde68a;
+      color: #92400e;
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 20px;
+      margin-bottom: 22px;
+    }
+
+    /* ── CTA ── */
+    .btn-primary {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      background: var(--brand);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s;
+      letter-spacing: 0.01em;
+      margin-bottom: 12px;
+    }
+    .btn-primary:hover { background: var(--brand-hover); }
+
+    .btn-secondary {
+      display: block;
+      width: 100%;
+      padding: 12px;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .btn-secondary:hover { border-color: #9ca3af; color: var(--text); }
+
+    /* ── Bottom note ── */
+    .bottom-note {
+      margin-top: 24px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .bottom-note a { color: var(--brand); text-decoration: underline; }
+
+    /* ── Dev note ── */
+    .dev-note {
+      width: 100%;
+      max-width: 460px;
+      margin-top: 24px;
+      background: #1e293b;
+      color: #94a3b8;
+      border-radius: 10px;
+      padding: 16px 20px;
+      font-size: 12.5px;
+      line-height: 1.6;
+    }
+    .dev-note strong { color: #e2e8f0; }
+    .dev-note code {
+      background: #334155;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 11.5px;
+      color: #cbd5e1;
+    }
+
+    @media (max-width: 480px) {
+      .card { padding: 28px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ════════════════════════════════════
+       ACCEPT INVITE CARD
+       ════════════════════════════════════ -->
+  <div class="card">
+
+    <div class="logo">MyExpensio</div>
+
+    <div class="invite-avatar">✉️</div>
+    <div class="invite-heading">You've been invited!</div>
+    <div class="invite-sub">Invited by</div>
+    <!-- Dynamic: replace with actual inviter name -->
+    <div class="invite-from" id="inviter-name">Ahmad bin Abdullah</div>
+
+    <!-- What is MyExpensio -->
+    <div class="platform-desc">
+      <h3>What is MyExpensio?</h3>
+      <ul>
+        <li>🗺️ Log trips and track mileage automatically</li>
+        <li>💳 Import Touch 'n Go transactions</li>
+        <li>📋 Submit and manage expense claims</li>
+        <li>📄 Generate reports for reimbursement</li>
+      </ul>
+    </div>
+
+    <!-- Invite expiry -->
+    <div class="expiry-badge">
+      ⏳ This invitation expires in <strong id="expiry-days">7 days</strong>
+    </div>
+
+    <!-- ═══════════════════════════════════════
+         PDPA PRE-CONSENT NOTICE
+         Required before collecting any data
+         ═══════════════════════════════════════ -->
+    <div class="pdpa-notice">
+      <div class="notice-title">🇲🇾 A note about your data</div>
+      <p>
+        Your email address was shared with MyExpensio by <strong id="inviter-name-2">Ahmad bin Abdullah</strong> so we could send you this invitation.
+      </p>
+      <p>
+        If you choose not to join, your email address will be <strong>deleted within 14 days</strong>. By continuing, you agree to our
+        <a href="terms-of-service.html" target="_blank">Terms of Service</a> and
+        <a href="privacy-policy.html" target="_blank">Privacy Policy</a>.
+      </p>
+    </div>
+
+    <!-- CTA -->
+    <a class="btn-primary" href="signup-consent.html" id="accept-btn">
+      Accept invitation →
+    </a>
+    <a class="btn-secondary" href="mailto:support@myexpensio.com?subject=Invitation%20deletion%20request" id="decline-btn">
+      I didn't request this — remove my email
+    </a>
+
+    <!-- Bottom note -->
+    <p class="bottom-note">
+      By accepting, you'll be asked to create a password and provide your name.
+      You can withdraw your consent at any time by contacting
+      <a href="mailto:support@myexpensio.com">support@myexpensio.com</a>.
+    </p>
+
+  </div>
+
+  <!-- Dev integration notes -->
+  <div class="dev-note">
+    <strong>📋 Dev notes — dynamic values to wire up:</strong><br /><br />
+    · <code>inviter-name</code> — pull from invite token (e.g., <code>?token=abc123</code>) → look up inviter in Supabase<br />
+    · <code>expiry-days</code> — calculate days remaining from <code>invite.expires_at</code><br />
+    · <code>accept-btn</code> href — pass token to signup: <code>signup-consent.html?token=abc123</code><br />
+    · <code>decline-btn</code> — optionally trigger a server-side delete of the invite record immediately<br />
+    · Log invite acceptance: <code>invite.accepted_at = now()</code>, <code>invite.status = 'accepted'</code>
+  </div>
+
+</body>
+</html>

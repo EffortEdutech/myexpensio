@@ -44,7 +44,7 @@ type Template = {
 }
 
 type UsageInfo = {
-  tier: 'FREE' | 'PRO'
+  tier: 'FREE' | 'PRO' | 'PREMIUM'
   is_admin: boolean
   period_start: string
   period_end: string
@@ -278,6 +278,7 @@ export default function ExportsPage() {
   const templateGrouping = normalizeGrouping(activeTpl?.schema?.pdf_layout?.grouping)
   const exportUnlimited = !!usage && (usage.is_admin || usage.exports_limit === null)
   const exportAtLimit   = !!usage && !exportUnlimited && usage.exports_limit !== null && usage.exports_used >= usage.exports_limit
+  const exportUpgradeRequired = !!usage && !usage.is_admin && usage.tier === 'FREE' && usage.exports_limit === 0
 
   // Sync grouping when template changes (unless user manually overrode it)
   useEffect(() => {
@@ -293,7 +294,6 @@ export default function ExportsPage() {
     } else {
       setTngPreview([])
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [format, selected])
 
   // ── TNG preview loader ─────────────────────────────────────────────────────
@@ -322,7 +322,8 @@ export default function ExportsPage() {
   function toggleOne(id: string) {
     setSelected(prev => {
       const n = new Set(prev)
-      n.has(id) ? n.delete(id) : n.add(id)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
       return n
     })
   }
@@ -345,6 +346,7 @@ export default function ExportsPage() {
 
   async function handleGenerate() {
     if (selected.size === 0) { setGenError('Select at least one claim.'); return }
+    if (exportUpgradeRequired) { setGenError('Upgrade to Pro or Premium to export claims.'); return }
     if (exportAtLimit) { setGenError('Your workspace has reached its export limit for this month.'); return }
 
     setGenerating(true); setGenError(null); setGenSuccess(null)
@@ -590,6 +592,7 @@ export default function ExportsPage() {
           style={{ ...S.btnGenerate, ...(format === 'PDF' ? S.btnGeneratePdf : {}), opacity: generating || selected.size === 0 || exportAtLimit ? 0.45 : 1 }}
         >
           {generating      ? `Generating ${format}…`
+           : exportUpgradeRequired ? 'Upgrade to Pro or Premium to Export Claims'
            : exportAtLimit ? 'Monthly export limit reached'
            : selected.size === 0 ? 'Select claims above first'
            : `Generate ${format} — ${selected.size} claim${selected.size !== 1 ? 's' : ''}`}

@@ -25,7 +25,8 @@ export async function POST(_req: Request, { params }: Params) {
     return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'User email not found' } }, { status: 404 })
   }
 
-  const workspaceAppUrl = process.env.NEXT_PUBLIC_WORKSPACE_APP_URL ?? 'http://localhost:3101'
+  const workspaceAppUrl = process.env.NEXT_PUBLIC_WORKSPACE_APP_URL?.trim()
+    || 'https://myexpensio-admin.vercel.app'
 
   const { error } = await db.auth.admin.generateLink({
     type:       'recovery',

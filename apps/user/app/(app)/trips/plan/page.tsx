@@ -26,7 +26,7 @@ type GeocodeSuggestion = {
 type RouteAlt = RouteAlternativeMapData
 
 type UsageInfo = {
-  tier:         'FREE' | 'PRO'
+  tier:         'FREE' | 'PRO' | 'PREMIUM'
   is_admin:     boolean
   period_start: string
   period_end:   string
@@ -195,7 +195,7 @@ function UsageWidget({ usage, loading, isUnlimited, isAtLimit, isNearLimit }: {
       🛡 Admin — Unlimited calculations
     </div>
   )
-  if (usage?.tier === 'PRO') return (
+  if (usage?.tier === 'PRO' || usage?.tier === 'PREMIUM') return (
     <div style={{ ...S.usageBadge, backgroundColor: '#f0fdf4', borderColor: '#bbf7d0', color: '#16a34a' }}>
       ✦ Pro — Unlimited calculations
     </div>
@@ -286,7 +286,7 @@ export default function MileageCalculatorPage() {
       .finally(() => setUsageLoading(false))
   }, [])
 
-  const isUnlimited = !usage || usage.is_admin || usage.tier === 'PRO' || usage.routes_limit === null
+  const isUnlimited = !usage || usage.is_admin || usage.tier === 'PRO' || usage.tier === 'PREMIUM' || usage.routes_limit === null
   const limit       = usage?.routes_limit ?? 2
   const isAtLimit   = !isUnlimited && (usage?.routes_used ?? 0) >= limit
   const isNearLimit = !isUnlimited && !isAtLimit && (usage?.routes_used ?? 0) >= limit - 1

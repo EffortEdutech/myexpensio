@@ -16,6 +16,7 @@ type InvitationRequest = {
   requested_email: string
   requested_role: string
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXECUTED' | 'FAILED'
+  onboarding_status?: string
   rejection_reason: string | null
   notes: string | null
   created_at: string
@@ -35,7 +36,7 @@ const STATUS_CFG: Record<string, { label: string; cls: string; desc: string }> =
   PENDING:  { label: 'Pending',   cls: 'bg-yellow-50 text-yellow-700', desc: 'Awaiting review' },
   APPROVED: { label: 'Approved',  cls: 'bg-blue-50 text-blue-700',     desc: 'Being processed' },
   REJECTED: { label: 'Rejected',  cls: 'bg-red-50 text-red-700',       desc: 'Request declined' },
-  EXECUTED: { label: 'Completed', cls: 'bg-green-50 text-green-700',   desc: 'Invite sent' },
+  EXECUTED: { label: 'Email sent', cls: 'bg-blue-50 text-blue-700',     desc: 'Email sent, waiting for password change and consent' },
   FAILED:   { label: 'Failed',    cls: 'bg-red-50 text-red-600',       desc: 'Technical error' },
 }
 
@@ -46,6 +47,13 @@ function StatusBadge({ status }: { status: string }) {
       {cfg.label}
     </span>
   )
+}
+
+STATUS_CFG.AWAITING_FIRST_LOGIN = { label: 'Awaiting first login', cls: 'bg-blue-50 text-blue-700', desc: 'Email sent, waiting for password change and consent' }
+STATUS_CFG.COMPLETED = { label: 'Completed', cls: 'bg-green-50 text-green-700', desc: 'User changed password and accepted consent' }
+
+function workflowKey(req: InvitationRequest) {
+  return req.onboarding_status ?? req.status
 }
 
 // ── Submit form for internal staff ─────────────────────────────────────────────
@@ -159,14 +167,19 @@ export default function OrgInvitesPage() {
   useEffect(() => { fetchData() }, [fetchData])
 
   const STATUS_MAP: Record<string, string[]> = {
-    active:    ['PENDING', 'APPROVED'],
+    active:    ['PENDING', 'APPROVED', 'EXECUTED'],
     completed: ['EXECUTED'],
     rejected:  ['REJECTED', 'FAILED'],
   }
 
-  const filtered       = requests.filter((r) => (STATUS_MAP[tab] ?? []).includes(r.status))
-  const pendingCount   = requests.filter((r) => ['PENDING', 'APPROVED'].includes(r.status)).length
-  const completedCount = requests.filter((r) => r.status === 'EXECUTED').length
+  const filtered       = requests.filter((r) => {
+    if (!(STATUS_MAP[tab] ?? []).includes(r.status)) return false
+    if (tab === 'active') return r.onboarding_status !== 'COMPLETED'
+    if (tab === 'completed') return r.onboarding_status === 'COMPLETED'
+    return true
+  })
+  const pendingCount   = requests.filter((r) => ['PENDING', 'APPROVED'].includes(r.status) || (r.status === 'EXECUTED' && r.onboarding_status !== 'COMPLETED')).length
+  const completedCount = requests.filter((r) => r.status === 'EXECUTED' && r.onboarding_status === 'COMPLETED').length
 
   return (
     <div className="space-y-5">
@@ -248,7 +261,7 @@ export default function OrgInvitesPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <StatusBadge status={req.status} />
+                    <StatusBadge status={workflowKey(req)} />
                     {req.rejection_reason && (
                       <p className="text-xs text-red-500 mt-0.5">{req.rejection_reason}</p>
                     )}
@@ -256,7 +269,7 @@ export default function OrgInvitesPage() {
                   <td className="px-4 py-3 text-xs text-gray-500">{fmt(req.created_at)}</td>
                   <td className="px-4 py-3 text-xs text-gray-500">
                     {req.status === 'EXECUTED'
-                      ? `Completed ${fmt(req.executed_at)}`
+                      ? `${STATUS_CFG[workflowKey(req)]?.desc ?? 'Email sent'} (${fmt(req.executed_at)})`
                       : STATUS_CFG[req.status]?.desc ?? ''}
                   </td>
                 </tr>

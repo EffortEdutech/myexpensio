@@ -41,13 +41,19 @@ function PlatformRoleBadge({ role }: { role: string }) {
   )
 }
 
-function OrgRoleBadge({ role }: { role: string }) {
+function orgRoleLabel(role: string, workspaceType?: string | null) {
+  if (workspaceType === 'AGENT' && role === 'EMPLOYEE') return 'Subscriber'
+  if (role === 'EMPLOYEE') return 'Employee'
+  return role
+}
+
+function OrgRoleBadge({ role, workspaceType }: { role: string; workspaceType?: string | null }) {
   const cls: Record<string, string> = {
     OWNER: 'bg-purple-50 text-purple-700', ADMIN: 'bg-blue-50 text-blue-700',
     MANAGER: 'bg-blue-50 text-blue-600', EMPLOYEE: 'bg-gray-100 text-gray-600',
     SALES: 'bg-green-50 text-green-700', FINANCE: 'bg-amber-50 text-amber-700',
   }
-  return <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${cls[role] ?? 'bg-gray-100 text-gray-500'}`}>{role}</span>
+  return <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${cls[role] ?? 'bg-gray-100 text-gray-500'}`}>{orgRoleLabel(role, workspaceType)}</span>
 }
 
 function TypePill({ type }: { type: string }) {
@@ -241,7 +247,7 @@ export default function UsersPage() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        {primaryMembership ? <OrgRoleBadge role={primaryMembership.org_role} /> :
+                        {primaryMembership ? <OrgRoleBadge role={primaryMembership.org_role} workspaceType={primaryMembership.organization?.workspace_type} /> :
                          isInternal ? <span className="text-xs text-gray-400 italic">Platform staff</span> :
                          <span className="text-xs text-gray-300">—</span>}
                       </td>

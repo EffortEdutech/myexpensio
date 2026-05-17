@@ -48,20 +48,6 @@ type ProfileResponse = {
   error?: { message?: string }
 }
 
-type UsageData = {
-  counters: {
-    routes_calls: number
-    trips_created: number
-    exports_created: number
-    period_start: string
-  }
-  entitlements: {
-    routeCalculationsPerMonth: number | null
-    tripsPerMonth: number | null
-    exportsPerMonth: number | null
-  }
-}
-
 type SectionKey = 'profile' | 'rates' | 'billing' | 'system'
 
 function f2(v: unknown) {
@@ -77,31 +63,6 @@ function averageMeal(morning: string, noon: string, evening: string) {
 function fmtTemplate(template: TemplateOption) {
   const name = template.template_name ?? 'Template'
   return template.effective_from ? `${name} · ${template.effective_from}` : name
-}
-
-// ---------------------------------------------------------------------------
-// Usage bar component
-// ---------------------------------------------------------------------------
-
-function UsageBar({ label, used, limit }: { label: string; used: number; limit: number | null }) {
-  const isUnlimited = limit === null
-  const pct = isUnlimited ? 100 : Math.min(100, (used / Math.max(1, limit)) * 100)
-  const barColor = pct >= 90 ? '#dc2626' : pct >= 70 ? '#d97706' : '#4f46e5'
-  const barBg = isUnlimited ? '#d1fae5' : '#f3f4f6'
-
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-        <span style={{ fontSize: 13, color: '#374151' }}>{label}</span>
-        <span style={{ fontSize: 13, fontWeight: 600, color: isUnlimited ? '#059669' : pct >= 90 ? '#dc2626' : '#374151' }}>
-          {isUnlimited ? `${used} / ∞ unlimited` : `${used} / ${limit}`}
-        </span>
-      </div>
-      <div style={{ height: 5, background: barBg, borderRadius: 3, overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: isUnlimited ? '100%' : `${pct}%`, background: isUnlimited ? '#34d399' : barColor, borderRadius: 3, transition: 'width 0.4s ease' }} />
-      </div>
-    </div>
-  )
 }
 
 // ---------------------------------------------------------------------------
@@ -137,7 +98,6 @@ export default function SettingsPage() {
   const [showPwModal, setShowPwModal] = useState(false)
 
   // Billing state
-  const [usageData, setUsageData] = useState<UsageData | null>(null)
   const [tier, setTier] = useState<string>('FREE')
   const [billingStatus, setBillingStatus] = useState<string | null>(null)
   const [periodEnd, setPeriodEnd] = useState<string | null>(null)
@@ -150,10 +110,9 @@ export default function SettingsPage() {
     let active = true
     async function loadAll() {
       try {
-        const [profileRes, ratesRes, usageRes, summaryRes] = await Promise.all([
+        const [profileRes, ratesRes, summaryRes] = await Promise.all([
           fetch('/api/settings/profile'),
           fetch('/api/settings/rates'),
-          fetch('/api/usage/current').catch(() => null),
           fetch('/api/billing/summary').catch(() => null),
         ])
         const profileJson: ProfileResponse = await profileRes.json()
@@ -183,11 +142,6 @@ export default function SettingsPage() {
           setEffFrom(rate?.effective_from ?? null)
         } else {
           setError(ratesJson.error?.message ?? 'Failed to load personal rates.')
-        }
-
-        if (usageRes?.ok) {
-          const ud = await usageRes.json() as UsageData
-          setUsageData(ud)
         }
 
         if (summaryRes?.ok) {
@@ -220,11 +174,11 @@ export default function SettingsPage() {
     `Meal avg MYR ${mealAverage}`,
     `Lodging MYR ${lodging || '0.00'}/night`,
     `Per diem MYR ${perdiem || '0.00'}/day`,
-  ], [lodging, mealAverage, mileage, perdiem])
+  ], [lodging, mealAverage, mileage, motorcycle, perdiem])
 
   const billingPreview = useMemo(() => {
     const planLabel = tier === 'PREMIUM' ? 'Premium plan' : tier === 'PRO' ? 'Pro plan' : 'Free plan'
-    return [planLabel, 'Usage this month']
+    return [planLabel, tier === 'FREE' ? 'Exports locked on trial' : 'Exports enabled']
   }, [tier])
 
   function num(val: string, set: (v: string) => void) {
@@ -301,12 +255,6 @@ export default function SettingsPage() {
   if (loading) return <div style={S.loading}>Loading…</div>
 
   const isFree = tier !== 'PRO' && tier !== 'PREMIUM'
-  const routeLimit = usageData?.entitlements.routeCalculationsPerMonth ?? (isFree ? 2 : null)
-  const routesUsed = usageData?.counters.routes_calls ?? 0
-  const tripsUsed = usageData?.counters.trips_created ?? 0
-  const exportsUsed = usageData?.counters.exports_created ?? 0
-  const atRouteLimit = isFree && routesUsed >= 2
-
   return (
     <div style={S.page}>
       <div style={S.pageHeader}>
@@ -413,15 +361,15 @@ export default function SettingsPage() {
         </form>
       </AccordionSection>
 
-      {/* ── Subscription & Billing — INLINE ── */}
-      <AccordionSection icon="💳" title="Subscription & Billing"
-        description="Your current plan and usage this month."
+      {/* ── Plan & Billing ── */}
+      <AccordionSection icon="💳" title="Plan & Billing"
+        description="Your current plan and export access."
         previewItems={billingPreview} open={openSections.billing} onToggle={() => toggleSection('billing')}>
         <div style={S.form}>
 
           {/* Plan status card */}
-          <Card icon={isFree ? '🆓' : tier === 'PREMIUM' ? '💎' : '🚀'} title={isFree ? 'Free plan' : tier === 'PREMIUM' ? 'Premium plan' : 'Pro plan'}
-            sub={isFree ? 'Limited to 2 route calculations per month.' : `Active subscription${periodEnd ? ` · renews ${new Date(periodEnd).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}`}>
+          <Card icon={isFree ? '🆓' : tier === 'PREMIUM' ? '💎' : '🚀'} title={isFree ? 'Free trial' : tier === 'PREMIUM' ? 'Premium plan' : 'Pro plan'}
+            sub={isFree ? 'Explore myexpensio before upgrading. Claim exports are available on Pro and Premium.' : `Active subscription${periodEnd ? ` · renews ${new Date(periodEnd).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}`}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               {billingStatus && billingStatus !== 'INACTIVE' && (
                 <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: billingStatus === 'ACTIVE' ? '#d1fae5' : '#fef3c7', color: billingStatus === 'ACTIVE' ? '#065f46' : '#92400e' }}>
@@ -430,28 +378,19 @@ export default function SettingsPage() {
               )}
             </div>
 
-            {/* Usage bars — inline here */}
-            <div style={{ marginTop: 8 }}>
-              <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Usage this month</p>
-              <UsageBar label="Route calculations" used={routesUsed} limit={routeLimit} />
-              <UsageBar label="Trips created" used={tripsUsed} limit={usageData?.entitlements.tripsPerMonth ?? null} />
-              <UsageBar label="Exports" used={exportsUsed} limit={usageData?.entitlements.exportsPerMonth ?? null} />
+            <div style={{ fontSize: 13, color: '#6b7280', marginTop: 8 }}>
+              {isFree
+                ? 'Free trial includes core tracking. Upgrade when you are ready to export claims and tax summaries.'
+                : 'Your paid plan includes claim exports and paid-plan features.'}
             </div>
-
-            {/* Route limit warning for FREE users */}
-            {atRouteLimit && (
-              <div style={{ ...S.error, marginTop: 8 }}>
-                Route calculation limit reached for this month. Upgrade to Pro for unlimited calculations.
-              </div>
-            )}
           </Card>
 
           {/* Upgrade CTA for FREE users */}
           {isFree && (
-            <Card icon="⚡" title="Upgrade to Pro" sub="Unlimited route calculations, trips, and exports. Cancel anytime.">
+            <Card icon="⚡" title="Upgrade to Pro or Premium" sub="Export claims, print reports, and unlock the paid-plan workflow. Cancel anytime.">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#6b7280' }}>Remove all limits and unlock full access to myexpensio.</div>
+                  <div style={{ fontSize: 13, color: '#6b7280' }}>Choose the plan that matches your workspace. Free trial is for evaluation only.</div>
                 </div>
                 <Link href="/settings/billing" style={S.upgradeBtn}>
                   See pricing →

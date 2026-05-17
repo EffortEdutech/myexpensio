@@ -22,11 +22,108 @@ function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
 }
 
+type InviteRow = {
+  id: string
+  status: string
+  [key: string]: unknown
+}
+
+type AuditRow = {
+  entity_id: string
+  metadata: { user_id?: string } | null
+}
+
+type AuthAppMetadata = {
+  must_change_password?: boolean
+}
+
+async function addOnboardingStatus(db: ReturnType<typeof createServiceRoleClient>, rows: InviteRow[]) {
+  const base = rows.map((row) => ({
+    ...row,
+    onboarding_status:
+      row.status === 'EXECUTED' ? 'AWAITING_FIRST_LOGIN' :
+      row.status === 'APPROVED' ? 'APPROVED_PENDING_SEND' :
+      row.status,
+  }))
+
+  const executedIds = base
+    .filter((row) => row.status === 'EXECUTED')
+    .map((row) => row.id)
+
+  if (executedIds.length === 0) return base
+
+  const { data: auditRows } = await db
+    .from('audit_logs')
+    .select('entity_id, metadata')
+    .eq('entity_type', 'invitation_request')
+    .in('entity_id', executedIds)
+    .in('action', ['INVITATION_REQUEST_EXECUTED', 'INVITATION_REQUEST_AUTO_EXECUTED'])
+    .order('created_at', { ascending: false })
+
+  const userIdByRequest = new Map<string, string>()
+  for (const row of (auditRows ?? []) as AuditRow[]) {
+    const userId = row.metadata?.user_id
+    if (userId && !userIdByRequest.has(row.entity_id)) {
+      userIdByRequest.set(row.entity_id, userId)
+    }
+  }
+
+  const userIds = [...new Set([...userIdByRequest.values()])]
+  if (userIds.length === 0) return base
+
+  const { data: profiles } = await db
+    .from('profiles')
+    .select('id, consent_terms, consent_terms_at')
+    .in('id', userIds)
+
+  const consentByUser = new Map(
+    (profiles ?? []).map((profile) => [
+      profile.id as string,
+      profile.consent_terms === true || Boolean(profile.consent_terms_at),
+    ]),
+  )
+
+  const authByUser = new Map<string, AuthAppMetadata>()
+  await Promise.all(userIds.map(async (userId) => {
+    const { data } = await db.auth.admin.getUserById(userId)
+    authByUser.set(userId, (data.user?.app_metadata ?? {}) as AuthAppMetadata)
+  }))
+
+  return base.map((row) => {
+    if (row.status !== 'EXECUTED') return row
+
+    const userId = userIdByRequest.get(row.id)
+    const mustChangePassword = userId ? authByUser.get(userId)?.must_change_password === true : true
+    const hasConsent = userId ? consentByUser.get(userId) === true : false
+
+    return {
+      ...row,
+      invitation_user_id: userId ?? null,
+      onboarding_status: !mustChangePassword && hasConsent
+        ? 'COMPLETED'
+        : 'AWAITING_FIRST_LOGIN',
+    }
+  })
+}
+
 // Roles that use Workspace App (apps/admin)
 const WORKSPACE_APP_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'SALES', 'FINANCE']
 
 function getUserAppUrl(): string {
-  return process.env.NEXT_PUBLIC_USER_APP_URL ?? 'https://myexpensio-jade.vercel.app'
+  return process.env.NEXT_PUBLIC_USER_APP_URL?.trim() || 'https://myexpensio-jade.vercel.app'
+}
+
+function getUserAppLoginUrl(): string {
+  return process.env.USER_APP_LOGIN_URL?.trim() || `${getUserAppUrl()}/login`
+}
+
+function getWorkspaceAppLoginUrl(): string {
+  return process.env.WORKSPACE_APP_LOGIN_URL?.trim()
+    || `${process.env.NEXT_PUBLIC_WORKSPACE_APP_URL?.trim() || 'https://myexpensio-admin.vercel.app'}/login`
+}
+
+function getLoginUrl(orgRole: string): string {
+  return orgRole === 'EMPLOYEE' ? getUserAppLoginUrl() : getWorkspaceAppLoginUrl()
 }
 
 // Generates a readable 10-character temp password (no ambiguous chars like 0/O/l/I)
@@ -79,10 +176,12 @@ export async function GET(req: Request) {
     return err('SERVER_ERROR', 'Failed to fetch invitation requests', 500)
   }
 
-  const requests = (data ?? []).map((row) => ({
+  const normalized = (data ?? []).map((row) => ({
     ...row,
     profiles: Array.isArray(row.profiles) ? row.profiles[0] ?? null : row.profiles,
   }))
+
+  const requests = await addOnboardingStatus(db, normalized)
 
   return NextResponse.json({ requests, total: count ?? 0, page, pageSize })
 }
@@ -170,7 +269,7 @@ export async function POST(req: Request) {
 
   if (autoApprove) {
     try {
-      const userAppUrl = getUserAppUrl()
+      const loginUrl = getLoginUrl(requested_role)
 
       // Get workspace name for the onboarding email
       const { data: org } = await db
@@ -233,13 +332,20 @@ export async function POST(req: Request) {
             to:                      cleanEmail,
             orgName,
             tempPassword,
-            loginUrl:                `${userAppUrl}/login`,
+            loginUrl,
             displayName:             null,
             defaultRateTemplateName: null,
           })
           emailSent = true
         } catch (mailErr) {
           console.error('[workspace/invitations] sendOnboardingEmail failed:', mailErr)
+          await db
+            .from('org_members')
+            .delete()
+            .eq('org_id', workspaceId)
+            .eq('user_id', userId)
+          if (!userExisted) await db.auth.admin.deleteUser(userId).catch(() => undefined)
+          throw new Error(`Failed to send onboarding email: ${mailErr instanceof Error ? mailErr.message : String(mailErr)}`)
         }
       }
 

@@ -7,9 +7,24 @@
 import { NextResponse } from 'next/server'
 import { requireConsoleAuth } from '@/lib/auth'
 import { createServiceRoleClient } from '@/lib/supabase/server'
+import { sendOnboardingEmail } from '@/lib/mail/send-onboarding-email'
 
 function err(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status })
+}
+
+function getWorkspaceAppLoginUrl(): string {
+  return process.env.WORKSPACE_APP_LOGIN_URL?.trim()
+    || `${process.env.NEXT_PUBLIC_WORKSPACE_APP_URL?.trim() || 'https://myexpensio-admin.vercel.app'}/login`
+}
+
+function generateTempPassword(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+  let pwd = ''
+  for (let i = 0; i < 10; i++) {
+    pwd += chars[Math.floor(Math.random() * chars.length)]
+  }
+  return pwd
 }
 
 // ── GET — list all workspaces ─────────────────────────────────────────────────
@@ -126,7 +141,6 @@ export async function POST(req: Request) {
   const cleanContactEmail = contact_email?.trim().toLowerCase() || cleanEmail
 
   const db = createServiceRoleClient()
-  const workspaceAppUrl = process.env.NEXT_PUBLIC_WORKSPACE_APP_URL ?? 'http://localhost:3101'
 
   // Step 1: Create organization
   const { data: org, error: orgError } = await db
@@ -150,7 +164,7 @@ export async function POST(req: Request) {
 
   const orgId = org.id
 
-  // Step 2: Check for existing user / invite owner
+  // Step 2: Check for existing user / create owner with temp-password onboarding
   const { data: existingUsers } = await db.auth.admin.listUsers()
   const existingUser = existingUsers?.users?.find(
     (u) => u.email?.toLowerCase() === cleanEmail,
@@ -158,32 +172,32 @@ export async function POST(req: Request) {
 
   let userId: string
   let userExisted = false
+  let tempPassword: string | null = null
 
   if (existingUser) {
     userId = existingUser.id
     userExisted = true
-    await db.auth.admin.inviteUserByEmail(cleanEmail, {
-      redirectTo: `${workspaceAppUrl}/auth/callback`,
-    })
   } else {
-    const { data: inviteData, error: inviteError } = await db.auth.admin.inviteUserByEmail(
-      cleanEmail,
-      {
-        redirectTo: `${workspaceAppUrl}/auth/callback`,
-        data: {
-          display_name:   owner_display_name.trim(),
-          workspace_type,
-          workspace_name: name.trim(),
-        },
-      },
-    )
+    tempPassword = generateTempPassword()
 
-    if (inviteError || !inviteData?.user?.id) {
+    const { data: newUser, error: createError } = await db.auth.admin.createUser({
+      email:         cleanEmail,
+      password:      tempPassword,
+      email_confirm: true,
+      app_metadata:  { must_change_password: true },
+      user_metadata: {
+        display_name:   owner_display_name.trim(),
+        workspace_type,
+        workspace_name: name.trim(),
+      },
+    })
+
+    if (createError || !newUser?.user?.id) {
       await db.from('organizations').delete().eq('id', orgId)
-      return err('SERVER_ERROR', `Failed to invite owner: ${inviteError?.message ?? 'unknown'}`, 500)
+      return err('SERVER_ERROR', `Failed to create owner account: ${createError?.message ?? 'unknown'}`, 500)
     }
 
-    userId = inviteData.user.id
+    userId = newUser.user.id
   }
 
   // Step 3: Upsert profile
@@ -194,6 +208,7 @@ export async function POST(req: Request) {
 
   if (profileError && !userExisted) {
     await db.from('organizations').delete().eq('id', orgId)
+    await db.auth.admin.deleteUser(userId).catch(() => undefined)
     return err('SERVER_ERROR', `Failed to set up owner profile: ${profileError.message}`, 500)
   }
 
@@ -205,7 +220,28 @@ export async function POST(req: Request) {
 
   if (memberError) {
     await db.from('organizations').delete().eq('id', orgId)
+    if (!userExisted) await db.auth.admin.deleteUser(userId).catch(() => undefined)
     return err('SERVER_ERROR', `Failed to assign owner: ${memberError.message}`, 500)
+  }
+
+  let emailSent = false
+  if (!userExisted && tempPassword) {
+    try {
+      await sendOnboardingEmail({
+        to: cleanEmail,
+        orgName: org.name,
+        tempPassword,
+        loginUrl: getWorkspaceAppLoginUrl(),
+        displayName: owner_display_name.trim(),
+        defaultRateTemplateName: null,
+      })
+      emailSent = true
+    } catch (mailErr) {
+      await db.from('organizations').delete().eq('id', orgId)
+      await db.auth.admin.deleteUser(userId).catch(() => undefined)
+      console.error('[console/workspaces] owner onboarding email failed:', mailErr)
+      return err('SERVER_ERROR', 'Workspace was not created because the owner onboarding email could not be sent.', 500)
+    }
   }
 
   // Step 5: Create ORG subscription row in the unified subscriptions table
@@ -239,13 +275,13 @@ export async function POST(req: Request) {
     metadata:      {
       workspace_type, name: name.trim(),
       owner_email: cleanEmail, owner_user_id: userId,
-      initial_tier, seat_count, user_existed: userExisted,
+      initial_tier, seat_count, user_existed: userExisted, email_sent: emailSent,
       provisioned_by: ctx.email,
     },
   })
 
   return NextResponse.json(
-    { org_id: orgId, org_name: org.name, workspace_type, user_id: userId, user_existed: userExisted, status: 'PROVISIONED' },
+    { org_id: orgId, org_name: org.name, workspace_type, user_id: userId, user_existed: userExisted, email_sent: emailSent, status: 'PROVISIONED' },
     { status: 201 },
   )
 }

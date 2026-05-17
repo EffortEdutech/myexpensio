@@ -22,6 +22,7 @@ type InviteRequest = {
   id: string; workspace_id: string; workspace_type: string
   requested_email: string; requested_role: string
   status: string; rejection_reason: string | null; notes: string | null
+  onboarding_status?: string
   created_at: string; approved_at: string | null; executed_at: string | null
   organizations: { id: string; name: string; workspace_type: string } | null
   requester: { id: string; email: string | null; display_name: string | null } | null
@@ -75,8 +76,14 @@ const STATUS_CFG: Record<string, { label: string; cls: string }> = {
   PENDING:  { label: 'Pending',    cls: 'bg-yellow-50 text-yellow-700 border border-yellow-200' },
   APPROVED: { label: 'Approved',   cls: 'bg-blue-50 text-blue-700 border border-blue-200' },
   REJECTED: { label: 'Rejected',   cls: 'bg-red-50 text-red-700 border border-red-200' },
-  EXECUTED: { label: 'Completed',  cls: 'bg-green-50 text-green-700 border border-green-200' },
+  EXECUTED: { label: 'Email sent',  cls: 'bg-blue-50 text-blue-700 border border-blue-200' },
   FAILED:   { label: 'Failed',     cls: 'bg-red-50 text-red-600 border border-red-200' },
+  AWAITING_FIRST_LOGIN: { label: 'Awaiting first login', cls: 'bg-blue-50 text-blue-700 border border-blue-200' },
+  COMPLETED: { label: 'Completed', cls: 'bg-green-50 text-green-700 border border-green-200' },
+}
+
+function workflowKey(request: InviteRequest) {
+  return request.onboarding_status ?? request.status
 }
 
 const INPUT = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
@@ -511,11 +518,12 @@ function ExecuteModal({ request, onClose, onDone }: {
   )
 }
 
-type InvTabKey = 'pending' | 'approved' | 'executed' | 'rejected'
+type InvTabKey = 'pending' | 'approved' | 'awaiting' | 'completed' | 'rejected'
 const INV_TABS: { key: InvTabKey; label: string; status: string }[] = [
   { key: 'pending',  label: 'Pending',   status: 'PENDING' },
   { key: 'approved', label: 'Approved',  status: 'APPROVED' },
-  { key: 'executed', label: 'Completed', status: 'EXECUTED' },
+  { key: 'awaiting', label: 'Awaiting First Login', status: 'EXECUTED' },
+  { key: 'completed', label: 'Completed', status: 'EXECUTED' },
   { key: 'rejected', label: 'Rejected',  status: 'REJECTED' },
 ]
 
@@ -546,11 +554,17 @@ function InvitationRequestsTab() {
 
   function handleExecDone({ user_existed }: { user_existed: boolean }) {
     setSuccessMsg(user_existed
-      ? 'User already existed — workspace membership granted, invite email resent.'
-      : 'User account created — invite email sent successfully.')
+      ? 'User already existed — workspace membership granted, invite email sent, awaiting first login.'
+      : 'User account created — invite email sent, awaiting first login.')
     setTimeout(() => setSuccessMsg(null), 6000)
     fetchRequests()
   }
+
+  const visibleRequests = requests.filter((r) => {
+    if (invTab === 'awaiting') return r.onboarding_status !== 'COMPLETED'
+    if (invTab === 'completed') return r.onboarding_status === 'COMPLETED'
+    return true
+  })
 
   return (
     <div className="space-y-4">
@@ -583,7 +597,7 @@ function InvitationRequestsTab() {
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center h-40 text-sm text-gray-400">Loading…</div>
-        ) : requests.length === 0 ? (
+        ) : visibleRequests.length === 0 ? (
           <div className="flex items-center justify-center h-40 text-sm text-gray-400">
             {invTab === 'pending' ? '✓ No pending requests — queue is clear' : `No ${currentTab.label.toLowerCase()} requests`}
           </div>
@@ -598,8 +612,8 @@ function InvitationRequestsTab() {
                 </tr>
               </thead>
               <tbody>
-                {requests.map((r) => {
-                  const cfg = STATUS_CFG[r.status] ?? STATUS_CFG.PENDING
+                {visibleRequests.map((r) => {
+                  const cfg = STATUS_CFG[workflowKey(r)] ?? STATUS_CFG[r.status] ?? STATUS_CFG.PENDING
                   return (
                     <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3">
@@ -633,7 +647,11 @@ function InvitationRequestsTab() {
                               Reject
                             </button>
                           )}
-                          {r.status === 'EXECUTED' && <span className="text-xs text-green-600">✓ {fmt(r.executed_at)}</span>}
+                          {r.status === 'EXECUTED' && (
+                            <span className={`text-xs ${r.onboarding_status === 'COMPLETED' ? 'text-green-600' : 'text-blue-600'}`}>
+                              {r.onboarding_status === 'COMPLETED' ? 'Done' : 'Email sent'} - {fmt(r.executed_at)}
+                            </span>
+                          )}
                           {r.status === 'REJECTED' && <span className="text-xs text-red-500">✕ Rejected</span>}
                         </div>
                       </td>

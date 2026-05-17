@@ -30,7 +30,7 @@ export type ResolvedEntitlements = {
 const FALLBACK_FREE = {
   routes_per_month:  2 as LimitValue,
   trips_per_month:   null as LimitValue,
-  exports_per_month: null as LimitValue,
+  exports_per_month: 0 as LimitValue,
   label: 'Free',
 }
 
@@ -144,7 +144,7 @@ export async function loadOrgEntitlements(params: {
     trips_per_month: platformRes.data?.free_trips_per_month !== undefined
       ? platformRes.data.free_trips_per_month
       : FALLBACK_FREE.trips_per_month,
-    exports_per_month: platformRes.data?.free_exports_per_month !== undefined
+    exports_per_month: platformRes.data?.free_exports_per_month != null
       ? platformRes.data.free_exports_per_month
       : FALLBACK_FREE.exports_per_month,
     label: FALLBACK_FREE.label,

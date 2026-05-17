@@ -47,10 +47,15 @@ const ROLE_CLS: Record<string, string> = {
   MEMBER:   'bg-gray-100 text-gray-500',
 }
 
-function RoleBadge({ role }: { role: string }) {
+function roleLabel(role: string, workspaceType?: string | null) {
+  if (workspaceType === 'AGENT' && role === 'EMPLOYEE') return 'Subscriber'
+  return ROLE_LABELS[role] ?? role
+}
+
+function RoleBadge({ role, workspaceType }: { role: string; workspaceType?: string | null }) {
   return (
     <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${ROLE_CLS[role] ?? 'bg-gray-100 text-gray-500'}`}>
-      {ROLE_LABELS[role] ?? role}
+      {roleLabel(role, workspaceType)}
     </span>
   )
 }
@@ -144,7 +149,7 @@ function MemberRow({
         <div className="flex-shrink-0 text-right">
           {!changingRole ? (
             <div className="flex items-center gap-2">
-              <RoleBadge role={member.org_role} />
+              <RoleBadge role={member.org_role} workspaceType={workspaceType} />
               {!isRemoved && (
                 <div className="flex items-center gap-1">
                   <button onClick={() => { setChangingRole(true); setNewRole(member.org_role) }}
@@ -172,7 +177,7 @@ function MemberRow({
                 className="w-full text-xs border border-gray-300 rounded px-2 py-1 text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500">
                 {availableRoles.map((r) => (
                   <option key={r} value={r}>
-                    {ROLE_LABELS[r]}{workspaceType === 'AGENT' && r === 'EMPLOYEE' ? ' (Subscriber)' : ''}
+                    {roleLabel(r, workspaceType)}
                   </option>
                 ))}
               </select>

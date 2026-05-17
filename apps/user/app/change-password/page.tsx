@@ -12,6 +12,10 @@ export default function ChangePasswordPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
+  // PDPA consent — required before account activation
+  const [consentTerms,     setConsentTerms]     = useState(false)
+  const [consentMarketing, setConsentMarketing] = useState(false)
+
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -26,6 +30,12 @@ export default function ChangePasswordPage() {
     e.preventDefault()
     setError(null)
     setSuccess(null)
+
+    // PDPA: consent is required before account activation
+    if (!consentTerms) {
+      setError('You must agree to the Terms of Service and Privacy Policy to continue.')
+      return
+    }
 
     const passwordError = validatePassword(password)
     if (passwordError) {
@@ -55,6 +65,10 @@ export default function ChangePasswordPage() {
       const res = await fetch('/api/auth/complete-first-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          consent_terms:     consentTerms,
+          consent_marketing: consentMarketing,
+        }),
       })
 
       const json = await res.json().catch(() => ({}))
@@ -114,10 +128,62 @@ export default function ChangePasswordPage() {
             disabled={saving}
           />
 
+          {/* ── PDPA consent ─────────────────────────────────────── */}
+          <div style={S.consentBox}>
+            <p style={S.consentTitle}>Data &amp; Privacy Notice</p>
+            <p style={S.consentSummary}>
+              myexpensio collects your name, email, and mileage / expense data solely to provide
+              expense management services for your organisation. Your data is processed under the
+              Malaysian Personal Data Protection Act 2010 (PDPA) and is never sold to third parties.
+              You may request access, correction, or deletion of your data at any time.
+            </p>
+
+            {/* Required consent */}
+            <label style={S.checkRow}>
+              <input
+                type="checkbox"
+                checked={consentTerms}
+                onChange={(e) => setConsentTerms(e.target.checked)}
+                disabled={saving}
+                style={S.checkbox}
+              />
+              <span style={S.checkLabel}>
+                I have read and agree to the{' '}
+                <a href="/terms" target="_blank" rel="noopener noreferrer" style={S.checkLink}>
+                  Terms of Service
+                </a>{' '}
+                and{' '}
+                <a href="/privacy" target="_blank" rel="noopener noreferrer" style={S.checkLink}>
+                  Privacy Policy
+                </a>
+                . <span style={S.requiredTag}>Required</span>
+              </span>
+            </label>
+
+            {/* Optional marketing consent */}
+            <label style={{ ...S.checkRow, marginTop: 10 }}>
+              <input
+                type="checkbox"
+                checked={consentMarketing}
+                onChange={(e) => setConsentMarketing(e.target.checked)}
+                disabled={saving}
+                style={S.checkbox}
+              />
+              <span style={S.checkLabel}>
+                I agree to receive product updates and tips from myexpensio.{' '}
+                <span style={S.optionalTag}>Optional</span>
+              </span>
+            </label>
+
+            <p style={S.consentHelper}>
+              You can withdraw consent or update your preferences at any time from Settings.
+            </p>
+          </div>
+
           <button
             type="submit"
-            style={{ ...S.primaryBtn, opacity: saving ? 0.65 : 1 }}
-            disabled={saving}
+            style={{ ...S.primaryBtn, opacity: (saving || !consentTerms) ? 0.65 : 1 }}
+            disabled={saving || !consentTerms}
           >
             {saving ? 'Saving…' : 'Save password and continue'}
           </button>
@@ -293,5 +359,70 @@ const S: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     cursor: 'pointer',
     width: '100%',
+  },
+  // ── PDPA consent styles ────────────────────────────────────────────────
+  consentBox: {
+    backgroundColor: '#eff6ff',
+    border: '1px solid #bfdbfe',
+    borderRadius: 10,
+    padding: '14px 16px',
+  },
+  consentTitle: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: '#1d4ed8',
+    margin: '0 0 6px',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.04em',
+  },
+  consentSummary: {
+    fontSize: 12,
+    color: '#1e40af',
+    margin: '0 0 12px',
+    lineHeight: 1.6,
+  },
+  checkRow: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 8,
+    cursor: 'pointer',
+    userSelect: 'none' as const,
+  },
+  checkbox: {
+    marginTop: 2,
+    width: 15,
+    height: 15,
+    flexShrink: 0,
+    cursor: 'pointer',
+    accentColor: '#1d4ed8',
+  },
+  checkLabel: {
+    fontSize: 12,
+    color: '#1e3a8a',
+    lineHeight: 1.55,
+  },
+  checkLink: {
+    color: '#1d4ed8',
+    textDecoration: 'underline',
+  },
+  requiredTag: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: '#dc2626',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.04em',
+  },
+  optionalTag: {
+    fontSize: 10,
+    fontWeight: 600,
+    color: '#6b7280',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.04em',
+  },
+  consentHelper: {
+    fontSize: 11,
+    color: '#3b82f6',
+    margin: '10px 0 0',
+    lineHeight: 1.5,
   },
 }  

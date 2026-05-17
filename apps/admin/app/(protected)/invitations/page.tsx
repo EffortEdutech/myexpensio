@@ -12,6 +12,7 @@ type InvitationRequest = {
   requested_email: string
   requested_role: string
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXECUTED' | 'FAILED'
+  onboarding_status?: string
   rejection_reason: string | null
   notes: string | null
   created_at: string
@@ -54,12 +55,20 @@ const STATUS_CFG: Record<string, { label: string; cls: string; description: stri
   PENDING:  { label: 'Pending',   cls: 'bg-yellow-50 text-yellow-700', description: 'Awaiting review by platform team' },
   APPROVED: { label: 'Approved',  cls: 'bg-blue-50 text-blue-700',     description: 'Approved — being processed' },
   REJECTED: { label: 'Rejected',  cls: 'bg-red-50 text-red-700',       description: 'Request was declined' },
-  EXECUTED: { label: 'Completed', cls: 'bg-green-50 text-green-700',   description: 'User account created and invite sent' },
+  EXECUTED: { label: 'Email sent', cls: 'bg-blue-50 text-blue-700',     description: 'Email sent, waiting for password change and consent' },
   FAILED:   { label: 'Failed',    cls: 'bg-red-50 text-red-600',       description: 'Technical error — Console staff notified' },
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const cfg = STATUS_CFG[status] ?? { label: status, cls: 'bg-gray-100 text-gray-600', description: '' }
+STATUS_CFG.AWAITING_FIRST_LOGIN = { label: 'Awaiting first login', cls: 'bg-blue-50 text-blue-700', description: 'Email sent, waiting for password change and consent' }
+STATUS_CFG.COMPLETED = { label: 'Completed', cls: 'bg-green-50 text-green-700', description: 'User changed password and accepted consent' }
+
+function workflowKey(req: InvitationRequest) {
+  return req.onboarding_status ?? req.status
+}
+
+function StatusBadge({ req }: { req: InvitationRequest }) {
+  const key = workflowKey(req)
+  const cfg = STATUS_CFG[key] ?? STATUS_CFG[req.status] ?? { label: key, cls: 'bg-gray-100 text-gray-600', description: '' }
   return (
     <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${cfg.cls}`}>
       {cfg.label}
@@ -182,6 +191,22 @@ function SubmitForm({
         <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">{error}</div>
       )}
 
+      {/* PDPA sender disclosure — required before submitting */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5 text-xs text-blue-800 leading-relaxed">
+        🇲🇾 <strong>Data notice:</strong> By submitting this request, you confirm that you have the right
+        to share this person's email address with myexpensio, and that the invitee is aware they are
+        being added to your workspace. Their data will be handled in accordance with our{' '}
+        <a
+          href={`${process.env.NEXT_PUBLIC_USER_APP_URL ?? 'https://myexpensio.com'}/privacy`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline"
+        >
+          Privacy Policy
+        </a>
+        {' '}(Malaysian PDPA 2010).
+      </div>
+
       <button
         onClick={handleSubmit}
         disabled={loading || !email.trim() || !role}
@@ -196,7 +221,7 @@ function SubmitForm({
 // ── Request row ────────────────────────────────────────────────────────────────
 
 function RequestRow({ req }: { req: InvitationRequest }) {
-  const cfg = STATUS_CFG[req.status]
+  const cfg = STATUS_CFG[workflowKey(req)] ?? STATUS_CFG[req.status]
   return (
     <tr className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
       <td className="px-4 py-3">
@@ -208,14 +233,16 @@ function RequestRow({ req }: { req: InvitationRequest }) {
         </span>
       </td>
       <td className="px-4 py-3">
-        <StatusBadge status={req.status} />
+        <StatusBadge req={req} />
         {req.rejection_reason && (
           <p className="text-xs text-red-500 mt-0.5">{req.rejection_reason}</p>
         )}
       </td>
       <td className="px-4 py-3 text-xs text-gray-500">{fmt(req.created_at)}</td>
       <td className="px-4 py-3 text-xs text-gray-500">
-        {req.status === 'EXECUTED' ? fmt(req.executed_at) : (cfg?.description ?? '—')}
+        {req.status === 'EXECUTED'
+          ? `${cfg?.description ?? 'Email sent'} (${fmt(req.executed_at)})`
+          : (cfg?.description ?? '—')}
       </td>
     </tr>
   )
@@ -234,7 +261,7 @@ export default function InvitationsPage() {
   const [submitResult, setSubmitResult]   = useState<{ auto_executed: boolean; message: string } | null>(null)
 
   const HISTORY_STATUS: Record<string, string[]> = {
-    active:    ['PENDING', 'APPROVED'],
+    active:    ['PENDING', 'APPROVED', 'EXECUTED'],
     completed: ['EXECUTED'],
     rejected:  ['REJECTED', 'FAILED'],
   }
@@ -263,11 +290,16 @@ export default function InvitationsPage() {
   }
 
   const filteredRequests = tab !== 'new'
-    ? requests.filter((r) => (HISTORY_STATUS[tab] ?? []).includes(r.status))
+    ? requests.filter((r) => {
+        if (!(HISTORY_STATUS[tab] ?? []).includes(r.status)) return false
+        if (tab === 'active') return r.onboarding_status !== 'COMPLETED'
+        if (tab === 'completed') return r.onboarding_status === 'COMPLETED'
+        return true
+      })
     : []
 
-  const pendingCount   = requests.filter((r) => ['PENDING', 'APPROVED'].includes(r.status)).length
-  const completedCount = requests.filter((r) => r.status === 'EXECUTED').length
+  const pendingCount   = requests.filter((r) => ['PENDING', 'APPROVED'].includes(r.status) || (r.status === 'EXECUTED' && r.onboarding_status !== 'COMPLETED')).length
+  const completedCount = requests.filter((r) => r.status === 'EXECUTED' && r.onboarding_status === 'COMPLETED').length
 
   const TABS: { key: TabKey; label: string }[] = [
     { key: 'new',       label: '+ New Request' },

@@ -217,8 +217,8 @@ function InternalView({
 }) {
   const { toast, show } = useToast()
 
-  const [platformConfig, setPlatformConfig] = useState<PlatformConfig>({ free_routes_per_month: 2, free_trips_per_month: null, free_exports_per_month: null })
-  const [freeForm, setFreeForm] = useState({ routes: '2', trips: '', exports: '' })
+  const [platformConfig, setPlatformConfig] = useState<PlatformConfig>({ free_routes_per_month: 2, free_trips_per_month: null, free_exports_per_month: 0 })
+  const [freeForm, setFreeForm] = useState({ routes: '2', trips: '', exports: '0' })
   const [platformLoaded, setPlatformLoaded] = useState(false)
   const [platformBusy, setPlatformBusy] = useState(false)
   const [showPlatform, setShowPlatform] = useState(false)
@@ -234,7 +234,7 @@ function InternalView({
           setFreeForm({
             routes:  c.free_routes_per_month  != null ? String(c.free_routes_per_month)  : '',
             trips:   c.free_trips_per_month   != null ? String(c.free_trips_per_month)   : '',
-            exports: c.free_exports_per_month != null ? String(c.free_exports_per_month) : '',
+            exports: c.free_exports_per_month != null ? String(c.free_exports_per_month) : '0',
           })
         }
       })
@@ -251,7 +251,7 @@ function InternalView({
         body: JSON.stringify({
           free_routes_per_month:  freeForm.routes.trim()  ? Number(freeForm.routes)  : null,
           free_trips_per_month:   freeForm.trips.trim()   ? Number(freeForm.trips)   : null,
-          free_exports_per_month: freeForm.exports.trim() ? Number(freeForm.exports) : null,
+          free_exports_per_month: freeForm.exports.trim() ? Number(freeForm.exports) : 0,
         }),
       })
       const json = await res.json()
@@ -395,7 +395,7 @@ function InternalView({
 
         {showPlatform && (
           <div className="border-t border-gray-100 px-5 py-4 space-y-4">
-            <p className="text-xs text-gray-400">Default monthly limits for all FREE workspaces on DEFAULT preset. Leave blank for unlimited. PRO tier is always unlimited.</p>
+            <p className="text-xs text-gray-400">Default monthly limits for all FREE workspaces on DEFAULT preset. Use 0 to block a feature. PRO and PREMIUM are unlimited for exports.</p>
             {!platformLoaded ? (
               <p className="text-xs text-gray-400">Loading...</p>
             ) : (
@@ -407,7 +407,7 @@ function InternalView({
                     { key: 'exports', label: 'Exports / month' },
                   ] as { key: keyof typeof freeForm; label: string }[]).map(({ key, label }) => (
                     <Field key={key} label={label}>
-                      <input type="number" min="0" step="1" placeholder="blank = unlimited"
+                      <input type="number" min="0" step="1" placeholder={key === 'exports' ? '0' : 'blank = unlimited'}
                         value={freeForm[key]}
                         onChange={e => setFreeForm(f => ({ ...f, [key]: e.target.value }))}
                         className={INPUT} />

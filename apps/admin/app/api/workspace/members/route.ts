@@ -42,6 +42,9 @@ export async function GET(req: Request) {
         email,
         display_name,
         department
+      ),
+      organizations (
+        workspace_type
       )
     `)
     .eq('org_id', orgId)
@@ -52,10 +55,18 @@ export async function GET(req: Request) {
     return err('SERVER_ERROR', 'Failed to fetch members', 500)
   }
 
-  const members = (data ?? []).map((row) => ({
-    ...row,
-    profiles: Array.isArray(row.profiles) ? row.profiles[0] ?? null : row.profiles,
-  }))
+  const members = (data ?? []).map((row) => {
+    const org = Array.isArray(row.organizations)
+      ? row.organizations[0] ?? null
+      : row.organizations as { workspace_type?: string | null } | null
+
+    return {
+      ...row,
+      profiles: Array.isArray(row.profiles) ? row.profiles[0] ?? null : row.profiles,
+      workspace_type: org?.workspace_type ?? null,
+      organizations: undefined,
+    }
+  })
 
   return NextResponse.json({ members })
 }
@@ -84,7 +95,7 @@ export async function PATCH(req: Request) {
 
   // Validate new role is appropriate for the workspace type
   const TEAM_ROLES  = ['OWNER', 'ADMIN', 'MANAGER', 'EMPLOYEE']
-  const AGENT_ROLES = ['OWNER', 'SALES', 'FINANCE']
+  const AGENT_ROLES = ['OWNER', 'SALES', 'FINANCE', 'EMPLOYEE']
   const allowedRoles = ctx.isInternalStaff
     ? [...TEAM_ROLES, ...AGENT_ROLES, 'MEMBER']
     : ctx.isTeamWorkspace

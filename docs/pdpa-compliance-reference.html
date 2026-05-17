@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDPA Compliance Reference — MyExpensio Internal</title>
+  <style>
+    :root {
+      --brand: #1a56db;
+      --brand-light: #eff6ff;
+      --text: #111827;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --bg: #ffffff;
+      --section-bg: #f9fafb;
+      --green: #16a34a;
+      --green-bg: #f0fdf4;
+      --green-border: #bbf7d0;
+      --amber: #d97706;
+      --amber-bg: #fffbeb;
+      --amber-border: #fde68a;
+      --red: #dc2626;
+      --red-bg: #fef2f2;
+      --red-border: #fca5a5;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--section-bg);
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    /* Header */
+    header {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 40px 24px;
+      text-align: center;
+    }
+    header .eyebrow {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      margin-bottom: 10px;
+    }
+    header h1 { font-size: 26px; font-weight: 800; margin-bottom: 8px; }
+    header p { font-size: 14px; color: #94a3b8; max-width: 480px; margin: 0 auto; }
+    .header-badges { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 18px; }
+    .hbadge {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #e2e8f0;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 13px;
+      border-radius: 20px;
+    }
+
+    /* Layout */
+    .page { max-width: 820px; margin: 0 auto; padding: 48px 24px 80px; }
+
+    /* Section nav */
+    .section-nav {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px 26px;
+      margin-bottom: 40px;
+    }
+    .section-nav h2 {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 14px;
+    }
+    .nav-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px;
+    }
+    .nav-grid a {
+      font-size: 13.5px; color: var(--brand); text-decoration: none;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .nav-grid a:hover { text-decoration: underline; }
+    .nav-grid a .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--brand); flex-shrink: 0;
+    }
+
+    /* Compliance master checklist */
+    .checklist-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 40px;
+    }
+    .checklist-card-header {
+      background: var(--brand);
+      color: #fff;
+      padding: 16px 24px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .checklist-item {
+      display: flex; align-items: flex-start;
+      gap: 14px; padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    .checklist-item:last-child { border-bottom: none; }
+    .ci-status {
+      flex-shrink: 0;
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; margin-top: 2px;
+    }
+    .ci-done { background: var(--green-bg); color: var(--green); border: 1.5px solid var(--green); }
+    .ci-todo { background: var(--amber-bg); color: var(--amber); border: 1.5px dashed var(--amber-border); }
+    .ci-body { flex: 1; }
+    .ci-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
+    .ci-desc { font-size: 13px; color: var(--muted); }
+    .ci-file {
+      font-size: 11.5px; font-weight: 600;
+      background: var(--brand-light); color: var(--brand);
+      padding: 2px 8px; border-radius: 4px; margin-top: 4px;
+      display: inline-block; font-family: monospace;
+    }
+
+    /* Content sections */
+    .section {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 28px;
+      overflow: hidden;
+      scroll-margin-top: 24px;
+    }
+    .section-head {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px;
+    }
+    .section-num {
+      width: 30px; height: 30px;
+      background: #0f172a; color: #fff;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; flex-shrink: 0;
+    }
+    .section-head h2 { font-size: 17px; font-weight: 700; color: var(--text); }
+    .section-body { padding: 22px 24px; }
+
+    /* Rule list */
+    .rule-list { list-style: none; }
+    .rule-list li {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 8px 0; border-bottom: 1px solid var(--border);
+      font-size: 14px; color: #374151;
+    }
+    .rule-list li:last-child { border-bottom: none; }
+    .rule-list li .icon { flex-shrink: 0; font-size: 15px; margin-top: 2px; }
+
+    /* Info callout */
+    .callout {
+      border-radius: 8px; padding: 14px 18px;
+      font-size: 13.5px; margin-top: 14px; line-height: 1.55;
+    }
+    .callout.green { background: var(--green-bg); border: 1px solid var(--green-border); color: #14532d; }
+    .callout.amber { background: var(--amber-bg); border: 1px solid var(--amber-border); color: #78350f; }
+    .callout.red   { background: var(--red-bg);   border: 1px solid var(--red-border);   color: #7f1d1d; }
+    .callout.blue  { background: var(--brand-light); border: 1px solid #bfdbfe; color: #1e3a8a; }
+
+    /* Flow diagram */
+    .flow {
+      display: flex; align-items: center; gap: 0;
+      flex-wrap: wrap; margin: 16px 0;
+    }
+    .flow-step {
+      background: var(--brand-light);
+      border: 1.5px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 12px 18px;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: #1e3a8a;
+      text-align: center;
+    }
+    .flow-arrow {
+      font-size: 18px; color: var(--muted);
+      padding: 0 10px;
+    }
+    .flow-step .step-label {
+      font-size: 10.5px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      color: #3b82f6; display: block; margin-bottom: 4px;
+    }
+    .flow-step .step-action {
+      font-size: 13px; font-weight: 600; color: #1e3a8a;
+    }
+    .flow-step .step-pdpa {
+      font-size: 11px; color: #6b7280; font-weight: 400;
+      display: block; margin-top: 4px;
+    }
+
+    /* Two column */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+    .mini-card {
+      background: var(--section-bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 14px 16px;
+    }
+    .mini-card h4 { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+    .mini-card p { font-size: 13px; color: #374151; }
+
+    /* Data table */
+    .data-table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13.5px; }
+    .data-table th {
+      text-align: left; padding: 10px 14px;
+      background: var(--section-bg);
+      border-bottom: 2px solid var(--border);
+      font-size: 12px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+    }
+    .data-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: #374151; }
+    .data-table tr:last-child td { border-bottom: none; }
+    .tag-green {
+      display: inline-block; background: var(--green-bg); color: var(--green);
+      font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px;
+    }
+    .tag-amber {
+      display: inline-block; background: var(--amber-bg); color: var(--amber);
+      font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px;
+    }
+
+    /* Placeholder style */
+    .ph {
+      color: #b45309; background: #fffbeb;
+      border: 1px dashed #f59e0b; border-radius: 4px;
+      padding: 1px 6px; font-style: italic; font-size: 12px;
+    }
+
+    /* File links */
+    .doc-links {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px;
+    }
+    .doc-link {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--section-bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px 14px;
+      text-decoration: none; color: var(--text);
+      font-size: 13.5px; font-weight: 600;
+      transition: border-color 0.15s;
+    }
+    .doc-link:hover { border-color: var(--brand); }
+    .doc-link .dl-icon { font-size: 18px; flex-shrink: 0; }
+    .doc-link .dl-label { font-size: 13px; }
+    .doc-link .dl-sub { font-size: 11.5px; color: var(--muted); font-weight: 400; }
+
+    /* Footer */
+    footer {
+      text-align: center; font-size: 12px; color: var(--muted);
+      padding: 28px 24px; border-top: 1px solid var(--border);
+    }
+
+    @media (max-width: 560px) {
+      .nav-grid { grid-template-columns: 1fr; }
+      .two-col { grid-template-columns: 1fr; }
+      .doc-links { grid-template-columns: 1fr; }
+      .flow { flex-direction: column; }
+      .flow-arrow { transform: rotate(90deg); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Internal Reference · MyExpensio</div>
+  <h1>PDPA Compliance Guide</h1>
+  <p>Everything the team needs to know about Malaysia PDPA 2010 compliance for our invite-only mileage and claims platform.</p>
+  <div class="header-badges">
+    <span class="hbadge">🇲🇾 PDPA 2010</span>
+    <span class="hbadge">Invite-Only Platform</span>
+    <span class="hbadge">Internal Use Only</span>
+    <span class="hbadge">Last updated: May 2026</span>
+  </div>
+</header>
+
+<div class="page">
+
+  <!-- Navigation -->
+  <nav class="section-nav">
+    <h2>Jump to section</h2>
+    <div class="nav-grid">
+      <a href="#checklist"><span class="dot"></span>Master Compliance Checklist</a>
+      <a href="#why"><span class="dot"></span>Why PDPA Applies to Us</a>
+      <a href="#what-we-collect"><span class="dot"></span>What Data We Collect</a>
+      <a href="#flow"><span class="dot"></span>Recommended Signup Flow</a>
+      <a href="#two-moments"><span class="dot"></span>Two Data Moments (Invite-Only)</a>
+      <a href="#consent-rules"><span class="dot"></span>Consent Rules</a>
+      <a href="#location"><span class="dot"></span>Location & Mileage Data</a>
+      <a href="#rights"><span class="dot"></span>User Rights Under PDPA</a>
+      <a href="#invite-disclosure"><span class="dot"></span>Invite Sender Disclosure</a>
+      <a href="#docs"><span class="dot"></span>Platform Legal Documents</a>
+    </div>
+  </nav>
+
+  <!-- Master checklist -->
+  <div class="checklist-card" id="checklist">
+    <div class="checklist-card-header">✅ Master Compliance Checklist — Pre-Launch</div>
+
+    <div class="checklist-item">
+      <div class="ci-status ci-done">✓</div>
+      <div class="ci-body">
+        <div class="ci-title">Privacy Policy (PDPA-aligned)</div>
+        <div class="ci-desc">Explains data collection, purpose, retention, sharing, and user rights under PDPA.</div>
+        <span class="ci-file">docs/privacy-policy.html</span>
+      </div>
+    </div>
+
+    <div class="checklist-item">
+      <div class="ci-status ci-done">✓</div>
+      <div class="ci-body">
+        <div class="ci-title">Terms of Service (Malaysian law governed)</div>
+        <div class="ci-desc">Covers acceptable use, mileage disclaimer, limitation of liability, and account termination.</div>
+        <span class="ci-file">docs/terms-of-service.html</span>
+      </div>
+    </div>
+
+    <div class="checklist-item">
+      <div class="ci-status ci-done">✓</div>
+      <div class="ci-body">
+        <div class="ci-title">Signup Consent Component</div>
+        <div class="ci-desc">Two separate checkboxes (required terms + optional marketing). Not pre-checked. Consent payload logged.</div>
+        <span class="ci-file">docs/signup-consent.html</span>
+      </div>
+    </div>
+
+    <div class="checklist-item">
+      <div class="ci-status ci-done">✓</div>
+      <div class="ci-body">
+        <div class="ci-title">Invite Email Legal Footer</div>
+        <div class="ci-desc">PDPA pre-consent notice in every invite email. Includes deletion request path.</div>
+        <span class="ci-file">docs/invite-email-footer.html</span>
+      </div>
+    </div>
+
+    <div class="checklist-item">
+      <div class="ci-status ci-done">✓</div>
+      <div class="ci-body">
+        <div class="ci-title">Accept Invite Landing Page</div>
+        <div class="ci-desc">Intermediate page between invite email and signup. Shows PDPA pre-consent notice before data collection begins.</div>
+        <span class="ci-file">docs/accept-invite.html</span>
+      </div>
+    </div>
+
+    <div class="checklist-item">
+      <div class="ci-status ci-todo">!</div>
+      <div class="ci-body">
+        <div class="ci-title">Fill in company legal details</div>
+        <div class="ci-desc">Replace all <span class="ph">[Company Legal Name] Sdn Bhd</span> and <span class="ph">[Company Address]</span> placeholders before go-live.</div>
+      </div>
+    </div>
+
+    <div class="checklist-item">
+      <div class="ci-status ci-todo">!</div>
+      <div class="ci-body">
+        <div class="ci-title">Database: store consent timestamps</div>
+        <div class="ci-desc">Log <code>consent_terms</code>, <code>consent_marketing</code>, <code>consented_at</code>, <code>consented_ip</code> per user in Supabase.</div>
+      </div>
+    </div>
+
+    <div class="checklist-item">
+      <div class="ci-status ci-todo">!</div>
+      <div class="ci-body">
+        <div class="ci-title">Invite email deletion mechanism</div>
+        <div class="ci-desc">Auto-delete unused invitee emails after 14 days if invite is not accepted.</div>
+      </div>
+    </div>
+
+    <div class="checklist-item">
+      <div class="ci-status ci-todo">!</div>
+      <div class="ci-body">
+        <div class="ci-title">In-app data request flow</div>
+        <div class="ci-desc">User-facing way to request access, correction, or deletion of personal data (email to support@myexpensio.com is acceptable for MVP).</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Why PDPA applies -->
+  <div class="section" id="why">
+    <div class="section-head">
+      <div class="section-num">1</div>
+      <h2>Why PDPA Applies to MyExpensio</h2>
+    </div>
+    <div class="section-body">
+      <p style="color:#374151; margin-bottom:14px;">
+        Even though MyExpensio is invite-only, the moment we collect any of the following, Malaysian PDPA 2010 applies in full:
+      </p>
+      <ul class="rule-list">
+        <li><span class="icon">📛</span> Name and email address of invitees (before they even sign up)</li>
+        <li><span class="icon">📱</span> Phone number, profile information</li>
+        <li><span class="icon">🗺️</span> Trip locations, routes, mileage logs</li>
+        <li><span class="icon">📊</span> App usage analytics, device info, IP addresses</li>
+        <li><span class="icon">💳</span> Touch 'n Go transaction data</li>
+      </ul>
+      <div class="callout amber" style="margin-top:16px;">
+        ⚠️ <strong>Invite-only does NOT exempt us.</strong> The law applies from the moment we store an invitee's email address — before they even click the link.
+      </div>
+    </div>
+  </div>
+
+  <!-- What we collect -->
+  <div class="section" id="what-we-collect">
+    <div class="section-head">
+      <div class="section-num">2</div>
+      <h2>What Data We Collect &amp; Why</h2>
+    </div>
+    <div class="section-body">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>When collected</th>
+            <th>Purpose</th>
+            <th>Sensitive?</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Email address</td>
+            <td>At invite send</td>
+            <td>Send invitation; create account</td>
+            <td><span class="tag-green">Low</span></td>
+          </tr>
+          <tr>
+            <td>Full name</td>
+            <td>Signup</td>
+            <td>Account identity</td>
+            <td><span class="tag-green">Low</span></td>
+          </tr>
+          <tr>
+            <td>Phone number</td>
+            <td>Signup (optional)</td>
+            <td>Account recovery / contact</td>
+            <td><span class="tag-green">Low</span></td>
+          </tr>
+          <tr>
+            <td>Trip logs &amp; mileage</td>
+            <td>In-app use</td>
+            <td>Core service feature</td>
+            <td><span class="tag-green">Low</span></td>
+          </tr>
+          <tr>
+            <td>Location / routes</td>
+            <td>In-app use</td>
+            <td>Mileage calculation</td>
+            <td><span class="tag-amber">Medium</span></td>
+          </tr>
+          <tr>
+            <td>Touch 'n Go data</td>
+            <td>User-linked</td>
+            <td>Transaction import</td>
+            <td><span class="tag-amber">Medium</span></td>
+          </tr>
+          <tr>
+            <td>Device info / IP</td>
+            <td>Automatic</td>
+            <td>Security, analytics</td>
+            <td><span class="tag-green">Low</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout blue" style="margin-top:16px;">
+        📋 <strong>Minimum collection principle:</strong> We only collect data that is directly necessary to provide the Service. PDPA requires this.
+      </div>
+    </div>
+  </div>
+
+  <!-- Recommended flow -->
+  <div class="section" id="flow">
+    <div class="section-head">
+      <div class="section-num">3</div>
+      <h2>Recommended Signup Flow</h2>
+    </div>
+    <div class="section-body">
+      <p style="color:#374151; margin-bottom:20px;">
+        This is the compliant flow every new user must go through. Each step has a PDPA obligation attached to it.
+      </p>
+
+      <div class="flow">
+        <div class="flow-step">
+          <span class="step-label">Step 1</span>
+          <span class="step-action">📧 Invite Email Sent</span>
+          <span class="step-pdpa">Legal footer + deletion option required</span>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <span class="step-label">Step 2</span>
+          <span class="step-action">🔗 Accept Invite Page</span>
+          <span class="step-pdpa">PDPA pre-consent notice shown</span>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <span class="step-label">Step 3</span>
+          <span class="step-action">📝 Signup Form</span>
+          <span class="step-pdpa">Consent checkboxes (not pre-checked)</span>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <span class="step-label">Step 4</span>
+          <span class="step-action">✅ Account Created</span>
+          <span class="step-pdpa">Consent timestamp stored in DB</span>
+        </div>
+      </div>
+
+      <div class="callout green" style="margin-top:20px;">
+        ✅ All four steps are now covered by platform documents. See the <a href="#docs" style="color:var(--green);">Platform Legal Documents</a> section below.
+      </div>
+
+      <h3 style="font-size:15px; font-weight:700; margin-top:24px; margin-bottom:12px;">What must happen at each step</h3>
+      <ul class="rule-list">
+        <li><span class="icon">📧</span><span><strong>Invite email:</strong> Must include PDPA legal footer, inviter name, and a path to request email deletion if received in error.</span></li>
+        <li><span class="icon">🔗</span><span><strong>Accept invite page:</strong> Must show a short pre-consent notice explaining we received their email from the inviter. This is the PDPA-critical moment before data collection escalates.</span></li>
+        <li><span class="icon">☐</span><span><strong>Signup form:</strong> Must show two unchecked checkboxes (required terms + optional marketing). Must link to both legal documents. Age confirmation required.</span></li>
+        <li><span class="icon">🗄️</span><span><strong>Account created:</strong> Backend must log <code>consent_terms: true</code>, <code>consent_marketing: bool</code>, <code>consented_at: timestamp</code>, <code>consented_ip: string</code>.</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Two data moments -->
+  <div class="section" id="two-moments">
+    <div class="section-head">
+      <div class="section-num">4</div>
+      <h2>The Two Data Moments in Invite-Only Signup</h2>
+    </div>
+    <div class="section-body">
+      <p style="color:#374151; margin-bottom:16px;">
+        Unlike regular signups, invite-only platforms have <strong>two distinct personal data events</strong>, and PDPA applies to both.
+      </p>
+      <div class="two-col">
+        <div class="mini-card">
+          <h4>📩 Moment 1 — Invite is sent</h4>
+          <p>The invitee's email is stored before they consent to anything. This is allowed, but we must:</p>
+          <ul style="margin-top:8px; padding-left:16px; font-size:13px; color:#374151;">
+            <li>Include a legal footer in the email</li>
+            <li>Commit to deleting the email within 14 days if not accepted</li>
+            <li>Show the inviter a disclosure when they send the invite</li>
+          </ul>
+        </div>
+        <div class="mini-card">
+          <h4>📝 Moment 2 — Account is created</h4>
+          <p>The user provides full personal data. At this point we must:</p>
+          <ul style="margin-top:8px; padding-left:16px; font-size:13px; color:#374151;">
+            <li>Show the PDPA pre-consent notice</li>
+            <li>Capture explicit, affirmative consent via checkbox</li>
+            <li>Log timestamp and IP of consent</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout amber" style="margin-top:16px;">
+        ⚠️ <strong>Key PDPA wording to include in Privacy Policy:</strong> "We may receive your email address from an existing user who invited you to join the platform." This must be explicitly stated.
+      </div>
+    </div>
+  </div>
+
+  <!-- Consent rules -->
+  <div class="section" id="consent-rules">
+    <div class="section-head">
+      <div class="section-num">5</div>
+      <h2>Consent Rules (PDPA Critical)</h2>
+    </div>
+    <div class="section-body">
+      <ul class="rule-list">
+        <li><span class="icon">☐</span> Checkboxes must <strong>not</strong> be pre-checked. User must actively opt in.</li>
+        <li><span class="icon">🔗</span> Checkbox labels must link to the live Terms of Service and Privacy Policy.</li>
+        <li><span class="icon">🔀</span> Terms consent and marketing consent must be <strong>separate checkboxes</strong> — never bundled.</li>
+        <li><span class="icon">🔒</span> The Create Account button must remain disabled until the required checkbox is checked.</li>
+        <li><span class="icon">🗄️</span> Consent must be logged in the database with a timestamp and IP address.</li>
+        <li><span class="icon">↩️</span> Users must be able to withdraw consent at any time by emailing support@myexpensio.com.</li>
+      </ul>
+      <div class="callout blue" style="margin-top:16px;">
+        💬 <strong>Required checkbox wording (exact):</strong><br /><br />
+        <em>"I have read and agree to the Terms of Service and Privacy Policy, and I consent to the collection, use and disclosure of my personal data in accordance with the Privacy Policy."</em>
+      </div>
+    </div>
+  </div>
+
+  <!-- Location data -->
+  <div class="section" id="location">
+    <div class="section-head">
+      <div class="section-num">6</div>
+      <h2>Location &amp; Mileage Data — Special Notice</h2>
+    </div>
+    <div class="section-body">
+      <p style="color:#374151; margin-bottom:14px;">
+        Because MyExpensio is a mileage app, location data is collected. This is treated as medium-sensitivity data and must be clearly disclosed in the Privacy Policy.
+      </p>
+      <ul class="rule-list">
+        <li><span class="icon">📍</span> Privacy Policy must state <em>when</em> location is collected (only during trip tracking).</li>
+        <li><span class="icon">🎯</span> Must state <em>why</em> — to calculate travel distance for mileage and reimbursement.</li>
+        <li><span class="icon">💾</span> Must clarify whether location is stored or only processed in real time.</li>
+        <li><span class="icon">🔕</span> Must clarify that background tracking is <strong>not</strong> used (if applicable).</li>
+      </ul>
+      <div class="callout green">
+        ✅ <strong>Required Privacy Policy statement:</strong><br />
+        <em>"We collect location data only when you use the trip tracking feature to calculate travel distance. Location data is not collected in the background."</em>
+      </div>
+      <div class="callout amber" style="margin-top:12px;">
+        ⚠️ <strong>Mileage accuracy disclaimer</strong> — must appear in both Privacy Policy and Terms of Service. Calculations are for convenience only and should not be used for tax, legal, or employer reimbursement purposes without independent verification.
+      </div>
+    </div>
+  </div>
+
+  <!-- User rights -->
+  <div class="section" id="rights">
+    <div class="section-head">
+      <div class="section-num">7</div>
+      <h2>User Rights Under PDPA</h2>
+    </div>
+    <div class="section-body">
+      <p style="color:#374151; margin-bottom:14px;">Users have four core rights under Malaysian PDPA Part III. We must provide a path for all of them.</p>
+      <table class="data-table">
+        <thead>
+          <tr><th>Right</th><th>What it means</th><th>How we handle it (MVP)</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Access</strong></td>
+            <td>User can ask what data we hold on them</td>
+            <td>Email support@myexpensio.com</td>
+          </tr>
+          <tr>
+            <td><strong>Correction</strong></td>
+            <td>User can ask us to fix inaccurate data</td>
+            <td>In-app profile edit + email</td>
+          </tr>
+          <tr>
+            <td><strong>Withdraw Consent</strong></td>
+            <td>User can revoke consent to processing</td>
+            <td>Email support@myexpensio.com</td>
+          </tr>
+          <tr>
+            <td><strong>Deletion</strong></td>
+            <td>User can request account + data deletion</td>
+            <td>In-app delete account button + email</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout blue" style="margin-top:14px;">
+        📬 All data rights requests must be acknowledged within a reasonable period. For MVP, routing to support@myexpensio.com is acceptable.
+      </div>
+    </div>
+  </div>
+
+  <!-- Invite sender disclosure -->
+  <div class="section" id="invite-disclosure">
+    <div class="section-head">
+      <div class="section-num">8</div>
+      <h2>Invite Sender Disclosure</h2>
+    </div>
+    <div class="section-body">
+      <p style="color:#374151; margin-bottom:14px;">
+        When an admin or user sends an invite, they are sharing a third party's email with us. PDPA requires that the sender confirms they have permission to do so.
+      </p>
+      <div class="callout blue">
+        💬 <strong>Show this notice on the invite screen:</strong><br /><br />
+        <em>"By sending an invitation, you confirm you have permission to share this person's email address with MyExpensio."</em>
+      </div>
+      <p style="color:#374151; margin-top:14px;">This one line protects us from complaints like "Why does this app have my email?" and demonstrates due diligence under PDPA.</p>
+    </div>
+  </div>
+
+  <!-- Platform legal documents -->
+  <div class="section" id="docs">
+    <div class="section-head">
+      <div class="section-num">9</div>
+      <h2>Platform Legal Documents</h2>
+    </div>
+    <div class="section-body">
+      <p style="color:#374151; margin-bottom:16px;">All four documents are production-ready in the <code>docs/</code> folder. Open each to preview before deployment.</p>
+      <div class="doc-links">
+        <a class="doc-link" href="privacy-policy.html">
+          <span class="dl-icon">🔒</span>
+          <div>
+            <div class="dl-label">Privacy Policy</div>
+            <div class="dl-sub">PDPA-aligned · privacy-policy.html</div>
+          </div>
+        </a>
+        <a class="doc-link" href="terms-of-service.html">
+          <span class="dl-icon">📄</span>
+          <div>
+            <div class="dl-label">Terms of Service</div>
+            <div class="dl-sub">Malaysian law · terms-of-service.html</div>
+          </div>
+        </a>
+        <a class="doc-link" href="signup-consent.html">
+          <span class="dl-icon">☐</span>
+          <div>
+            <div class="dl-label">Signup Consent Component</div>
+            <div class="dl-sub">PDPA checkboxes · signup-consent.html</div>
+          </div>
+        </a>
+        <a class="doc-link" href="accept-invite.html">
+          <span class="dl-icon">🔗</span>
+          <div>
+            <div class="dl-label">Accept Invite Page</div>
+            <div class="dl-sub">Pre-consent landing · accept-invite.html</div>
+          </div>
+        </a>
+        <a class="doc-link" href="invite-email-footer.html">
+          <span class="dl-icon">📧</span>
+          <div>
+            <div class="dl-label">Invite Email Footer</div>
+            <div class="dl-sub">Email legal notice · invite-email-footer.html</div>
+          </div>
+        </a>
+        <a class="doc-link" href="pdpa-compliance-reference.html" style="border-color:var(--brand);">
+          <span class="dl-icon">📋</span>
+          <div>
+            <div class="dl-label">This Reference Guide</div>
+            <div class="dl-sub">Internal only · pdpa-compliance-reference.html</div>
+          </div>
+        </a>
+      </div>
+      <div class="callout amber" style="margin-top:20px;">
+        🚧 <strong>Before go-live, fill in these placeholders in all files:</strong><br />
+        <span class="ph">[Company Legal Name] Sdn Bhd</span> &nbsp;·&nbsp;
+        <span class="ph">[Company Address, City, Malaysia]</span> &nbsp;·&nbsp;
+        Update <code>https://myexpensio.com/terms</code> and <code>/privacy</code> to live URLs.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  MyExpensio · Internal PDPA Compliance Reference · Not for public distribution<br />
+  Prepared May 2026 · Consult a qualified Malaysian legal professional before final launch.
+</footer>
+
+</body>
+</html>

@@ -58,15 +58,39 @@ export async function loadTierAndEntitlements(
   orgId: string,
   isAdmin: boolean,
 ) {
-  // Read ORG subscription from unified subscriptions table
-  const { data: sub } = await supabase
-    .from('subscriptions')
-    .select('tier')
-    .eq('entity_type', 'ORG')
-    .eq('entity_id', orgId)
-    .maybeSingle()
+  const { data: { user } } = await supabase.auth.getUser()
 
-  const tier = (sub?.tier ?? 'FREE') as 'FREE' | 'PRO' | 'PREMIUM'
+  const [orgSubRes, userSubRes] = await Promise.all([
+    supabase
+      .from('subscriptions')
+      .select('tier, status')
+      .eq('entity_type', 'ORG')
+      .eq('entity_id', orgId)
+      .maybeSingle(),
+    user?.id
+      ? supabase
+          .from('subscriptions')
+          .select('tier, status')
+          .eq('entity_type', 'USER')
+          .eq('entity_id', user.id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+  ])
+
+  const activeTier = (row: { tier?: string | null; status?: string | null } | null | undefined) => {
+    const status = row?.status ?? 'ACTIVE'
+    if (status !== 'ACTIVE' && status !== 'TRIALING') return 'FREE'
+    return row?.tier === 'PREMIUM' ? 'PREMIUM' : row?.tier === 'PRO' ? 'PRO' : 'FREE'
+  }
+
+  const orgTier = activeTier(orgSubRes.data)
+  const userTier = activeTier(userSubRes.data)
+  const tier = (orgTier === 'PREMIUM' || userTier === 'PREMIUM')
+    ? 'PREMIUM'
+    : (orgTier === 'PRO' || userTier === 'PRO')
+      ? 'PRO'
+      : 'FREE'
+
   const entitlements = await loadOrgEntitlements({
     supabase,
     orgId,

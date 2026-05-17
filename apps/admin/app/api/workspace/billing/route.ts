@@ -72,7 +72,7 @@ export async function GET(req: Request) {
     limits: {
       routes_per_month:  tier === 'FREE' ? freeRoutesLimit : null, // null = unlimited
       trips_per_month:   tier === 'FREE' ? (config?.free_trips_per_month ?? null) : null,
-      exports_per_month: tier === 'FREE' ? (config?.free_exports_per_month ?? null) : null,
+      exports_per_month: tier === 'FREE' ? (config?.free_exports_per_month ?? 0) : null,
     },
   })
 }

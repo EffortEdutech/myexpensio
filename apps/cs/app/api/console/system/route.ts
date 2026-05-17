@@ -26,7 +26,7 @@ export async function GET(_req: Request) {
   const config = data ?? {
     free_routes_per_month:     2,
     free_trips_per_month:      null,
-    free_exports_per_month:    null,
+    free_exports_per_month:    0,
     auto_approve_invitations:  false,
     updated_at:                null,
     updated_by:                null,
@@ -53,6 +53,14 @@ export async function PATCH(req: Request) {
   if (free_routes_per_month !== undefined &&
     (typeof free_routes_per_month !== 'number' || free_routes_per_month < 0)) {
     return err('VALIDATION_ERROR', 'free_routes_per_month must be a non-negative number', 400)
+  }
+  if (free_trips_per_month !== undefined && free_trips_per_month !== null &&
+    (typeof free_trips_per_month !== 'number' || free_trips_per_month < 0)) {
+    return err('VALIDATION_ERROR', 'free_trips_per_month must be a non-negative number or null', 400)
+  }
+  if (free_exports_per_month !== undefined &&
+    (typeof free_exports_per_month !== 'number' || free_exports_per_month < 0)) {
+    return err('VALIDATION_ERROR', 'free_exports_per_month must be a non-negative number', 400)
   }
 
   if (auto_approve_invitations !== undefined &&

@@ -86,7 +86,7 @@ export async function GET() {
     const limits = {
       routes_per_month:  isUnlimited ? null : (config?.free_routes_per_month ?? 2),
       trips_per_month:   isUnlimited ? null : (config?.free_trips_per_month ?? null),
-      exports_per_month: isUnlimited ? null : (config?.free_exports_per_month ?? null),
+      exports_per_month: isUnlimited ? null : (config?.free_exports_per_month ?? 0),
     }
 
     // Usage this month
@@ -133,7 +133,7 @@ export async function GET() {
         cancel_at_period_end: false, grace_until: null, last_invoice_at: null,
       },
       usage: { period_start: '', routes_calls: 0, trips_created: 0, exports_created: 0 },
-      limits: { routes_per_month: 2, trips_per_month: null, exports_per_month: null },
+      limits: { routes_per_month: 2, trips_per_month: null, exports_per_month: 0 },
       tier: 'FREE', is_unlimited: false,
     })
   }

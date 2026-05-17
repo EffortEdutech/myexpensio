@@ -48,7 +48,7 @@ const PRO_ENTITLEMENTS: EntitlementsShape = {
 const FALLBACK_FREE_ENTITLEMENTS: EntitlementsShape = {
   routeCalculationsPerMonth: 2,
   tripsPerMonth: null,
-  exportsPerMonth: null,
+  exportsPerMonth: 0,
 }
 
 export async function GET() {
@@ -124,7 +124,7 @@ export async function GET() {
       tripsPerMonth: pc?.free_trips_per_month !== undefined
         ? pc.free_trips_per_month
         : FALLBACK_FREE_ENTITLEMENTS.tripsPerMonth,
-      exportsPerMonth: pc?.free_exports_per_month !== undefined
+      exportsPerMonth: pc?.free_exports_per_month != null
         ? pc.free_exports_per_month
         : FALLBACK_FREE_ENTITLEMENTS.exportsPerMonth,
     }
