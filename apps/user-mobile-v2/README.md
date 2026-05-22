@@ -41,6 +41,7 @@ apps/user-mobile-v2/docs/FILE_UPLOAD_CONTRACT.md
 apps/user-mobile-v2/docs/AUTH_FLOW_MAPPING.md
 apps/user-mobile-v2/docs/FEATURE_PREPARATION_MAPPING.md
 apps/user-mobile-v2/docs/LOCAL_VERIFICATION_GUIDE.md
+apps/user-mobile-v2/docs/SPRINT_2_AUTH_BOOTSTRAP_CHECKLIST.md
 ```
 
 ## Development Notes

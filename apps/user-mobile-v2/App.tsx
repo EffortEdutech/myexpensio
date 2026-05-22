@@ -11,6 +11,9 @@ import {
   View
 } from "react-native";
 
+import { LoginScreen } from "@/features/auth/components/LoginScreen";
+import { useSignOut } from "@/features/auth/hooks/useDevAuthActions";
+import { useSessionRestore } from "@/features/auth/hooks/useSessionRestore";
 import { ClaimDraftList } from "@/features/claims/components/ClaimDraftList";
 import {
   useAddItemToClaimDraft,
@@ -40,6 +43,7 @@ import {
   useRetryFailedSyncItems,
   useSyncQueueSummary
 } from "@/sync/hooks/useSyncQueueSummary";
+import { useAuthStore } from "@/state/authStore";
 import { colors, spacing, typography } from "@/theme/tokens";
 
 export default function App() {
@@ -86,9 +90,50 @@ export default function App() {
 }
 
 function MobileV2Home() {
+  const authStatus = useSessionRestore();
   const [activeSpace, setActiveSpace] = useState<AppSpace>("work");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const subscriptionTier: SubscriptionTier = "FREE";
+
+  if (authStatus === "unknown") {
+    return (
+      <SafeAreaView style={styles.centered}>
+        <ActivityIndicator color={colors.primary} />
+        <Text style={styles.loadingText}>Restoring secure session...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (authStatus === "signed_out") {
+    return <LoginScreen />;
+  }
+
+  return (
+    <AuthenticatedHome
+      activeSpace={activeSpace}
+      onSpaceChange={setActiveSpace}
+      settingsOpen={settingsOpen}
+      onToggleSettings={() => setSettingsOpen((open) => !open)}
+      subscriptionTier={subscriptionTier}
+    />
+  );
+}
+
+function AuthenticatedHome({
+  activeSpace,
+  onSpaceChange,
+  onToggleSettings,
+  settingsOpen,
+  subscriptionTier
+}: {
+  activeSpace: AppSpace;
+  onSpaceChange: (space: AppSpace) => void;
+  onToggleSettings: () => void;
+  settingsOpen: boolean;
+  subscriptionTier: SubscriptionTier;
+}) {
+  const session = useAuthStore((state) => state.session);
+  const signOut = useSignOut();
   const drafts = useExpenseDrafts();
   const createDraft = useCreateDraftExpense();
   const claims = useClaimDrafts();
@@ -116,14 +161,19 @@ function MobileV2Home() {
   return (
     <AppShell
       activeSpace={activeSpace}
-      onSpaceChange={setActiveSpace}
-      onOpenSettings={() => setSettingsOpen((open) => !open)}
+      onSpaceChange={onSpaceChange}
+      onOpenSettings={onToggleSettings}
       pendingSyncCount={pendingSyncItems.data?.length ?? 0}
       subscriptionLabel={subscriptionTier}
     >
       <ScrollView contentContainerStyle={styles.content}>
         {settingsOpen ? (
-          <SettingsPanel subscriptionTier={subscriptionTier} />
+          <SettingsPanel
+            email={session?.email ?? null}
+            isSigningOut={signOut.isPending}
+            onSignOut={() => signOut.mutate()}
+            subscriptionTier={subscriptionTier}
+          />
         ) : null}
 
         <View style={styles.header}>
@@ -215,7 +265,17 @@ function MobileV2Home() {
   );
 }
 
-function SettingsPanel({ subscriptionTier }: { subscriptionTier: SubscriptionTier }) {
+function SettingsPanel({
+  email,
+  isSigningOut,
+  onSignOut,
+  subscriptionTier
+}: {
+  email: string | null;
+  isSigningOut: boolean;
+  onSignOut: () => void;
+  subscriptionTier: SubscriptionTier;
+}) {
   return (
     <View style={styles.settingsPanel}>
       <Text style={styles.settingsTitle}>Profile & settings</Text>
@@ -223,6 +283,20 @@ function SettingsPanel({ subscriptionTier }: { subscriptionTier: SubscriptionTie
         Account, profile, rates, biometric login, and billing entry points will
         live here. Current local tier placeholder: {subscriptionTier}.
       </Text>
+      <Text style={styles.settingsCopy}>Signed in as {email ?? "local user"}.</Text>
+      <Pressable
+        accessibilityRole="button"
+        disabled={isSigningOut}
+        onPress={onSignOut}
+        style={({ pressed }) => [
+          styles.signOutButton,
+          pressed || isSigningOut ? styles.primaryButtonPressed : null
+        ]}
+      >
+        <Text style={styles.signOutButtonText}>
+          {isSigningOut ? "Signing out..." : "Sign out"}
+        </Text>
+      </Pressable>
     </View>
   );
 }
@@ -694,6 +768,22 @@ const styles = StyleSheet.create({
     color: "#1d4ed8",
     fontSize: typography.body,
     lineHeight: 22
+  },
+  signOutButton: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "#dbeafe",
+    borderColor: "#93c5fd",
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 40,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md
+  },
+  signOutButtonText: {
+    color: "#1e3a8a",
+    fontSize: typography.caption,
+    fontWeight: "800"
   }
 });
 

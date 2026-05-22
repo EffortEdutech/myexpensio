@@ -196,13 +196,19 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 
 - [x] Run typecheck.
 - [x] Run Expo bundle/export check.
-- [ ] Start app locally.
+- [x] Start app locally.
 - [x] Add in-app local-first smoke test.
 - [x] Create draft offline.
 - [ ] Confirm draft persists after reload.
 - [x] Confirm sync queue item is created.
 - [x] Confirm failed network does not lose local data.
 - [ ] Confirm no `apps/user` files were modified.
+
+Runtime note:
+
+```text
+2026-05-22: Expo web server started on http://localhost:8082 and returned HTTP 200.
+```
 
 ## Commands
 
