@@ -6,8 +6,11 @@ import type {
   ClaimItemType,
   ClaimStatus,
   CreateClaimDraftInput,
-  CreateClaimItemDraftInput
+  CreateClaimItemDraftInput,
+  UpdateClaimDraftInput,
+  UpdateClaimItemDraftInput
 } from "@/features/claims/types";
+import { createReceiptDraft } from "@/local-db/repositories/receiptRepository";
 import type { SyncStatus } from "@/features/expenses/types";
 import { createId } from "@/utils/ids";
 import { nowIso } from "@/utils/time";
@@ -59,6 +62,19 @@ export async function listClaimDrafts() {
   );
 
   return rows.map(mapClaimRow);
+}
+
+export async function getClaimDraft(claimId: string) {
+  const database = await getDatabase();
+  const row = await database.getFirstAsync<ClaimRow>(
+    `SELECT *
+      FROM claims
+      WHERE id = ?
+        AND deleted_at IS NULL;`,
+    [claimId]
+  );
+
+  return row ? mapClaimRow(row) : null;
 }
 
 export async function listClaimItems(claimId: string) {
@@ -238,6 +254,68 @@ export async function createClaimItemDraft(
   return item;
 }
 
+export async function updateClaimDraft(
+  input: UpdateClaimDraftInput,
+  deviceId: string
+) {
+  const database = await getDatabase();
+  const timestamp = nowIso();
+  const existing = await getClaimDraft(input.claimId);
+
+  if (!existing || existing.status !== "draft") {
+    return null;
+  }
+
+  const updatedClaim = {
+    ...existing,
+    title: input.title ?? existing.title,
+    periodStart: input.periodStart ?? existing.periodStart,
+    periodEnd: input.periodEnd ?? existing.periodEnd,
+    syncStatus: "pending" as const,
+    updatedAt: timestamp
+  };
+
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(
+      `UPDATE claims
+        SET title = ?,
+            period_start = ?,
+            period_end = ?,
+            sync_status = 'pending',
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'draft'
+          AND deleted_at IS NULL;`,
+      [
+        updatedClaim.title,
+        updatedClaim.periodStart,
+        updatedClaim.periodEnd,
+        timestamp,
+        input.claimId
+      ]
+    );
+
+    await enqueueSyncItem(
+      {
+        entityType: "claim",
+        entityId: input.claimId,
+        operation: "update",
+        payload: JSON.stringify({
+          id: input.claimId,
+          title: updatedClaim.title,
+          periodStart: updatedClaim.periodStart,
+          periodEnd: updatedClaim.periodEnd,
+          updatedAt: timestamp,
+          deviceId
+        })
+      },
+      database
+    );
+  });
+
+  return updatedClaim;
+}
+
 export async function updateClaimDraftTitle(
   claimId: string,
   title: string,
@@ -273,6 +351,54 @@ export async function updateClaimDraftTitle(
       database
     );
   });
+}
+
+export async function submitClaimDraft(claimId: string, deviceId: string) {
+  const database = await getDatabase();
+  const timestamp = nowIso();
+  const existing = await getClaimDraft(claimId);
+
+  if (!existing || existing.status !== "draft") {
+    return null;
+  }
+
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(
+      `UPDATE claims
+        SET status = 'submitted',
+            submitted_at = ?,
+            sync_status = 'pending',
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'draft'
+          AND deleted_at IS NULL;`,
+      [timestamp, timestamp, claimId]
+    );
+
+    await enqueueSyncItem(
+      {
+        entityType: "claim",
+        entityId: claimId,
+        operation: "update",
+        payload: JSON.stringify({
+          id: claimId,
+          status: "submitted",
+          submittedAt: timestamp,
+          updatedAt: timestamp,
+          deviceId
+        })
+      },
+      database
+    );
+  });
+
+  return {
+    ...existing,
+    status: "submitted" as const,
+    submittedAt: timestamp,
+    syncStatus: "pending" as const,
+    updatedAt: timestamp
+  };
 }
 
 export async function softDeleteClaimDraft(claimId: string, deviceId: string) {
@@ -382,6 +508,98 @@ export async function updateClaimItemAmount(
   };
 }
 
+export async function updateClaimItemDraft(
+  input: UpdateClaimItemDraftInput,
+  deviceId: string
+) {
+  const database = await getDatabase();
+  const timestamp = nowIso();
+  const existing = await database.getFirstAsync<ClaimItemRow>(
+    `SELECT *
+      FROM claim_items
+      WHERE id = ?
+        AND deleted_at IS NULL;`,
+    [input.itemId]
+  );
+
+  if (!existing) {
+    return null;
+  }
+
+  const claim = await getClaimDraft(existing.claim_id);
+
+  if (!claim || claim.status !== "draft") {
+    return null;
+  }
+
+  const nextAmountCents = input.amountCents ?? existing.amount_cents;
+  const delta = nextAmountCents - existing.amount_cents;
+  const updatedItem = {
+    ...mapClaimItemRow(existing),
+    amountCents: nextAmountCents,
+    itemDate: input.itemDate ?? existing.item_date,
+    notes: input.notes ?? existing.notes,
+    syncStatus: "pending" as const,
+    title: input.title ?? existing.title,
+    type: input.type ?? existing.type,
+    updatedAt: timestamp
+  };
+
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(
+      `UPDATE claim_items
+        SET type = ?,
+            title = ?,
+            amount_cents = ?,
+            item_date = ?,
+            notes = ?,
+            sync_status = 'pending',
+            updated_at = ?
+        WHERE id = ?
+          AND deleted_at IS NULL;`,
+      [
+        updatedItem.type,
+        updatedItem.title,
+        updatedItem.amountCents,
+        updatedItem.itemDate,
+        updatedItem.notes,
+        timestamp,
+        input.itemId
+      ]
+    );
+
+    await database.runAsync(
+      `UPDATE claims
+        SET total_amount_cents = total_amount_cents + ?,
+            sync_status = 'pending',
+            updated_at = ?
+        WHERE id = ?;`,
+      [delta, timestamp, existing.claim_id]
+    );
+
+    await enqueueSyncItem(
+      {
+        entityType: "claim_item",
+        entityId: input.itemId,
+        operation: "update",
+        payload: JSON.stringify({
+          id: input.itemId,
+          type: updatedItem.type,
+          title: updatedItem.title,
+          amountCents: updatedItem.amountCents,
+          itemDate: updatedItem.itemDate,
+          notes: updatedItem.notes,
+          updatedAt: timestamp,
+          deviceId
+        })
+      },
+      database
+    );
+  });
+
+  return updatedItem;
+}
+
 export async function softDeleteClaimItem(itemId: string, deviceId: string) {
   const database = await getDatabase();
   const timestamp = nowIso();
@@ -433,6 +651,79 @@ export async function softDeleteClaimItem(itemId: string, deviceId: string) {
   });
 
   return mapClaimItemRow(existing);
+}
+
+export async function attachReceiptMetadataToClaimItem(
+  itemId: string,
+  deviceId: string
+) {
+  const database = await getDatabase();
+  const timestamp = nowIso();
+  const existing = await database.getFirstAsync<ClaimItemRow>(
+    `SELECT *
+      FROM claim_items
+      WHERE id = ?
+        AND deleted_at IS NULL;`,
+    [itemId]
+  );
+
+  if (!existing) {
+    return null;
+  }
+
+  const claim = await getClaimDraft(existing.claim_id);
+
+  if (!claim || claim.status !== "draft") {
+    return null;
+  }
+
+  const receipt = await createReceiptDraft(
+    {
+      ownerEntityType: "claim_item",
+      ownerEntityId: itemId,
+      localUri: `local://receipt/${itemId}/${timestamp}`,
+      mimeType: "image/jpeg",
+      fileSize: null
+    },
+    deviceId
+  );
+
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(
+      `UPDATE claim_items
+        SET receipt_id = ?,
+            sync_status = 'pending',
+            updated_at = ?
+        WHERE id = ?
+          AND deleted_at IS NULL;`,
+      [receipt.id, timestamp, itemId]
+    );
+
+    await database.runAsync(
+      `UPDATE claims
+        SET sync_status = 'pending',
+            updated_at = ?
+        WHERE id = ?;`,
+      [timestamp, existing.claim_id]
+    );
+
+    await enqueueSyncItem(
+      {
+        entityType: "claim_item",
+        entityId: itemId,
+        operation: "update",
+        payload: JSON.stringify({
+          id: itemId,
+          receiptId: receipt.id,
+          updatedAt: timestamp,
+          deviceId
+        })
+      },
+      database
+    );
+  });
+
+  return receipt;
 }
 
 export async function getLatestClaimItem(claimId: string) {

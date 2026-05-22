@@ -17,6 +17,7 @@ type ClaimDraftListProps = {
   onDelete?: (claim: ClaimDraft) => void;
   onDeleteLatestItem?: (claim: ClaimDraft) => void;
   onIncreaseLatestItem?: (claim: ClaimDraft) => void;
+  onOpen?: (claim: ClaimDraft) => void;
   onRename?: (claim: ClaimDraft) => void;
 };
 
@@ -27,6 +28,7 @@ export function ClaimDraftList({
   onDelete,
   onDeleteLatestItem,
   onIncreaseLatestItem,
+  onOpen,
   onRename
 }: ClaimDraftListProps) {
   if (isLoading) {
@@ -65,6 +67,7 @@ export function ClaimDraftList({
             <Text style={styles.syncText}>{claim.syncStatus}</Text>
           </View>
           <View style={styles.actions}>
+            <ClaimAction label="Open" onPress={() => onOpen?.(claim)} />
             <ClaimAction label="Rename" onPress={() => onRename?.(claim)} />
             <ClaimAction label="Add item" onPress={() => onAddItem?.(claim)} />
             <ClaimAction

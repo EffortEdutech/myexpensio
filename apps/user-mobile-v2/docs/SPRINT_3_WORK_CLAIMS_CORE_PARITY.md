@@ -78,18 +78,39 @@ This sprint remains zero-budget.
 
 | ID | Story | Priority | Estimate | Done When |
 | --- | --- | --- | --- | --- |
-| WC-01 | User can navigate from claim list to claim detail | P0 | M | A selected claim opens a detail view and can return to list |
+| WC-01 | User can navigate from claim list to claim detail | P0 | M | Done: selected claim opens a detail view and can return to list |
 | WC-02 | User can create a blank claim draft | P0 | S | Draft persists locally and creates sync queue item |
-| WC-03 | User can edit draft title and period | P0 | M | Changes persist locally, update sync status, and queue mutation |
-| WC-04 | User can add claim items by type | P0 | M | Item persists locally and total updates |
-| WC-05 | User can edit item amount/title/date/type | P0 | M | Item changes persist and queue mutation |
-| WC-06 | User can soft-delete an item | P0 | S | Item disappears from active list, total updates, queue mutation exists |
-| WC-07 | User can attach receipt metadata to item | P1 | M | Local receipt row links to item without binary upload |
-| WC-08 | User can submit draft locally | P0 | M | Claim status becomes submitted, submitted_at set, mutation queued |
-| WC-09 | Submitted claims are locked from draft edits | P0 | S | Edit controls are disabled/hidden with clear state |
+| WC-03 | User can edit draft title and period | P0 | M | Done: changes persist locally, update sync status, and queue mutation |
+| WC-04 | User can add claim items by type | P0 | M | Done: item persists locally and total updates |
+| WC-05 | User can edit item amount/title/date/type | P0 | M | Done: item changes persist and queue mutation |
+| WC-06 | User can soft-delete an item | P0 | S | Done: item disappears from active list, total updates, queue mutation exists |
+| WC-07 | User can attach receipt metadata to item | P1 | M | Done: local receipt row links to item without binary upload |
+| WC-08 | User can submit draft locally | P0 | M | Done: claim status becomes submitted, submitted_at set, mutation queued |
+| WC-09 | Submitted claims are locked from draft edits | P0 | S | Done: edit controls are disabled with clear state |
 | WC-10 | User sees sync state per claim and item | P1 | S | Pending/failed/synced/deleted are visible where useful |
 | WC-11 | Work Claims data survives reload/restart | P0 | M | Manual QA confirms claim and item data reappear |
 | WC-12 | Sprint QA and docs are updated | P0 | S | Checklist, QA script, and commit instructions are current |
+
+## Implementation Progress
+
+Completed in the first Sprint 3 implementation slice:
+
+- Claim list can open a real claim detail view.
+- Claim detail can return to the list.
+- Draft title and period can be edited locally.
+- Claim items can be added by type.
+- Claim item title, amount, date, and type can be edited locally.
+- Claim items can be soft-deleted from the detail view.
+- Receipt metadata can be attached to a claim item without binary upload.
+- Draft claims can be submitted locally.
+- Submitted claims show a lock banner and disable draft edit controls.
+- Claim and item mutations remain local-first and sync-queue backed.
+
+Remaining before Sprint 3 sign-off:
+
+- Manual runtime QA across create/edit/submit/reload.
+- More polished empty/loading/error states inside detail if needed after QA.
+- Confirm sync queue counts and reload persistence in a running app.
 
 ## Technical Tasks
 

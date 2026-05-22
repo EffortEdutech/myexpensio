@@ -73,3 +73,19 @@ export type CreateClaimItemDraftInput = {
   tngTransactionId?: string | null;
 };
 
+export type UpdateClaimDraftInput = {
+  claimId: string;
+  periodEnd?: string | null;
+  periodStart?: string | null;
+  title?: string | null;
+};
+
+export type UpdateClaimItemDraftInput = {
+  amountCents?: number;
+  itemDate?: string;
+  itemId: string;
+  notes?: string | null;
+  title?: string;
+  type?: ClaimItemType;
+};
+

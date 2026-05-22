@@ -14,15 +14,31 @@ import {
 import { LoginScreen } from "@/features/auth/components/LoginScreen";
 import { useSignOut } from "@/features/auth/hooks/useDevAuthActions";
 import { useSessionRestore } from "@/features/auth/hooks/useSessionRestore";
+import { ClaimDetail } from "@/features/claims/components/ClaimDetail";
 import { ClaimDraftList } from "@/features/claims/components/ClaimDraftList";
 import {
   useAddItemToClaimDraft,
+  useAttachReceiptMetadataToClaimItem,
+  useCreateClaimItemDraft,
   useDeleteLatestClaimItem,
   useIncreaseLatestClaimItem,
   useRenameClaimDraft,
-  useSoftDeleteClaimDraft
+  useSoftDeleteClaimDraft,
+  useSoftDeleteClaimItem,
+  useSubmitClaimDraft,
+  useUpdateClaimDraft,
+  useUpdateClaimItemDraft
 } from "@/features/claims/hooks/useClaimDraftActions";
-import { useClaimDrafts } from "@/features/claims/hooks/useClaimDrafts";
+import {
+  useClaimDraft,
+  useClaimDrafts,
+  useClaimItems
+} from "@/features/claims/hooks/useClaimDrafts";
+import type {
+  ClaimDraft,
+  ClaimItemDraft,
+  ClaimItemType
+} from "@/features/claims/types";
 import { useCreateClaimWithItem } from "@/features/claims/hooks/useCreateClaimWithItem";
 import { ExpenseDraftList } from "@/features/expenses/components/ExpenseDraftList";
 import { useCreateDraftExpense } from "@/features/expenses/hooks/useCreateDraftExpense";
@@ -133,16 +149,25 @@ function AuthenticatedHome({
   subscriptionTier: SubscriptionTier;
 }) {
   const session = useAuthStore((state) => state.session);
+  const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null);
   const signOut = useSignOut();
   const drafts = useExpenseDrafts();
   const createDraft = useCreateDraftExpense();
   const claims = useClaimDrafts();
+  const selectedClaim = useClaimDraft(selectedClaimId);
+  const selectedClaimItems = useClaimItems(selectedClaimId);
   const createClaim = useCreateClaimWithItem();
   const addItemToClaim = useAddItemToClaimDraft();
+  const createClaimItem = useCreateClaimItemDraft();
   const deleteClaim = useSoftDeleteClaimDraft();
   const deleteLatestItem = useDeleteLatestClaimItem();
+  const deleteClaimItem = useSoftDeleteClaimItem();
   const increaseLatestItem = useIncreaseLatestClaimItem();
   const renameClaim = useRenameClaimDraft();
+  const updateClaim = useUpdateClaimDraft();
+  const updateClaimItem = useUpdateClaimItemDraft();
+  const submitClaim = useSubmitClaimDraft();
+  const attachReceiptMetadata = useAttachReceiptMetadataToClaimItem();
   const receiptUploadSummary = useReceiptUploadSummary();
   const retryFailedReceiptUploads = useRetryFailedReceiptUploads();
   const localFirstSmokeTest = useLocalFirstSmokeTest();
@@ -153,10 +178,16 @@ function AuthenticatedHome({
     createClaim.error ??
     createDraft.error ??
     addItemToClaim.error ??
+    createClaimItem.error ??
     deleteClaim.error ??
+    deleteClaimItem.error ??
     deleteLatestItem.error ??
     increaseLatestItem.error ??
-    renameClaim.error;
+    renameClaim.error ??
+    updateClaim.error ??
+    updateClaimItem.error ??
+    submitClaim.error ??
+    attachReceiptMetadata.error;
 
   return (
     <AppShell
@@ -187,6 +218,7 @@ function AuthenticatedHome({
 
         {activeSpace === "work" ? (
           <WorkClaimsSlice
+            activeClaim={selectedClaim.data ?? null}
             claimCount={claims.data?.length ?? 0}
             claims={claims.data ?? []}
             createClaimLabel={
@@ -202,16 +234,46 @@ function AuthenticatedHome({
             }
             isCreatingClaim={createClaim.isPending}
             isCreatingExpense={createDraft.isPending}
+            isLoadingClaimDetail={
+              selectedClaim.isLoading || selectedClaimItems.isLoading
+            }
             isLoadingClaims={claims.isLoading}
             isLoadingExpenses={drafts.isLoading}
             onAddItemToClaim={(claim) => addItemToClaim.mutate(claim)}
+            onAttachReceiptToItem={(item) =>
+              attachReceiptMetadata.mutate(item.id)
+            }
+            onBackToClaims={() => setSelectedClaimId(null)}
             onCreateClaim={() => createClaim.mutate()}
+            onCreateClaimItem={(claim, input) =>
+              createClaimItem.mutate({
+                claimId: claim.id,
+                currency: claim.currency,
+                ...input
+              })
+            }
             onCreateExpense={() => createDraft.mutate()}
             onDeleteClaim={(claim) => deleteClaim.mutate(claim.id)}
+            onDeleteClaimItem={(item) => deleteClaimItem.mutate(item.id)}
             onDeleteLatestItem={(claim) => deleteLatestItem.mutate(claim.id)}
             onIncreaseLatestItem={(claim) => increaseLatestItem.mutate(claim.id)}
+            onOpenClaim={(claim) => setSelectedClaimId(claim.id)}
             onRenameClaim={(claim) => renameClaim.mutate(claim)}
+            onSubmitClaim={(claim) => submitClaim.mutate(claim.id)}
+            onUpdateClaim={(claim, input) =>
+              updateClaim.mutate({
+                claimId: claim.id,
+                ...input
+              })
+            }
+            onUpdateClaimItem={(item, input) =>
+              updateClaimItem.mutate({
+                itemId: item.id,
+                ...input
+              })
+            }
             pendingSyncCount={pendingSyncItems.data?.length ?? 0}
+            selectedClaimItems={selectedClaimItems.data ?? []}
             syncQueueSummary={
               syncQueueSummary.data ?? {
                 failed: 0,
@@ -302,6 +364,7 @@ function SettingsPanel({
 }
 
 type WorkClaimsSliceProps = {
+  activeClaim: ClaimDraft | null;
   claimCount: number;
   claims: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>;
   createClaimLabel: string;
@@ -311,16 +374,51 @@ type WorkClaimsSliceProps = {
   expenseDrafts: NonNullable<ReturnType<typeof useExpenseDrafts>["data"]>;
   isCreatingClaim: boolean;
   isCreatingExpense: boolean;
+  isLoadingClaimDetail: boolean;
   isLoadingClaims: boolean;
   isLoadingExpenses: boolean;
   onAddItemToClaim: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
+  onAttachReceiptToItem: (item: ClaimItemDraft) => void;
+  onBackToClaims: () => void;
   onCreateClaim: () => void;
+  onCreateClaimItem: (
+    claim: ClaimDraft,
+    input: {
+      amountCents: number;
+      itemDate: string;
+      notes: string | null;
+      title: string;
+      type: ClaimItemType;
+    }
+  ) => void;
   onCreateExpense: () => void;
   onDeleteClaim: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
+  onDeleteClaimItem: (item: ClaimItemDraft) => void;
   onDeleteLatestItem: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
   onIncreaseLatestItem: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
+  onOpenClaim: (claim: ClaimDraft) => void;
   onRenameClaim: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
+  onSubmitClaim: (claim: ClaimDraft) => void;
+  onUpdateClaim: (
+    claim: ClaimDraft,
+    input: {
+      periodEnd: string | null;
+      periodStart: string | null;
+      title: string | null;
+    }
+  ) => void;
+  onUpdateClaimItem: (
+    item: ClaimItemDraft,
+    input: {
+      amountCents: number;
+      itemDate: string;
+      notes: string | null;
+      title: string;
+      type: ClaimItemType;
+    }
+  ) => void;
   pendingSyncCount: number;
+  selectedClaimItems: ClaimItemDraft[];
   syncQueueSummary: {
     failed: number;
     pending: number;
@@ -344,6 +442,7 @@ type WorkClaimsSliceProps = {
 };
 
 function WorkClaimsSlice({
+  activeClaim,
   claimCount,
   claims,
   createClaimLabel,
@@ -353,16 +452,26 @@ function WorkClaimsSlice({
   expenseDrafts,
   isCreatingClaim,
   isCreatingExpense,
+  isLoadingClaimDetail,
   isLoadingClaims,
   isLoadingExpenses,
   onAddItemToClaim,
+  onAttachReceiptToItem,
+  onBackToClaims,
   onCreateClaim,
+  onCreateClaimItem,
   onCreateExpense,
   onDeleteClaim,
+  onDeleteClaimItem,
   onDeleteLatestItem,
   onIncreaseLatestItem,
+  onOpenClaim,
   onRenameClaim,
+  onSubmitClaim,
+  onUpdateClaim,
+  onUpdateClaimItem,
   pendingSyncCount,
+  selectedClaimItems,
   syncQueueSummary,
   onRetryFailedSync,
   retryLabel,
@@ -374,6 +483,23 @@ function WorkClaimsSlice({
   smokeTestLabel,
   smokeTestResult
 }: WorkClaimsSliceProps) {
+  if (activeClaim) {
+    return (
+      <ClaimDetail
+        claim={activeClaim}
+        isLoading={isLoadingClaimDetail}
+        items={selectedClaimItems}
+        onAddItem={(input) => onCreateClaimItem(activeClaim, input)}
+        onAttachReceipt={onAttachReceiptToItem}
+        onBack={onBackToClaims}
+        onDeleteItem={onDeleteClaimItem}
+        onSubmitClaim={onSubmitClaim}
+        onUpdateClaim={(input) => onUpdateClaim(activeClaim, input)}
+        onUpdateItem={onUpdateClaimItem}
+      />
+    );
+  }
+
   return (
     <>
       {errorMessage ? (
@@ -521,6 +647,7 @@ function WorkClaimsSlice({
           onDelete={onDeleteClaim}
           onDeleteLatestItem={onDeleteLatestItem}
           onIncreaseLatestItem={onIncreaseLatestItem}
+          onOpen={onOpenClaim}
           onRename={onRenameClaim}
         />
       </View>
