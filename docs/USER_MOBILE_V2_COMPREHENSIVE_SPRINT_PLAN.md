@@ -18,6 +18,12 @@ apps/user
 
 Do not change `apps/user` as part of this sprint.
 
+For the complete roadmap through production launch, see:
+
+```text
+docs/USER_MOBILE_V2_FULL_DELIVERY_ROADMAP.md
+```
+
 ## Sprint Principle
 
 The sprint must not only build screens. It must establish the mobile architecture that will allow all existing user-facing features to return safely.
