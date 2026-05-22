@@ -107,11 +107,25 @@ Completed in the first Sprint 3 implementation slice:
 - Submitted claims show a lock banner and disable draft edit controls.
 - Claim and item mutations remain local-first and sync-queue backed.
 
-Remaining before Sprint 3 sign-off:
+Sprint 3 runtime QA sign-off completed on 2026-05-23.
 
-- Manual runtime QA across create/edit/submit/reload.
-- More polished empty/loading/error states inside detail if needed after QA.
-- Confirm sync queue counts and reload persistence in a running app.
+Runtime QA results:
+
+- Development sign-in opened the authenticated Work Claims shell.
+- Blank claim creation increased local claim count and sync queue count.
+- Claim title and period edit persisted in the detail view.
+- Adding parking and toll items updated local totals immediately.
+- Editing item title and amount updated the item and claim total.
+- Receipt metadata attachment showed `metadata attached` and increased local receipt count.
+- Browser reload restored the session, claim, item, receipt metadata, and sync queue state.
+- Submitted claim moved to `submitted`, showed the lock banner, and disabled draft edit controls.
+- Item delete after the web confirmation fix removed the active item and recalculated total to `0.00 MYR`.
+- Runtime console error count was `0` during the checked scenarios.
+
+QA fixes completed during sign-off:
+
+- Web confirmation now uses `window.confirm` fallback through the platform-aware confirmation helper.
+- Blank claim creation now invalidates the sync summary panel so `Pending` updates with the top badge.
 
 ## Technical Tasks
 
@@ -181,6 +195,12 @@ Manual scenarios:
 - Local runtime starts.
 - No files under `apps/user` are modified by this sprint.
 - Commit is scoped to `apps/user-mobile-v2` and related docs only.
+
+Sign-off status:
+
+```text
+Signed off on 2026-05-23 after runtime QA.
+```
 
 ## Risks
 

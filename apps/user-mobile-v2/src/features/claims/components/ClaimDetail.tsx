@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -239,14 +240,11 @@ export function ClaimDetail({
               key={item.id}
               onAttachReceipt={() => onAttachReceipt(item)}
               onDelete={() =>
-                Alert.alert("Delete item?", "This soft-deletes the item locally.", [
-                  { style: "cancel", text: "Cancel" },
-                  {
-                    onPress: () => onDeleteItem(item),
-                    style: "destructive",
-                    text: "Delete"
-                  }
-                ])
+                confirmAction(
+                  "Delete item?",
+                  "This soft-deletes the item locally.",
+                  () => onDeleteItem(item)
+                )
               }
               onSave={(input) => onUpdateItem(item, input)}
             />
@@ -265,10 +263,11 @@ export function ClaimDetail({
           disabled={!isDraft}
           label="Submit claim"
           onPress={() =>
-            Alert.alert("Submit claim?", "Submitted claims cannot be edited locally.", [
-              { style: "cancel", text: "Cancel" },
-              { onPress: () => onSubmitClaim(claim), text: "Submit" }
-            ])
+            confirmAction(
+              "Submit claim?",
+              "Submitted claims cannot be edited locally.",
+              () => onSubmitClaim(claim)
+            )
           }
         />
       </View>
@@ -367,6 +366,25 @@ function ClaimItemEditor({
       </View>
     </View>
   );
+}
+
+function confirmAction(title: string, message: string, onConfirm: () => void) {
+  if (Platform.OS === "web") {
+    const confirmDialog = (globalThis as typeof globalThis & {
+      confirm?: (message?: string) => boolean;
+    }).confirm;
+
+    if (!confirmDialog || confirmDialog(`${title}\n\n${message}`)) {
+      onConfirm();
+    }
+
+    return;
+  }
+
+  Alert.alert(title, message, [
+    { style: "cancel", text: "Cancel" },
+    { onPress: onConfirm, style: "destructive", text: "Continue" }
+  ]);
 }
 
 function Field({

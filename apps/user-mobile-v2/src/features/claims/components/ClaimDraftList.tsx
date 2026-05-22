@@ -1,6 +1,7 @@
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -107,6 +108,18 @@ function confirmDestructiveAction(
   message: string,
   onConfirm: () => void
 ) {
+  if (Platform.OS === "web") {
+    const confirmDialog = (globalThis as typeof globalThis & {
+      confirm?: (message?: string) => boolean;
+    }).confirm;
+
+    if (!confirmDialog || confirmDialog(`${title}\n\n${message}`)) {
+      onConfirm();
+    }
+
+    return;
+  }
+
   Alert.alert(title, message, [
     { style: "cancel", text: "Cancel" },
     { onPress: onConfirm, style: "destructive", text: "Continue" }

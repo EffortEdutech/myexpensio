@@ -174,7 +174,7 @@ Acceptance:
 Status:
 
 ```text
-Planned
+Signed off
 ```
 
 Sprint package:

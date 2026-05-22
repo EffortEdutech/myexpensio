@@ -8,6 +8,7 @@ import {
 import { listPendingSyncItems } from "@/local-db/repositories/syncQueueRepository";
 import { useDeviceStore } from "@/state/deviceStore";
 import { syncQueryKeys } from "@/sync/hooks/usePendingSyncItems";
+import { syncSummaryQueryKey } from "@/sync/hooks/useSyncQueueSummary";
 import { nowIso } from "@/utils/time";
 
 const sampleItems = [
@@ -60,6 +61,9 @@ export function useCreateClaimWithItem() {
       void queryClient.invalidateQueries({
         queryKey: syncQueryKeys.pendingItems
       });
+      void queryClient.invalidateQueries({
+        queryKey: syncSummaryQueryKey
+      });
     }
   });
 }
@@ -93,6 +97,9 @@ export function useCreateBlankClaimDraft() {
       });
       void queryClient.invalidateQueries({
         queryKey: syncQueryKeys.pendingItems
+      });
+      void queryClient.invalidateQueries({
+        queryKey: syncSummaryQueryKey
       });
     }
   });

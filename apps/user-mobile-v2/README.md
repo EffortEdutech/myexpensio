@@ -44,6 +44,7 @@ apps/user-mobile-v2/docs/LOCAL_VERIFICATION_GUIDE.md
 apps/user-mobile-v2/docs/SPRINT_2_AUTH_BOOTSTRAP_CHECKLIST.md
 apps/user-mobile-v2/docs/SPRINT_3_WORK_CLAIMS_CORE_PARITY.md
 apps/user-mobile-v2/docs/SPRINT_3_WORK_CLAIMS_QA_SCRIPT.md
+apps/user-mobile-v2/docs/SPRINT_3_SIGN_OFF.md
 docs/USER_MOBILE_V2_SPRINT_3_WORK_CLAIMS_CORE_PARITY.md
 ```
 
