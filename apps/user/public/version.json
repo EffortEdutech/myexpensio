@@ -1,5 +1,5 @@
 {
-  "version": "4.2.11",
+  "version": "4.2.12",
   "changelog": [
     "polish 3 tier UX ()",
     "add PREMIUM to entitlements tier type — resolves TS build error ()"
