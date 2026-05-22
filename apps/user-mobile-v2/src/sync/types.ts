@@ -1,4 +1,9 @@
-export type SyncEntityType = "expense";
+export type SyncEntityType =
+  | "claim"
+  | "claim_item"
+  | "expense"
+  | "receipt"
+  | "sync_state";
 
 export type SyncOperation = "create" | "update" | "delete";
 

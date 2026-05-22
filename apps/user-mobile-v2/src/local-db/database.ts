@@ -1,6 +1,7 @@
 import * as SQLite from "expo-sqlite";
 
-import { schemaStatements } from "@/local-db/schema";
+import { localMigrations } from "@/local-db/migrations";
+import { nowIso } from "@/utils/time";
 
 const databaseName = "myexpensio-mobile-v2.db";
 
@@ -17,9 +18,32 @@ export async function initializeLocalDatabase() {
 
   await database.execAsync("PRAGMA journal_mode = WAL;");
   await database.execAsync("PRAGMA foreign_keys = ON;");
+  await database.execAsync(`CREATE TABLE IF NOT EXISTS schema_migrations (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    applied_at TEXT NOT NULL
+  );`);
 
-  for (const statement of schemaStatements) {
-    await database.execAsync(statement);
+  for (const migration of localMigrations) {
+    const existing = await database.getFirstAsync<{ id: number }>(
+      "SELECT id FROM schema_migrations WHERE id = ?;",
+      [migration.id]
+    );
+
+    if (existing) {
+      continue;
+    }
+
+    await database.withTransactionAsync(async () => {
+      for (const statement of migration.statements) {
+        await database.execAsync(statement);
+      }
+
+      await database.runAsync(
+        "INSERT INTO schema_migrations (id, name, applied_at) VALUES (?, ?, ?);",
+        [migration.id, migration.name, nowIso()]
+      );
+    });
   }
 }
 

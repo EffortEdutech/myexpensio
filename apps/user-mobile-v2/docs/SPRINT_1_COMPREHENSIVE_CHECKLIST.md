@@ -60,62 +60,62 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 
 ## Local Database
 
-- [ ] Add `schema_migrations`.
-- [ ] Add migration runner.
-- [ ] Add `sync_state`.
-- [ ] Add `sync_queue`.
-- [ ] Add `profiles_cache`.
-- [ ] Add `subscriptions_cache`.
-- [ ] Add `spaces`.
-- [ ] Add `claims`.
-- [ ] Add `claim_items`.
-- [ ] Add `expenses`.
-- [ ] Add `receipts`.
-- [ ] Add `trips`.
-- [ ] Add `trip_points`.
-- [ ] Add `routes_cache`.
-- [ ] Add `tng_transactions`.
-- [ ] Add `ledger_entries`.
-- [ ] Add `commitments`.
-- [ ] Add `commitment_payments`.
-- [ ] Add `rate_versions_cache`.
-- [ ] Add `usage_counters_cache`.
+- [x] Add `schema_migrations`.
+- [x] Add migration runner.
+- [x] Add `sync_state`.
+- [x] Add `sync_queue`.
+- [x] Add `profiles_cache`.
+- [x] Add `subscriptions_cache`.
+- [x] Add `spaces`.
+- [x] Add `claims`.
+- [x] Add `claim_items`.
+- [x] Add `expenses`.
+- [x] Add `receipts`.
+- [x] Add `trips`.
+- [x] Add `trip_points`.
+- [x] Add `routes_cache`.
+- [x] Add `tng_transactions`.
+- [x] Add `ledger_entries`.
+- [x] Add `commitments`.
+- [x] Add `commitment_payments`.
+- [x] Add `rate_versions_cache`.
+- [x] Add `usage_counters_cache`.
 
 ## Repository Layer
 
 - [ ] Repository reads never call network.
-- [ ] Repository writes persist locally first.
-- [ ] Repository writes create sync queue items.
-- [ ] Claim repository.
-- [ ] Claim item repository.
-- [ ] Expense repository.
-- [ ] Receipt repository.
-- [ ] Sync queue repository.
-- [ ] Sync state repository.
+- [x] Repository writes persist locally first.
+- [x] Repository writes create sync queue items.
+- [x] Claim repository.
+- [x] Claim item repository.
+- [x] Expense repository.
+- [x] Receipt repository.
+- [x] Sync queue repository.
+- [x] Sync state repository.
 - [ ] Space repository.
 - [ ] Cached subscription repository.
 
 ## Work Claims Slice
 
 - [ ] Claims list reads from SQLite.
-- [ ] Create local draft claim.
+- [x] Create local draft claim.
 - [ ] Edit local draft claim title/period.
 - [ ] Soft-delete local draft claim.
-- [ ] Create local claim item.
+- [x] Create local claim item.
 - [ ] Edit local claim item.
 - [ ] Soft-delete local claim item.
 - [ ] Add local transport item types.
-- [ ] Attach local receipt metadata.
-- [ ] Show sync status per claim/item.
+- [x] Attach local receipt metadata.
+- [x] Show sync status per claim/item.
 - [ ] Prevent submitted claim edits locally.
 
 ## Receipt And File Uploads
 
-- [ ] Define receipt entity model.
-- [ ] Store local file URI.
-- [ ] Store remote storage path after upload.
-- [ ] Track upload status separately from entity sync status.
-- [ ] Queue upload work.
+- [x] Define receipt entity model.
+- [x] Store local file URI.
+- [x] Store remote storage path after upload.
+- [x] Track upload status separately from entity sync status.
+- [x] Queue upload work.
 - [ ] Retry failed uploads.
 - [ ] Handle missing local file.
 - [ ] Define signed upload API contract.
@@ -194,12 +194,12 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 
 ## Verification
 
-- [ ] Run typecheck.
+- [x] Run typecheck.
 - [ ] Run Expo bundle/export check.
 - [ ] Start app locally.
 - [ ] Create draft offline.
 - [ ] Confirm draft persists after reload.
-- [ ] Confirm sync queue item is created.
+- [x] Confirm sync queue item is created.
 - [ ] Confirm failed network does not lose local data.
 - [ ] Confirm no `apps/user` files were modified.
 

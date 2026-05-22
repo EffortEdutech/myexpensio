@@ -11,6 +11,9 @@ import {
   View
 } from "react-native";
 
+import { ClaimDraftList } from "@/features/claims/components/ClaimDraftList";
+import { useClaimDrafts } from "@/features/claims/hooks/useClaimDrafts";
+import { useCreateClaimWithItem } from "@/features/claims/hooks/useCreateClaimWithItem";
 import { ExpenseDraftList } from "@/features/expenses/components/ExpenseDraftList";
 import { useCreateDraftExpense } from "@/features/expenses/hooks/useCreateDraftExpense";
 import { useExpenseDrafts } from "@/features/expenses/hooks/useExpenseDrafts";
@@ -63,6 +66,8 @@ export default function App() {
 function MobileV2Home() {
   const drafts = useExpenseDrafts();
   const createDraft = useCreateDraftExpense();
+  const claims = useClaimDrafts();
+  const createClaim = useCreateClaimWithItem();
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -71,21 +76,35 @@ function MobileV2Home() {
           <Text style={styles.eyebrow}>Local-first rewrite</Text>
           <Text style={styles.title}>MyExpensio Mobile v2</Text>
           <Text style={styles.subtitle}>
-            First slice: create expense drafts locally, queue them for sync, and
-            keep the current app untouched.
+            Sprint 1 slice: create claims and expense drafts locally, queue them
+            for sync, and keep the current app untouched.
           </Text>
         </View>
 
         <View style={styles.statusRow}>
           <View style={styles.statusItem}>
-            <Text style={styles.statusValue}>{drafts.data?.length ?? 0}</Text>
-            <Text style={styles.statusLabel}>Local drafts</Text>
+            <Text style={styles.statusValue}>{claims.data?.length ?? 0}</Text>
+            <Text style={styles.statusLabel}>Local claims</Text>
           </View>
           <View style={styles.statusItem}>
-            <Text style={styles.statusValue}>SQLite</Text>
-            <Text style={styles.statusLabel}>Runtime store</Text>
+            <Text style={styles.statusValue}>{drafts.data?.length ?? 0}</Text>
+            <Text style={styles.statusLabel}>Local expenses</Text>
           </View>
         </View>
+
+        <Pressable
+          accessibilityRole="button"
+          disabled={createClaim.isPending}
+          onPress={() => createClaim.mutate()}
+          style={({ pressed }) => [
+            styles.primaryButton,
+            pressed || createClaim.isPending ? styles.primaryButtonPressed : null
+          ]}
+        >
+          <Text style={styles.primaryButtonText}>
+            {createClaim.isPending ? "Creating..." : "Create claim + item"}
+          </Text>
+        </Pressable>
 
         <Pressable
           accessibilityRole="button"
@@ -101,10 +120,21 @@ function MobileV2Home() {
           </Text>
         </Pressable>
 
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Work claim drafts</Text>
+          <ClaimDraftList
+            claims={claims.data ?? []}
+            isLoading={claims.isLoading}
+          />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Expense drafts</Text>
         <ExpenseDraftList
           drafts={drafts.data ?? []}
           isLoading={drafts.isLoading}
         />
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -129,6 +159,14 @@ const styles = StyleSheet.create({
   },
   header: {
     gap: spacing.sm
+  },
+  section: {
+    gap: spacing.md
+  },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "800"
   },
   eyebrow: {
     color: colors.primary,
