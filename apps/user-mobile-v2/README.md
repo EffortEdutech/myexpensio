@@ -42,6 +42,8 @@ apps/user-mobile-v2/docs/AUTH_FLOW_MAPPING.md
 apps/user-mobile-v2/docs/FEATURE_PREPARATION_MAPPING.md
 apps/user-mobile-v2/docs/LOCAL_VERIFICATION_GUIDE.md
 apps/user-mobile-v2/docs/SPRINT_2_AUTH_BOOTSTRAP_CHECKLIST.md
+apps/user-mobile-v2/docs/SPRINT_3_WORK_CLAIMS_CORE_PARITY.md
+docs/USER_MOBILE_V2_SPRINT_3_WORK_CLAIMS_CORE_PARITY.md
 ```
 
 ## Development Notes

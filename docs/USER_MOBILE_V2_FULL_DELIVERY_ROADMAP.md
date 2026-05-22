@@ -171,6 +171,19 @@ Acceptance:
 
 ## Sprint 3: Work Claims Core Parity
 
+Status:
+
+```text
+Planned
+```
+
+Sprint package:
+
+```text
+apps/user-mobile-v2/docs/SPRINT_3_WORK_CLAIMS_CORE_PARITY.md
+docs/USER_MOBILE_V2_SPRINT_3_WORK_CLAIMS_CORE_PARITY.md
+```
+
 Goal:
 
 Complete the main claims workflow before expanding into advanced modules.
