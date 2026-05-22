@@ -24,6 +24,10 @@ import { useCreateClaimWithItem } from "@/features/claims/hooks/useCreateClaimWi
 import { ExpenseDraftList } from "@/features/expenses/components/ExpenseDraftList";
 import { useCreateDraftExpense } from "@/features/expenses/hooks/useCreateDraftExpense";
 import { useExpenseDrafts } from "@/features/expenses/hooks/useExpenseDrafts";
+import {
+  useReceiptUploadSummary,
+  useRetryFailedReceiptUploads
+} from "@/features/receipts/hooks/useReceiptUploadSummary";
 import { AppShell } from "@/features/shell/components/AppShell";
 import type { AppSpace } from "@/features/shell/types";
 import { FeatureGate } from "@/features/subscription/components/FeatureGate";
@@ -92,6 +96,8 @@ function MobileV2Home() {
   const deleteLatestItem = useDeleteLatestClaimItem();
   const increaseLatestItem = useIncreaseLatestClaimItem();
   const renameClaim = useRenameClaimDraft();
+  const receiptUploadSummary = useReceiptUploadSummary();
+  const retryFailedReceiptUploads = useRetryFailedReceiptUploads();
   const pendingSyncItems = usePendingSyncItems();
   const retryFailedSyncItems = useRetryFailedSyncItems();
   const syncQueueSummary = useSyncQueueSummary();
@@ -165,6 +171,20 @@ function MobileV2Home() {
             retryLabel={
               retryFailedSyncItems.isPending ? "Retrying..." : "Retry failed"
             }
+            receiptUploadSummary={
+              receiptUploadSummary.data ?? {
+                failed: 0,
+                local: 0,
+                uploaded: 0,
+                uploading: 0
+              }
+            }
+            onRetryFailedReceipts={() => retryFailedReceiptUploads.mutate()}
+            receiptRetryLabel={
+              retryFailedReceiptUploads.isPending
+                ? "Retrying..."
+                : "Retry receipt uploads"
+            }
           />
         ) : activeSpace === "business" ? (
           <FeatureGate feature="business_space" tier={subscriptionTier}>
@@ -220,6 +240,14 @@ type WorkClaimsSliceProps = {
   };
   onRetryFailedSync: () => void;
   retryLabel: string;
+  receiptUploadSummary: {
+    failed: number;
+    local: number;
+    uploaded: number;
+    uploading: number;
+  };
+  onRetryFailedReceipts: () => void;
+  receiptRetryLabel: string;
 };
 
 function WorkClaimsSlice({
@@ -244,7 +272,10 @@ function WorkClaimsSlice({
   pendingSyncCount,
   syncQueueSummary,
   onRetryFailedSync,
-  retryLabel
+  retryLabel,
+  receiptUploadSummary,
+  onRetryFailedReceipts,
+  receiptRetryLabel
 }: WorkClaimsSliceProps) {
   return (
     <>
@@ -290,6 +321,30 @@ function WorkClaimsSlice({
           <Text style={styles.syncStat}>Syncing {syncQueueSummary.syncing}</Text>
           <Text style={styles.syncStat}>Failed {syncQueueSummary.failed}</Text>
           <Text style={styles.syncStat}>Synced {syncQueueSummary.synced}</Text>
+        </View>
+      </View>
+
+      <View style={styles.syncPanel}>
+        <View style={styles.syncPanelHeader}>
+          <Text style={styles.syncPanelTitle}>Receipt uploads</Text>
+          <Pressable
+            accessibilityRole="button"
+            disabled={receiptUploadSummary.failed === 0}
+            onPress={onRetryFailedReceipts}
+            style={({ pressed }) => [
+              styles.retryButton,
+              receiptUploadSummary.failed === 0 ? styles.retryButtonDisabled : null,
+              pressed ? styles.primaryButtonPressed : null
+            ]}
+          >
+            <Text style={styles.retryButtonText}>{receiptRetryLabel}</Text>
+          </Pressable>
+        </View>
+        <View style={styles.syncStats}>
+          <Text style={styles.syncStat}>Local {receiptUploadSummary.local}</Text>
+          <Text style={styles.syncStat}>Uploading {receiptUploadSummary.uploading}</Text>
+          <Text style={styles.syncStat}>Failed {receiptUploadSummary.failed}</Text>
+          <Text style={styles.syncStat}>Uploaded {receiptUploadSummary.uploaded}</Text>
         </View>
       </View>
 

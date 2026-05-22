@@ -44,6 +44,24 @@ export async function listReceiptsForEntity(
   return rows.map(mapReceiptRow);
 }
 
+export async function listReceiptsByUploadStatus(
+  uploadStatus: ReceiptUploadStatus,
+  limit = 25
+) {
+  const database = await getDatabase();
+  const rows = await database.getAllAsync<ReceiptRow>(
+    `SELECT *
+      FROM receipts
+      WHERE upload_status = ?
+        AND deleted_at IS NULL
+      ORDER BY updated_at ASC
+      LIMIT ?;`,
+    [uploadStatus, limit]
+  );
+
+  return rows.map(mapReceiptRow);
+}
+
 export async function createReceiptDraft(
   input: CreateReceiptDraftInput,
   deviceId: string
@@ -112,6 +130,87 @@ export async function createReceiptDraft(
   });
 
   return receipt;
+}
+
+export async function markReceiptUploading(receiptId: string) {
+  const database = await getDatabase();
+
+  await database.runAsync(
+    `UPDATE receipts
+      SET upload_status = 'uploading',
+          updated_at = ?
+      WHERE id = ?;`,
+    [nowIso(), receiptId]
+  );
+}
+
+export async function markReceiptUploaded(
+  receiptId: string,
+  remotePath: string
+) {
+  const database = await getDatabase();
+
+  await database.runAsync(
+    `UPDATE receipts
+      SET upload_status = 'uploaded',
+          remote_path = ?,
+          sync_status = 'pending',
+          updated_at = ?
+      WHERE id = ?;`,
+    [remotePath, nowIso(), receiptId]
+  );
+}
+
+export async function markReceiptUploadFailed(receiptId: string) {
+  const database = await getDatabase();
+
+  await database.runAsync(
+    `UPDATE receipts
+      SET upload_status = 'failed',
+          updated_at = ?
+      WHERE id = ?;`,
+    [nowIso(), receiptId]
+  );
+}
+
+export async function retryFailedReceiptUploads(limit = 25) {
+  const failedReceipts = await listReceiptsByUploadStatus("failed", limit);
+  const database = await getDatabase();
+  const timestamp = nowIso();
+
+  await database.withTransactionAsync(async () => {
+    for (const receipt of failedReceipts) {
+      await database.runAsync(
+        `UPDATE receipts
+          SET upload_status = 'local',
+              updated_at = ?
+          WHERE id = ?;`,
+        [timestamp, receipt.id]
+      );
+    }
+  });
+
+  return failedReceipts.length;
+}
+
+export async function getReceiptUploadSummary() {
+  const database = await getDatabase();
+  const rows = await database.getAllAsync<{
+    total: number;
+    upload_status: ReceiptUploadStatus;
+  }>(
+    `SELECT upload_status, COUNT(*) AS total
+      FROM receipts
+      WHERE deleted_at IS NULL
+      GROUP BY upload_status;`
+  );
+
+  return {
+    failed: rows.find((row) => row.upload_status === "failed")?.total ?? 0,
+    local: rows.find((row) => row.upload_status === "local")?.total ?? 0,
+    uploaded: rows.find((row) => row.upload_status === "uploaded")?.total ?? 0,
+    uploading: rows.find((row) => row.upload_status === "uploading")?.total ?? 0
+  };
 }
 
 function mapReceiptRow(row: ReceiptRow): ReceiptDraft {

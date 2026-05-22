@@ -14,25 +14,25 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 
 ## Guardrails
 
-- [ ] Do not change `apps/user`.
-- [ ] Do not call Supabase directly from mobile screens.
-- [ ] Do not store service role or secret keys in the mobile app.
-- [ ] Do not make billing/payment mutations offline.
-- [ ] Do not hard-delete synced records by default.
-- [ ] Do not build isolated screens without wiring them to repositories and sync rules.
+- [x] Do not change `apps/user`.
+- [x] Do not call Supabase directly from mobile screens.
+- [x] Do not store service role or secret keys in the mobile app.
+- [x] Do not make billing/payment mutations offline.
+- [x] Do not hard-delete synced records by default.
+- [x] Do not build isolated screens without wiring them to repositories and sync rules.
 
 ## Planning And Parity
 
-- [ ] Document all current app spaces: Work Claims, Personal Expense, Business Space.
-- [ ] Document current Work Claims routes and behavior.
-- [ ] Document current Personal Expense routes and behavior.
-- [ ] Document current Business Space routes and behavior.
-- [ ] Document auth and invite flows.
-- [ ] Document settings, billing, and subscription flows.
-- [ ] Document upload, scan, and file flows.
-- [ ] Document TNG import/link/export flows.
-- [ ] Document trip, route, GPS, odometer, and mileage flows.
-- [ ] Document reports and export flows.
+- [x] Document all current app spaces: Work Claims, Personal Expense, Business Space.
+- [x] Document current Work Claims routes and behavior.
+- [x] Document current Personal Expense routes and behavior.
+- [x] Document current Business Space routes and behavior.
+- [x] Document auth and invite flows.
+- [x] Document settings, billing, and subscription flows.
+- [x] Document upload, scan, and file flows.
+- [x] Document TNG import/link/export flows.
+- [x] Document trip, route, GPS, odometer, and mileage flows.
+- [x] Document reports and export flows.
 
 ## App Shell
 
@@ -54,9 +54,9 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 - [x] Define secure token storage.
 - [x] Define session restore.
 - [x] Define sign-out local cleanup policy.
-- [ ] Prepare biometric login abstraction.
-- [ ] Prepare accept-invite flow mapping.
-- [ ] Prepare complete-first-login flow mapping.
+- [x] Prepare biometric login abstraction.
+- [x] Prepare accept-invite flow mapping.
+- [x] Prepare complete-first-login flow mapping.
 
 ## Local Database
 
@@ -107,7 +107,7 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 - [x] Add local transport item types.
 - [x] Attach local receipt metadata.
 - [x] Show sync status per claim/item.
-- [ ] Prevent submitted claim edits locally.
+- [x] Prevent submitted claim edits locally.
 
 ## Receipt And File Uploads
 
@@ -116,46 +116,46 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 - [x] Store remote storage path after upload.
 - [x] Track upload status separately from entity sync status.
 - [x] Queue upload work.
-- [ ] Retry failed uploads.
-- [ ] Handle missing local file.
-- [ ] Define signed upload API contract.
-- [ ] Define uploaded file view URL behavior.
+- [x] Retry failed uploads.
+- [x] Handle missing local file.
+- [x] Define signed upload API contract.
+- [x] Define uploaded file view URL behavior.
 
 ## Trips And Mileage Preparation
 
-- [ ] Define local trip model.
-- [ ] Define local trip point model.
-- [ ] Define active trip lifecycle.
-- [ ] Define GPS permission flow.
-- [ ] Define odometer photo/override flow.
-- [ ] Define route alternatives cache model.
-- [ ] Define route selection sync behavior.
+- [x] Define local trip model.
+- [x] Define local trip point model.
+- [x] Define active trip lifecycle.
+- [x] Define GPS permission flow.
+- [x] Define odometer photo/override flow.
+- [x] Define route alternatives cache model.
+- [x] Define route selection sync behavior.
 
 ## TNG Preparation
 
-- [ ] Define local TNG statement model.
-- [ ] Define local TNG transaction model.
-- [ ] Define import status lifecycle.
-- [ ] Define claim-item link behavior.
-- [ ] Define unlink behavior.
-- [ ] Define duplicate transaction policy.
-- [ ] Define export appendix dependency.
+- [x] Define local TNG statement model.
+- [x] Define local TNG transaction model.
+- [x] Define import status lifecycle.
+- [x] Define claim-item link behavior.
+- [x] Define unlink behavior.
+- [x] Define duplicate transaction policy.
+- [x] Define export appendix dependency.
 
 ## Personal Expense Preparation
 
-- [ ] Define personal space local model.
-- [ ] Define personal expense as ledger entry or expense subtype.
-- [ ] Define bill/commitment local model.
-- [ ] Define commitment payment model.
-- [ ] Define personal tax report cache needs.
+- [x] Define personal space local model.
+- [x] Define personal expense as ledger entry or expense subtype.
+- [x] Define bill/commitment local model.
+- [x] Define commitment payment model.
+- [x] Define personal tax report cache needs.
 
 ## Business Space Preparation
 
-- [ ] Define business space local model.
-- [ ] Define income ledger entry.
-- [ ] Define business expense ledger entry.
-- [ ] Define business profit summary cache.
-- [ ] Define business tax report cache.
+- [x] Define business space local model.
+- [x] Define income ledger entry.
+- [x] Define business expense ledger entry.
+- [x] Define business profit summary cache.
+- [x] Define business tax report cache.
 - [x] Preserve Premium feature gate.
 
 ## Sync Engine
@@ -163,22 +163,22 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 - [x] Define `POST /sync/push`.
 - [x] Define `GET /sync/pull`.
 - [x] Define bootstrap sync.
-- [ ] Define sync cursor storage.
+- [x] Define sync cursor storage.
 - [x] Define retry/backoff behavior.
 - [x] Define conflict result handling.
 - [x] Define rejected mutation UX.
-- [ ] Define server-wins merge helper.
-- [ ] Define local-wins draft helper.
-- [ ] Define file upload sync as separate worker.
+- [x] Define server-wins merge helper.
+- [x] Define local-wins draft helper.
+- [x] Define file upload sync as separate worker.
 
 ## API Client
 
 - [x] Create base API client.
 - [x] Attach auth token.
 - [x] Normalize API errors.
-- [ ] Handle offline/network failure.
+- [x] Handle offline/network failure.
 - [x] Add sync API client.
-- [ ] Add file upload API client.
+- [x] Add file upload API client.
 
 ## UI And UX
 
@@ -190,12 +190,12 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 - [x] Add loading states.
 - [x] Add error states.
 - [x] Add retry actions.
-- [ ] Confirm destructive local deletes.
+- [x] Confirm destructive local deletes.
 
 ## Verification
 
 - [x] Run typecheck.
-- [ ] Run Expo bundle/export check.
+- [x] Run Expo bundle/export check.
 - [ ] Start app locally.
 - [ ] Create draft offline.
 - [ ] Confirm draft persists after reload.

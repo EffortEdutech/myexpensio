@@ -1,4 +1,11 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  View
+} from "react-native";
 
 import type { ClaimDraft } from "@/features/claims/types";
 import { colors, spacing, typography } from "@/theme/tokens";
@@ -52,7 +59,7 @@ export function ClaimDraftList({
             </Text>
           </View>
           <Text style={styles.meta}>
-            {claim.periodStart ?? "No period"} · {claim.status}
+            {claim.periodStart ?? "No period"} - {claim.status}
           </Text>
           <View style={styles.syncBadge}>
             <Text style={styles.syncText}>{claim.syncStatus}</Text>
@@ -66,18 +73,41 @@ export function ClaimDraftList({
             />
             <ClaimAction
               label="Remove item"
-              onPress={() => onDeleteLatestItem?.(claim)}
+              onPress={() =>
+                confirmDestructiveAction(
+                  "Remove latest item?",
+                  "This will soft-delete the latest draft item and queue the change for sync.",
+                  () => onDeleteLatestItem?.(claim)
+                )
+              }
             />
             <ClaimAction
               danger
               label="Delete"
-              onPress={() => onDelete?.(claim)}
+              onPress={() =>
+                confirmDestructiveAction(
+                  "Delete draft claim?",
+                  "This keeps a soft-delete record locally so the server can receive the deletion later.",
+                  () => onDelete?.(claim)
+                )
+              }
             />
           </View>
         </View>
       ))}
     </View>
   );
+}
+
+function confirmDestructiveAction(
+  title: string,
+  message: string,
+  onConfirm: () => void
+) {
+  Alert.alert(title, message, [
+    { style: "cancel", text: "Cancel" },
+    { onPress: onConfirm, style: "destructive", text: "Continue" }
+  ]);
 }
 
 function ClaimAction({

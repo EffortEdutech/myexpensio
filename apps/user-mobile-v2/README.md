@@ -37,6 +37,9 @@ docs/USER_MOBILE_V2_FULL_DELIVERY_ROADMAP.md
 apps/user-mobile-v2/docs/SPRINT_1_COMPREHENSIVE_CHECKLIST.md
 apps/user-mobile-v2/docs/FULL_DELIVERY_ROADMAP.md
 apps/user-mobile-v2/docs/SYNC_API_CONTRACT.md
+apps/user-mobile-v2/docs/FILE_UPLOAD_CONTRACT.md
+apps/user-mobile-v2/docs/AUTH_FLOW_MAPPING.md
+apps/user-mobile-v2/docs/FEATURE_PREPARATION_MAPPING.md
 ```
 
 ## Development Notes
