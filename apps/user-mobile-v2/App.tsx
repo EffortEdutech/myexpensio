@@ -19,6 +19,8 @@ import { useCreateDraftExpense } from "@/features/expenses/hooks/useCreateDraftE
 import { useExpenseDrafts } from "@/features/expenses/hooks/useExpenseDrafts";
 import { AppShell } from "@/features/shell/components/AppShell";
 import type { AppSpace } from "@/features/shell/types";
+import { FeatureGate } from "@/features/subscription/components/FeatureGate";
+import type { SubscriptionTier } from "@/features/subscription/types";
 import { initializeLocalDatabase } from "@/local-db/database";
 import { usePendingSyncItems } from "@/sync/hooks/usePendingSyncItems";
 import { colors, spacing, typography } from "@/theme/tokens";
@@ -68,6 +70,8 @@ export default function App() {
 
 function MobileV2Home() {
   const [activeSpace, setActiveSpace] = useState<AppSpace>("work");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const subscriptionTier: SubscriptionTier = "FREE";
   const drafts = useExpenseDrafts();
   const createDraft = useCreateDraftExpense();
   const claims = useClaimDrafts();
@@ -78,9 +82,15 @@ function MobileV2Home() {
     <AppShell
       activeSpace={activeSpace}
       onSpaceChange={setActiveSpace}
+      onOpenSettings={() => setSettingsOpen((open) => !open)}
       pendingSyncCount={pendingSyncItems.data?.length ?? 0}
+      subscriptionLabel={subscriptionTier}
     >
       <ScrollView contentContainerStyle={styles.content}>
+        {settingsOpen ? (
+          <SettingsPanel subscriptionTier={subscriptionTier} />
+        ) : null}
+
         <View style={styles.header}>
           <Text style={styles.eyebrow}>Local-first rewrite</Text>
           <Text style={styles.title}>MyExpensio Mobile v2</Text>
@@ -110,17 +120,29 @@ function MobileV2Home() {
             onCreateExpense={() => createDraft.mutate()}
             pendingSyncCount={pendingSyncItems.data?.length ?? 0}
           />
+        ) : activeSpace === "business" ? (
+          <FeatureGate feature="business_space" tier={subscriptionTier}>
+            <DeferredSpace spaceName="Business Space" />
+          </FeatureGate>
         ) : (
           <DeferredSpace
-            spaceName={
-              activeSpace === "personal"
-                ? "Personal Expense"
-                : "Business Space"
-            }
+            spaceName="Personal Expense"
           />
         )}
       </ScrollView>
     </AppShell>
+  );
+}
+
+function SettingsPanel({ subscriptionTier }: { subscriptionTier: SubscriptionTier }) {
+  return (
+    <View style={styles.settingsPanel}>
+      <Text style={styles.settingsTitle}>Profile & settings</Text>
+      <Text style={styles.settingsCopy}>
+        Account, profile, rates, biometric login, and billing entry points will
+        live here. Current local tier placeholder: {subscriptionTier}.
+      </Text>
+    </View>
   );
 }
 
@@ -341,6 +363,24 @@ const styles = StyleSheet.create({
   },
   deferredCopy: {
     color: colors.muted,
+    fontSize: typography.body,
+    lineHeight: 22
+  },
+  settingsPanel: {
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md
+  },
+  settingsTitle: {
+    color: "#1e3a8a",
+    fontSize: typography.body,
+    fontWeight: "800"
+  },
+  settingsCopy: {
+    color: "#1d4ed8",
     fontSize: typography.body,
     lineHeight: 22
   }

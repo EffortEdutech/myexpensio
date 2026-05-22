@@ -39,21 +39,21 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 - [x] Create native app shell.
 - [x] Add safe-area aware layout.
 - [x] Add header pattern.
-- [ ] Add profile/settings entry point.
+- [x] Add profile/settings entry point.
 - [x] Add offline/sync status indicator.
 - [x] Add trial/subscription badge placeholder.
 - [x] Add three-space navigation model:
   - Work Claims
   - Personal Expense
   - Business Space
-- [ ] Add feature-gate boundary for Free, Pro, Premium.
+- [x] Add feature-gate boundary for Free, Pro, Premium.
 
 ## Auth Foundation
 
-- [ ] Define auth API client boundary.
-- [ ] Define secure token storage.
-- [ ] Define session restore.
-- [ ] Define sign-out local cleanup policy.
+- [x] Define auth API client boundary.
+- [x] Define secure token storage.
+- [x] Define session restore.
+- [x] Define sign-out local cleanup policy.
 - [ ] Prepare biometric login abstraction.
 - [ ] Prepare accept-invite flow mapping.
 - [ ] Prepare complete-first-login flow mapping.
@@ -92,8 +92,8 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 - [x] Receipt repository.
 - [x] Sync queue repository.
 - [x] Sync state repository.
-- [ ] Space repository.
-- [ ] Cached subscription repository.
+- [x] Space repository.
+- [x] Cached subscription repository.
 
 ## Work Claims Slice
 
@@ -156,7 +156,7 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 - [ ] Define business expense ledger entry.
 - [ ] Define business profit summary cache.
 - [ ] Define business tax report cache.
-- [ ] Preserve Premium feature gate.
+- [x] Preserve Premium feature gate.
 
 ## Sync Engine
 

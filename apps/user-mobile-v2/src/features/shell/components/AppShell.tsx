@@ -9,13 +9,17 @@ type AppShellProps = PropsWithChildren<{
   activeSpace: AppSpace;
   pendingSyncCount: number;
   onSpaceChange: (space: AppSpace) => void;
+  onOpenSettings: () => void;
+  subscriptionLabel: string;
 }>;
 
 export function AppShell({
   activeSpace,
   children,
   onSpaceChange,
-  pendingSyncCount
+  onOpenSettings,
+  pendingSyncCount,
+  subscriptionLabel
 }: AppShellProps) {
   const activeSpaceMeta =
     appSpaces.find((space) => space.id === activeSpace) ?? appSpaces[0];
@@ -29,8 +33,15 @@ export function AppShell({
         </View>
         <View style={styles.headerBadges}>
           <View style={styles.subscriptionBadge}>
-            <Text style={styles.subscriptionText}>Free</Text>
+            <Text style={styles.subscriptionText}>{subscriptionLabel}</Text>
           </View>
+          <Pressable
+            accessibilityRole="button"
+            onPress={onOpenSettings}
+            style={styles.settingsButton}
+          >
+            <Text style={styles.settingsText}>Settings</Text>
+          </Pressable>
           <View
             style={[
               styles.syncBadge,
@@ -115,6 +126,17 @@ const styles = StyleSheet.create({
   },
   subscriptionText: {
     color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  settingsButton: {
+    backgroundColor: "#eff6ff",
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs
+  },
+  settingsText: {
+    color: "#1d4ed8",
     fontSize: typography.caption,
     fontWeight: "700"
   },
