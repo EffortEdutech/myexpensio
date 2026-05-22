@@ -93,6 +93,29 @@ export async function listPendingSyncItems(limit = 25) {
   return rows.map(mapSyncQueueRow);
 }
 
+export async function listPendingSyncItemsForEntityIds(
+  entityIds: string[],
+  limit = 25
+) {
+  if (entityIds.length === 0) {
+    return [];
+  }
+
+  const database = await getDatabase();
+  const placeholders = entityIds.map(() => "?").join(", ");
+  const rows = await database.getAllAsync<SyncQueueRow>(
+    `SELECT *
+      FROM sync_queue
+      WHERE sync_status = 'pending'
+        AND entity_id IN (${placeholders})
+      ORDER BY created_at ASC
+      LIMIT ?;`,
+    [...entityIds, limit]
+  );
+
+  return rows.map(mapSyncQueueRow);
+}
+
 export async function listFailedSyncItems(limit = 25) {
   const database = await getDatabase();
   const rows = await database.getAllAsync<SyncQueueRow>(

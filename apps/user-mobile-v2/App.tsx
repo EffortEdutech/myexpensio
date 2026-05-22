@@ -32,6 +32,8 @@ import { AppShell } from "@/features/shell/components/AppShell";
 import type { AppSpace } from "@/features/shell/types";
 import { FeatureGate } from "@/features/subscription/components/FeatureGate";
 import type { SubscriptionTier } from "@/features/subscription/types";
+import { useLocalFirstSmokeTest } from "@/features/verification/hooks/useLocalFirstSmokeTest";
+import type { LocalVerificationResult } from "@/features/verification/types";
 import { initializeLocalDatabase } from "@/local-db/database";
 import { usePendingSyncItems } from "@/sync/hooks/usePendingSyncItems";
 import {
@@ -98,6 +100,7 @@ function MobileV2Home() {
   const renameClaim = useRenameClaimDraft();
   const receiptUploadSummary = useReceiptUploadSummary();
   const retryFailedReceiptUploads = useRetryFailedReceiptUploads();
+  const localFirstSmokeTest = useLocalFirstSmokeTest();
   const pendingSyncItems = usePendingSyncItems();
   const retryFailedSyncItems = useRetryFailedSyncItems();
   const syncQueueSummary = useSyncQueueSummary();
@@ -185,6 +188,18 @@ function MobileV2Home() {
                 ? "Retrying..."
                 : "Retry receipt uploads"
             }
+            onRunSmokeTest={() => localFirstSmokeTest.mutate()}
+            smokeTestError={
+              localFirstSmokeTest.error instanceof Error
+                ? localFirstSmokeTest.error.message
+                : null
+            }
+            smokeTestLabel={
+              localFirstSmokeTest.isPending
+                ? "Running..."
+                : "Run local-first smoke test"
+            }
+            smokeTestResult={localFirstSmokeTest.data ?? null}
           />
         ) : activeSpace === "business" ? (
           <FeatureGate feature="business_space" tier={subscriptionTier}>
@@ -247,7 +262,11 @@ type WorkClaimsSliceProps = {
     uploading: number;
   };
   onRetryFailedReceipts: () => void;
+  onRunSmokeTest: () => void;
   receiptRetryLabel: string;
+  smokeTestError: string | null;
+  smokeTestLabel: string;
+  smokeTestResult: LocalVerificationResult | null;
 };
 
 function WorkClaimsSlice({
@@ -275,7 +294,11 @@ function WorkClaimsSlice({
   retryLabel,
   receiptUploadSummary,
   onRetryFailedReceipts,
-  receiptRetryLabel
+  onRunSmokeTest,
+  receiptRetryLabel,
+  smokeTestError,
+  smokeTestLabel,
+  smokeTestResult
 }: WorkClaimsSliceProps) {
   return (
     <>
@@ -346,6 +369,49 @@ function WorkClaimsSlice({
           <Text style={styles.syncStat}>Failed {receiptUploadSummary.failed}</Text>
           <Text style={styles.syncStat}>Uploaded {receiptUploadSummary.uploaded}</Text>
         </View>
+      </View>
+
+      <View style={styles.verificationPanel}>
+        <View style={styles.syncPanelHeader}>
+          <Text style={styles.syncPanelTitle}>Sprint 1 verification</Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={onRunSmokeTest}
+            style={({ pressed }) => [
+              styles.retryButton,
+              pressed ? styles.primaryButtonPressed : null
+            ]}
+          >
+            <Text style={styles.retryButtonText}>{smokeTestLabel}</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.verificationCopy}>
+          Creates a smoke-test claim, reads it back from SQLite, then simulates
+          an offline sync failure against only that smoke-test queue.
+        </Text>
+        {smokeTestError ? (
+          <Text style={styles.verificationError}>{smokeTestError}</Text>
+        ) : null}
+        {smokeTestResult ? (
+          <View style={styles.verificationResult}>
+            <Text style={styles.verificationLine}>
+              SQLite read-back: {smokeTestResult.claimReadBack ? "pass" : "fail"}
+            </Text>
+            <Text style={styles.verificationLine}>
+              Failed sync kept claim:{" "}
+              {smokeTestResult.failedNetworkKeptClaim ? "pass" : "fail"}
+            </Text>
+            <Text style={styles.verificationLine}>
+              Smoke queue pushed/failed:{" "}
+              {smokeTestResult.failedNetworkResult.pushed}/
+              {smokeTestResult.failedNetworkResult.failed}
+            </Text>
+            <Text style={styles.verificationLine}>
+              Pending queue before/after create: {smokeTestResult.pendingBefore}/
+              {smokeTestResult.pendingAfterCreate}
+            </Text>
+          </View>
+        ) : null}
       </View>
 
       <Pressable
@@ -498,6 +564,32 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.md
+  },
+  verificationPanel: {
+    backgroundColor: "#f0fdf4",
+    borderColor: "#bbf7d0",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md
+  },
+  verificationCopy: {
+    color: "#166534",
+    fontSize: typography.caption,
+    lineHeight: 18
+  },
+  verificationError: {
+    color: colors.danger,
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  verificationResult: {
+    gap: spacing.xs
+  },
+  verificationLine: {
+    color: "#14532d",
+    fontSize: typography.caption,
+    fontWeight: "700"
   },
   syncPanelHeader: {
     alignItems: "center",

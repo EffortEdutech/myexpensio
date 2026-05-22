@@ -40,6 +40,7 @@ apps/user-mobile-v2/docs/SYNC_API_CONTRACT.md
 apps/user-mobile-v2/docs/FILE_UPLOAD_CONTRACT.md
 apps/user-mobile-v2/docs/AUTH_FLOW_MAPPING.md
 apps/user-mobile-v2/docs/FEATURE_PREPARATION_MAPPING.md
+apps/user-mobile-v2/docs/LOCAL_VERIFICATION_GUIDE.md
 ```
 
 ## Development Notes

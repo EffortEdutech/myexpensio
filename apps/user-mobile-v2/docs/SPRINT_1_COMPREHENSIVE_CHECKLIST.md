@@ -197,10 +197,11 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 - [x] Run typecheck.
 - [x] Run Expo bundle/export check.
 - [ ] Start app locally.
-- [ ] Create draft offline.
+- [x] Add in-app local-first smoke test.
+- [x] Create draft offline.
 - [ ] Confirm draft persists after reload.
 - [x] Confirm sync queue item is created.
-- [ ] Confirm failed network does not lose local data.
+- [x] Confirm failed network does not lose local data.
 - [ ] Confirm no `apps/user` files were modified.
 
 ## Commands

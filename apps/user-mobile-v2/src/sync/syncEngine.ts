@@ -1,5 +1,6 @@
 import {
   listPendingSyncItems,
+  listPendingSyncItemsForEntityIds,
   markSyncItemFailed,
   markSyncItemSynced,
   markSyncItemsSyncing
@@ -9,6 +10,7 @@ import { nowIso } from "@/utils/time";
 
 type PushPendingSyncOptions = {
   deviceId: string;
+  entityIds?: string[];
   limit?: number;
   push: (request: PushSyncRequest) => Promise<PushSyncResponse>;
 };
@@ -22,10 +24,13 @@ export type PushPendingSyncResult = {
 
 export async function pushPendingSyncItems({
   deviceId,
+  entityIds,
   limit = 25,
   push
 }: PushPendingSyncOptions): Promise<PushPendingSyncResult> {
-  const pendingItems = await listPendingSyncItems(limit);
+  const pendingItems = entityIds
+    ? await listPendingSyncItemsForEntityIds(entityIds, limit)
+    : await listPendingSyncItems(limit);
 
   if (pendingItems.length === 0) {
     return {
