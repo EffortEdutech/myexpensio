@@ -29,6 +29,13 @@ See the full decision record:
 docs/USER_MOBILE_V2_LOCAL_FIRST_DECISION.md
 ```
 
+See the comprehensive sprint plan:
+
+```text
+docs/USER_MOBILE_V2_COMPREHENSIVE_SPRINT_PLAN.md
+apps/user-mobile-v2/docs/SPRINT_1_COMPREHENSIVE_CHECKLIST.md
+```
+
 ## Development Notes
 
 This scaffold targets Expo SDK 56, which is the current Expo SDK as of May 2026. SDK 56 uses React Native 0.85 and React 19.2.
