@@ -17,7 +17,10 @@ import { useCreateClaimWithItem } from "@/features/claims/hooks/useCreateClaimWi
 import { ExpenseDraftList } from "@/features/expenses/components/ExpenseDraftList";
 import { useCreateDraftExpense } from "@/features/expenses/hooks/useCreateDraftExpense";
 import { useExpenseDrafts } from "@/features/expenses/hooks/useExpenseDrafts";
+import { AppShell } from "@/features/shell/components/AppShell";
+import type { AppSpace } from "@/features/shell/types";
 import { initializeLocalDatabase } from "@/local-db/database";
+import { usePendingSyncItems } from "@/sync/hooks/usePendingSyncItems";
 import { colors, spacing, typography } from "@/theme/tokens";
 
 export default function App() {
@@ -64,13 +67,19 @@ export default function App() {
 }
 
 function MobileV2Home() {
+  const [activeSpace, setActiveSpace] = useState<AppSpace>("work");
   const drafts = useExpenseDrafts();
   const createDraft = useCreateDraftExpense();
   const claims = useClaimDrafts();
   const createClaim = useCreateClaimWithItem();
+  const pendingSyncItems = usePendingSyncItems();
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <AppShell
+      activeSpace={activeSpace}
+      onSpaceChange={setActiveSpace}
+      pendingSyncCount={pendingSyncItems.data?.length ?? 0}
+    >
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
           <Text style={styles.eyebrow}>Local-first rewrite</Text>
@@ -81,70 +90,141 @@ function MobileV2Home() {
           </Text>
         </View>
 
-        <View style={styles.statusRow}>
-          <View style={styles.statusItem}>
-            <Text style={styles.statusValue}>{claims.data?.length ?? 0}</Text>
-            <Text style={styles.statusLabel}>Local claims</Text>
-          </View>
-          <View style={styles.statusItem}>
-            <Text style={styles.statusValue}>{drafts.data?.length ?? 0}</Text>
-            <Text style={styles.statusLabel}>Local expenses</Text>
-          </View>
-        </View>
-
-        <Pressable
-          accessibilityRole="button"
-          disabled={createClaim.isPending}
-          onPress={() => createClaim.mutate()}
-          style={({ pressed }) => [
-            styles.primaryButton,
-            pressed || createClaim.isPending ? styles.primaryButtonPressed : null
-          ]}
-        >
-          <Text style={styles.primaryButtonText}>
-            {createClaim.isPending ? "Creating..." : "Create claim + item"}
-          </Text>
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          disabled={createDraft.isPending}
-          onPress={() => createDraft.mutate()}
-          style={({ pressed }) => [
-            styles.primaryButton,
-            pressed || createDraft.isPending ? styles.primaryButtonPressed : null
-          ]}
-        >
-          <Text style={styles.primaryButtonText}>
-            {createDraft.isPending ? "Creating..." : "Create local draft"}
-          </Text>
-        </Pressable>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Work claim drafts</Text>
-          <ClaimDraftList
+        {activeSpace === "work" ? (
+          <WorkClaimsSlice
+            claimCount={claims.data?.length ?? 0}
             claims={claims.data ?? []}
-            isLoading={claims.isLoading}
+            createClaimLabel={
+              createClaim.isPending ? "Creating..." : "Create claim + item"
+            }
+            createExpenseLabel={
+              createDraft.isPending ? "Creating..." : "Create local draft"
+            }
+            draftCount={drafts.data?.length ?? 0}
+            expenseDrafts={drafts.data ?? []}
+            isCreatingClaim={createClaim.isPending}
+            isCreatingExpense={createDraft.isPending}
+            isLoadingClaims={claims.isLoading}
+            isLoadingExpenses={drafts.isLoading}
+            onCreateClaim={() => createClaim.mutate()}
+            onCreateExpense={() => createDraft.mutate()}
+            pendingSyncCount={pendingSyncItems.data?.length ?? 0}
           />
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Expense drafts</Text>
-        <ExpenseDraftList
-          drafts={drafts.data ?? []}
-          isLoading={drafts.isLoading}
-        />
-        </View>
+        ) : (
+          <DeferredSpace
+            spaceName={
+              activeSpace === "personal"
+                ? "Personal Expense"
+                : "Business Space"
+            }
+          />
+        )}
       </ScrollView>
-    </SafeAreaView>
+    </AppShell>
+  );
+}
+
+type WorkClaimsSliceProps = {
+  claimCount: number;
+  claims: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>;
+  createClaimLabel: string;
+  createExpenseLabel: string;
+  draftCount: number;
+  expenseDrafts: NonNullable<ReturnType<typeof useExpenseDrafts>["data"]>;
+  isCreatingClaim: boolean;
+  isCreatingExpense: boolean;
+  isLoadingClaims: boolean;
+  isLoadingExpenses: boolean;
+  onCreateClaim: () => void;
+  onCreateExpense: () => void;
+  pendingSyncCount: number;
+};
+
+function WorkClaimsSlice({
+  claimCount,
+  claims,
+  createClaimLabel,
+  createExpenseLabel,
+  draftCount,
+  expenseDrafts,
+  isCreatingClaim,
+  isCreatingExpense,
+  isLoadingClaims,
+  isLoadingExpenses,
+  onCreateClaim,
+  onCreateExpense,
+  pendingSyncCount
+}: WorkClaimsSliceProps) {
+  return (
+    <>
+      <View style={styles.statusRow}>
+        <View style={styles.statusItem}>
+          <Text style={styles.statusValue}>{claimCount}</Text>
+          <Text style={styles.statusLabel}>Local claims</Text>
+        </View>
+        <View style={styles.statusItem}>
+          <Text style={styles.statusValue}>{draftCount}</Text>
+          <Text style={styles.statusLabel}>Local expenses</Text>
+        </View>
+        <View style={styles.statusItem}>
+          <Text style={styles.statusValue}>{pendingSyncCount}</Text>
+          <Text style={styles.statusLabel}>Sync queue</Text>
+        </View>
+      </View>
+
+      <Pressable
+        accessibilityRole="button"
+        disabled={isCreatingClaim}
+        onPress={onCreateClaim}
+        style={({ pressed }) => [
+          styles.primaryButton,
+          pressed || isCreatingClaim ? styles.primaryButtonPressed : null
+        ]}
+      >
+        <Text style={styles.primaryButtonText}>{createClaimLabel}</Text>
+      </Pressable>
+
+      <Pressable
+        accessibilityRole="button"
+        disabled={isCreatingExpense}
+        onPress={onCreateExpense}
+        style={({ pressed }) => [
+          styles.secondaryButton,
+          pressed || isCreatingExpense ? styles.primaryButtonPressed : null
+        ]}
+      >
+        <Text style={styles.secondaryButtonText}>{createExpenseLabel}</Text>
+      </Pressable>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Work claim drafts</Text>
+        <ClaimDraftList claims={claims} isLoading={isLoadingClaims} />
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Expense drafts</Text>
+        <ExpenseDraftList
+          drafts={expenseDrafts}
+          isLoading={isLoadingExpenses}
+        />
+      </View>
+    </>
+  );
+}
+
+function DeferredSpace({ spaceName }: { spaceName: string }) {
+  return (
+    <View style={styles.deferredState}>
+      <Text style={styles.deferredTitle}>{spaceName}</Text>
+      <Text style={styles.deferredCopy}>
+        This space is mapped in the full delivery roadmap. Sprint 1 keeps the
+        navigation slot ready while the Work Claims local-first slice is built.
+      </Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.background
-  },
   centered: {
     alignItems: "center",
     backgroundColor: colors.background,
@@ -230,6 +310,39 @@ const styles = StyleSheet.create({
     color: colors.onPrimary,
     fontSize: typography.body,
     fontWeight: "700"
+  },
+  secondaryButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 48,
+    justifyContent: "center",
+    paddingHorizontal: spacing.lg
+  },
+  secondaryButtonText: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "700"
+  },
+  deferredState: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.lg
+  },
+  deferredTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "800"
+  },
+  deferredCopy: {
+    color: colors.muted,
+    fontSize: typography.body,
+    lineHeight: 22
   }
 });
 

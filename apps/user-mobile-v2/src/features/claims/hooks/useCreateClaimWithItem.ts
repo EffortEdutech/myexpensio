@@ -7,6 +7,7 @@ import {
 } from "@/local-db/repositories/claimRepository";
 import { listPendingSyncItems } from "@/local-db/repositories/syncQueueRepository";
 import { useDeviceStore } from "@/state/deviceStore";
+import { syncQueryKeys } from "@/sync/hooks/usePendingSyncItems";
 import { nowIso } from "@/utils/time";
 
 const sampleItems = [
@@ -55,6 +56,9 @@ export function useCreateClaimWithItem() {
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: claimQueryKeys.drafts
+      });
+      void queryClient.invalidateQueries({
+        queryKey: syncQueryKeys.pendingItems
       });
     }
   });

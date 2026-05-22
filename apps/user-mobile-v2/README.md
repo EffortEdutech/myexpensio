@@ -36,6 +36,7 @@ docs/USER_MOBILE_V2_COMPREHENSIVE_SPRINT_PLAN.md
 docs/USER_MOBILE_V2_FULL_DELIVERY_ROADMAP.md
 apps/user-mobile-v2/docs/SPRINT_1_COMPREHENSIVE_CHECKLIST.md
 apps/user-mobile-v2/docs/FULL_DELIVERY_ROADMAP.md
+apps/user-mobile-v2/docs/SYNC_API_CONTRACT.md
 ```
 
 ## Development Notes

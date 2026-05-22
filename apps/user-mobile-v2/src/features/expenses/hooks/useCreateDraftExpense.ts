@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { expenseQueryKeys } from "@/features/expenses/hooks/useExpenseDrafts";
 import { createExpenseDraft } from "@/local-db/repositories/expenseRepository";
 import { useDeviceStore } from "@/state/deviceStore";
+import { syncQueryKeys } from "@/sync/hooks/usePendingSyncItems";
 
 const sampleMerchants = [
   "Grab ride",
@@ -31,6 +32,9 @@ export function useCreateDraftExpense() {
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: expenseQueryKeys.drafts
+      });
+      void queryClient.invalidateQueries({
+        queryKey: syncQueryKeys.pendingItems
       });
     }
   });

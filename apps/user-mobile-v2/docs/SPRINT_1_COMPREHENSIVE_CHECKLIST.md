@@ -36,13 +36,13 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 
 ## App Shell
 
-- [ ] Create native app shell.
-- [ ] Add safe-area aware layout.
-- [ ] Add header pattern.
+- [x] Create native app shell.
+- [x] Add safe-area aware layout.
+- [x] Add header pattern.
 - [ ] Add profile/settings entry point.
-- [ ] Add offline/sync status indicator.
-- [ ] Add trial/subscription badge placeholder.
-- [ ] Add three-space navigation model:
+- [x] Add offline/sync status indicator.
+- [x] Add trial/subscription badge placeholder.
+- [x] Add three-space navigation model:
   - Work Claims
   - Personal Expense
   - Business Space
@@ -83,7 +83,7 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 
 ## Repository Layer
 
-- [ ] Repository reads never call network.
+- [x] Repository reads never call network.
 - [x] Repository writes persist locally first.
 - [x] Repository writes create sync queue items.
 - [x] Claim repository.
@@ -97,7 +97,7 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 
 ## Work Claims Slice
 
-- [ ] Claims list reads from SQLite.
+- [x] Claims list reads from SQLite.
 - [x] Create local draft claim.
 - [ ] Edit local draft claim title/period.
 - [ ] Soft-delete local draft claim.
@@ -160,9 +160,9 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 
 ## Sync Engine
 
-- [ ] Define `POST /sync/push`.
-- [ ] Define `GET /sync/pull`.
-- [ ] Define bootstrap sync.
+- [x] Define `POST /sync/push`.
+- [x] Define `GET /sync/pull`.
+- [x] Define bootstrap sync.
 - [ ] Define sync cursor storage.
 - [ ] Define retry/backoff behavior.
 - [ ] Define conflict result handling.
@@ -173,21 +173,21 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 
 ## API Client
 
-- [ ] Create base API client.
-- [ ] Attach auth token.
-- [ ] Normalize API errors.
+- [x] Create base API client.
+- [x] Attach auth token.
+- [x] Normalize API errors.
 - [ ] Handle offline/network failure.
-- [ ] Add sync API client.
+- [x] Add sync API client.
 - [ ] Add file upload API client.
 
 ## UI And UX
 
-- [ ] Use native controls and touch-friendly layout.
-- [ ] Show local-first instant updates.
-- [ ] Show subtle pending/synced/failed states.
-- [ ] Avoid blocking UI on sync.
-- [ ] Add empty states.
-- [ ] Add loading states.
+- [x] Use native controls and touch-friendly layout.
+- [x] Show local-first instant updates.
+- [x] Show subtle pending/synced/failed states.
+- [x] Avoid blocking UI on sync.
+- [x] Add empty states.
+- [x] Add loading states.
 - [ ] Add error states.
 - [ ] Add retry actions.
 - [ ] Confirm destructive local deletes.
