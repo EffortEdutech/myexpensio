@@ -64,3 +64,37 @@ export function useCreateClaimWithItem() {
   });
 }
 
+export function useCreateBlankClaimDraft() {
+  const queryClient = useQueryClient();
+  const deviceId = useDeviceStore((state) => state.deviceId);
+
+  return useMutation({
+    mutationFn: async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const claim = await createClaimDraft(
+        {
+          title: `Blank claim ${nowIso().slice(11, 16)}`,
+          periodStart: today,
+          periodEnd: today,
+          currency: "MYR"
+        },
+        deviceId
+      );
+      const pendingSyncItems = await listPendingSyncItems();
+
+      return {
+        claim,
+        pendingSyncItems
+      };
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: claimQueryKeys.drafts
+      });
+      void queryClient.invalidateQueries({
+        queryKey: syncQueryKeys.pendingItems
+      });
+    }
+  });
+}
+

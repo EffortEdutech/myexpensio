@@ -39,7 +39,10 @@ import type {
   ClaimItemDraft,
   ClaimItemType
 } from "@/features/claims/types";
-import { useCreateClaimWithItem } from "@/features/claims/hooks/useCreateClaimWithItem";
+import {
+  useCreateBlankClaimDraft,
+  useCreateClaimWithItem
+} from "@/features/claims/hooks/useCreateClaimWithItem";
 import { ExpenseDraftList } from "@/features/expenses/components/ExpenseDraftList";
 import { useCreateDraftExpense } from "@/features/expenses/hooks/useCreateDraftExpense";
 import { useExpenseDrafts } from "@/features/expenses/hooks/useExpenseDrafts";
@@ -156,6 +159,7 @@ function AuthenticatedHome({
   const claims = useClaimDrafts();
   const selectedClaim = useClaimDraft(selectedClaimId);
   const selectedClaimItems = useClaimItems(selectedClaimId);
+  const createBlankClaim = useCreateBlankClaimDraft();
   const createClaim = useCreateClaimWithItem();
   const addItemToClaim = useAddItemToClaimDraft();
   const createClaimItem = useCreateClaimItemDraft();
@@ -176,6 +180,7 @@ function AuthenticatedHome({
   const syncQueueSummary = useSyncQueueSummary();
   const localActionError =
     createClaim.error ??
+    createBlankClaim.error ??
     createDraft.error ??
     addItemToClaim.error ??
     createClaimItem.error ??
@@ -221,6 +226,9 @@ function AuthenticatedHome({
             activeClaim={selectedClaim.data ?? null}
             claimCount={claims.data?.length ?? 0}
             claims={claims.data ?? []}
+            createBlankClaimLabel={
+              createBlankClaim.isPending ? "Creating..." : "Create blank claim"
+            }
             createClaimLabel={
               createClaim.isPending ? "Creating..." : "Create claim + item"
             }
@@ -233,6 +241,7 @@ function AuthenticatedHome({
               localActionError instanceof Error ? localActionError.message : null
             }
             isCreatingClaim={createClaim.isPending}
+            isCreatingBlankClaim={createBlankClaim.isPending}
             isCreatingExpense={createDraft.isPending}
             isLoadingClaimDetail={
               selectedClaim.isLoading || selectedClaimItems.isLoading
@@ -244,6 +253,7 @@ function AuthenticatedHome({
               attachReceiptMetadata.mutate(item.id)
             }
             onBackToClaims={() => setSelectedClaimId(null)}
+            onCreateBlankClaim={() => createBlankClaim.mutate()}
             onCreateClaim={() => createClaim.mutate()}
             onCreateClaimItem={(claim, input) =>
               createClaimItem.mutate({
@@ -367,12 +377,14 @@ type WorkClaimsSliceProps = {
   activeClaim: ClaimDraft | null;
   claimCount: number;
   claims: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>;
+  createBlankClaimLabel: string;
   createClaimLabel: string;
   createExpenseLabel: string;
   draftCount: number;
   errorMessage: string | null;
   expenseDrafts: NonNullable<ReturnType<typeof useExpenseDrafts>["data"]>;
   isCreatingClaim: boolean;
+  isCreatingBlankClaim: boolean;
   isCreatingExpense: boolean;
   isLoadingClaimDetail: boolean;
   isLoadingClaims: boolean;
@@ -380,6 +392,7 @@ type WorkClaimsSliceProps = {
   onAddItemToClaim: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
   onAttachReceiptToItem: (item: ClaimItemDraft) => void;
   onBackToClaims: () => void;
+  onCreateBlankClaim: () => void;
   onCreateClaim: () => void;
   onCreateClaimItem: (
     claim: ClaimDraft,
@@ -445,12 +458,14 @@ function WorkClaimsSlice({
   activeClaim,
   claimCount,
   claims,
+  createBlankClaimLabel,
   createClaimLabel,
   createExpenseLabel,
   draftCount,
   errorMessage,
   expenseDrafts,
   isCreatingClaim,
+  isCreatingBlankClaim,
   isCreatingExpense,
   isLoadingClaimDetail,
   isLoadingClaims,
@@ -458,6 +473,7 @@ function WorkClaimsSlice({
   onAddItemToClaim,
   onAttachReceiptToItem,
   onBackToClaims,
+  onCreateBlankClaim,
   onCreateClaim,
   onCreateClaimItem,
   onCreateExpense,
@@ -613,6 +629,18 @@ function WorkClaimsSlice({
           </View>
         ) : null}
       </View>
+
+      <Pressable
+        accessibilityRole="button"
+        disabled={isCreatingBlankClaim}
+        onPress={onCreateBlankClaim}
+        style={({ pressed }) => [
+          styles.primaryButton,
+          pressed || isCreatingBlankClaim ? styles.primaryButtonPressed : null
+        ]}
+      >
+        <Text style={styles.primaryButtonText}>{createBlankClaimLabel}</Text>
+      </Pressable>
 
       <Pressable
         accessibilityRole="button"

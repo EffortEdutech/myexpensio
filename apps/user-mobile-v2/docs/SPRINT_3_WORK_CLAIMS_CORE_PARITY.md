@@ -79,7 +79,7 @@ This sprint remains zero-budget.
 | ID | Story | Priority | Estimate | Done When |
 | --- | --- | --- | --- | --- |
 | WC-01 | User can navigate from claim list to claim detail | P0 | M | Done: selected claim opens a detail view and can return to list |
-| WC-02 | User can create a blank claim draft | P0 | S | Draft persists locally and creates sync queue item |
+| WC-02 | User can create a blank claim draft | P0 | S | Done: blank draft persists locally and creates sync queue item |
 | WC-03 | User can edit draft title and period | P0 | M | Done: changes persist locally, update sync status, and queue mutation |
 | WC-04 | User can add claim items by type | P0 | M | Done: item persists locally and total updates |
 | WC-05 | User can edit item amount/title/date/type | P0 | M | Done: item changes persist and queue mutation |
@@ -97,6 +97,7 @@ Completed in the first Sprint 3 implementation slice:
 
 - Claim list can open a real claim detail view.
 - Claim detail can return to the list.
+- Blank claim drafts can be created separately from sample claim+item creation.
 - Draft title and period can be edited locally.
 - Claim items can be added by type.
 - Claim item title, amount, date, and type can be edited locally.
