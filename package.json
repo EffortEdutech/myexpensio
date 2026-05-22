@@ -5,6 +5,7 @@
   "description": "myexpensio monorepo (user app, admin app, and shared packages).",
   "scripts": {
     "dev:user": "pnpm -C apps/user dev",
+    "dev:user-mobile-v2": "pnpm -C apps/user-mobile-v2 start",
     "dev:admin": "pnpm -C apps/admin dev",
     "build:user": "pnpm -C apps/user build",
     "build:admin": "pnpm -C apps/admin build",

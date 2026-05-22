@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "MyExpensio Mobile v2",
+    "slug": "myexpensio-mobile-v2",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "myexpensio",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.effortedutech.myexpensio.mobile.v2"
+    },
+    "android": {
+      "package": "com.effortedutech.myexpensio.mobile.v2",
+      "adaptiveIcon": {
+        "backgroundColor": "#0f766e"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-secure-store"
+    ]
+  }
+}
+
