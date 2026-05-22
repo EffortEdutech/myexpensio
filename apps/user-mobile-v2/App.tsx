@@ -30,6 +30,10 @@ import { FeatureGate } from "@/features/subscription/components/FeatureGate";
 import type { SubscriptionTier } from "@/features/subscription/types";
 import { initializeLocalDatabase } from "@/local-db/database";
 import { usePendingSyncItems } from "@/sync/hooks/usePendingSyncItems";
+import {
+  useRetryFailedSyncItems,
+  useSyncQueueSummary
+} from "@/sync/hooks/useSyncQueueSummary";
 import { colors, spacing, typography } from "@/theme/tokens";
 
 export default function App() {
@@ -89,6 +93,8 @@ function MobileV2Home() {
   const increaseLatestItem = useIncreaseLatestClaimItem();
   const renameClaim = useRenameClaimDraft();
   const pendingSyncItems = usePendingSyncItems();
+  const retryFailedSyncItems = useRetryFailedSyncItems();
+  const syncQueueSummary = useSyncQueueSummary();
   const localActionError =
     createClaim.error ??
     createDraft.error ??
@@ -147,6 +153,18 @@ function MobileV2Home() {
             onIncreaseLatestItem={(claim) => increaseLatestItem.mutate(claim.id)}
             onRenameClaim={(claim) => renameClaim.mutate(claim)}
             pendingSyncCount={pendingSyncItems.data?.length ?? 0}
+            syncQueueSummary={
+              syncQueueSummary.data ?? {
+                failed: 0,
+                pending: 0,
+                synced: 0,
+                syncing: 0
+              }
+            }
+            onRetryFailedSync={() => retryFailedSyncItems.mutate()}
+            retryLabel={
+              retryFailedSyncItems.isPending ? "Retrying..." : "Retry failed"
+            }
           />
         ) : activeSpace === "business" ? (
           <FeatureGate feature="business_space" tier={subscriptionTier}>
@@ -194,6 +212,14 @@ type WorkClaimsSliceProps = {
   onIncreaseLatestItem: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
   onRenameClaim: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
   pendingSyncCount: number;
+  syncQueueSummary: {
+    failed: number;
+    pending: number;
+    synced: number;
+    syncing: number;
+  };
+  onRetryFailedSync: () => void;
+  retryLabel: string;
 };
 
 function WorkClaimsSlice({
@@ -215,7 +241,10 @@ function WorkClaimsSlice({
   onDeleteLatestItem,
   onIncreaseLatestItem,
   onRenameClaim,
-  pendingSyncCount
+  pendingSyncCount,
+  syncQueueSummary,
+  onRetryFailedSync,
+  retryLabel
 }: WorkClaimsSliceProps) {
   return (
     <>
@@ -237,6 +266,30 @@ function WorkClaimsSlice({
         <View style={styles.statusItem}>
           <Text style={styles.statusValue}>{pendingSyncCount}</Text>
           <Text style={styles.statusLabel}>Sync queue</Text>
+        </View>
+      </View>
+
+      <View style={styles.syncPanel}>
+        <View style={styles.syncPanelHeader}>
+          <Text style={styles.syncPanelTitle}>Sync queue</Text>
+          <Pressable
+            accessibilityRole="button"
+            disabled={syncQueueSummary.failed === 0}
+            onPress={onRetryFailedSync}
+            style={({ pressed }) => [
+              styles.retryButton,
+              syncQueueSummary.failed === 0 ? styles.retryButtonDisabled : null,
+              pressed ? styles.primaryButtonPressed : null
+            ]}
+          >
+            <Text style={styles.retryButtonText}>{retryLabel}</Text>
+          </Pressable>
+        </View>
+        <View style={styles.syncStats}>
+          <Text style={styles.syncStat}>Pending {syncQueueSummary.pending}</Text>
+          <Text style={styles.syncStat}>Syncing {syncQueueSummary.syncing}</Text>
+          <Text style={styles.syncStat}>Failed {syncQueueSummary.failed}</Text>
+          <Text style={styles.syncStat}>Synced {syncQueueSummary.synced}</Text>
         </View>
       </View>
 
@@ -382,6 +435,51 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: typography.caption,
     marginTop: 2
+  },
+  syncPanel: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md
+  },
+  syncPanelHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  syncPanelTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "800"
+  },
+  syncStats: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm
+  },
+  syncStat: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  retryButton: {
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 34,
+    justifyContent: "center",
+    paddingHorizontal: spacing.sm
+  },
+  retryButtonDisabled: {
+    opacity: 0.5
+  },
+  retryButtonText: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "700"
   },
   primaryButton: {
     alignItems: "center",

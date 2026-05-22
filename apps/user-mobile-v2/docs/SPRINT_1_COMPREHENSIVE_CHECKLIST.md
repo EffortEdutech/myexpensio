@@ -164,9 +164,9 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 - [x] Define `GET /sync/pull`.
 - [x] Define bootstrap sync.
 - [ ] Define sync cursor storage.
-- [ ] Define retry/backoff behavior.
-- [ ] Define conflict result handling.
-- [ ] Define rejected mutation UX.
+- [x] Define retry/backoff behavior.
+- [x] Define conflict result handling.
+- [x] Define rejected mutation UX.
 - [ ] Define server-wins merge helper.
 - [ ] Define local-wins draft helper.
 - [ ] Define file upload sync as separate worker.
@@ -189,7 +189,7 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 - [x] Add empty states.
 - [x] Add loading states.
 - [x] Add error states.
-- [ ] Add retry actions.
+- [x] Add retry actions.
 - [ ] Confirm destructive local deletes.
 
 ## Verification

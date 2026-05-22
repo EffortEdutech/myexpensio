@@ -93,6 +93,109 @@ export async function listPendingSyncItems(limit = 25) {
   return rows.map(mapSyncQueueRow);
 }
 
+export async function listFailedSyncItems(limit = 25) {
+  const database = await getDatabase();
+  const rows = await database.getAllAsync<SyncQueueRow>(
+    `SELECT *
+      FROM sync_queue
+      WHERE sync_status = 'failed'
+      ORDER BY updated_at ASC
+      LIMIT ?;`,
+    [limit]
+  );
+
+  return rows.map(mapSyncQueueRow);
+}
+
+export async function getSyncQueueSummary() {
+  const database = await getDatabase();
+  const rows = await database.getAllAsync<{
+    sync_status: SyncQueueStatus;
+    total: number;
+  }>(
+    `SELECT sync_status, COUNT(*) AS total
+      FROM sync_queue
+      GROUP BY sync_status;`
+  );
+
+  return {
+    failed: rows.find((row) => row.sync_status === "failed")?.total ?? 0,
+    pending: rows.find((row) => row.sync_status === "pending")?.total ?? 0,
+    synced: rows.find((row) => row.sync_status === "synced")?.total ?? 0,
+    syncing: rows.find((row) => row.sync_status === "syncing")?.total ?? 0
+  };
+}
+
+export async function markSyncItemsSyncing(queueIds: string[]) {
+  if (queueIds.length === 0) {
+    return;
+  }
+
+  const database = await getDatabase();
+  const timestamp = nowIso();
+
+  await database.withTransactionAsync(async () => {
+    for (const queueId of queueIds) {
+      await database.runAsync(
+        `UPDATE sync_queue
+          SET sync_status = 'syncing',
+              updated_at = ?,
+              last_error = NULL
+          WHERE id = ?;`,
+        [timestamp, queueId]
+      );
+    }
+  });
+}
+
+export async function markSyncItemSynced(queueId: string) {
+  const database = await getDatabase();
+
+  await database.runAsync(
+    `UPDATE sync_queue
+      SET sync_status = 'synced',
+          updated_at = ?,
+          last_error = NULL
+      WHERE id = ?;`,
+    [nowIso(), queueId]
+  );
+}
+
+export async function markSyncItemFailed(queueId: string, errorMessage: string) {
+  const database = await getDatabase();
+
+  await database.runAsync(
+    `UPDATE sync_queue
+      SET sync_status = 'failed',
+          retry_count = retry_count + 1,
+          updated_at = ?,
+          last_error = ?
+      WHERE id = ?;`,
+    [nowIso(), errorMessage, queueId]
+  );
+}
+
+export async function retryFailedSyncItems(limit = 25) {
+  const failedItems = await listFailedSyncItems(limit);
+  const database = await getDatabase();
+  const timestamp = nowIso();
+
+  await database.withTransactionAsync(async () => {
+    for (const item of failedItems) {
+      await database.runAsync(
+        `UPDATE sync_queue
+          SET sync_status = 'pending',
+              updated_at = ?,
+              last_error = NULL
+          WHERE id = ?;`,
+        [timestamp, item.id]
+      );
+    }
+  });
+
+  return failedItems.length;
+}
+
 function mapSyncQueueRow(row: SyncQueueRow): SyncQueueItem {
   return {
     id: row.id,
