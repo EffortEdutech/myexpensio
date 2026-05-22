@@ -1,4 +1,4 @@
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { ClaimDraft } from "@/features/claims/types";
 import { colors, spacing, typography } from "@/theme/tokens";
@@ -6,9 +6,22 @@ import { colors, spacing, typography } from "@/theme/tokens";
 type ClaimDraftListProps = {
   claims: ClaimDraft[];
   isLoading: boolean;
+  onAddItem?: (claim: ClaimDraft) => void;
+  onDelete?: (claim: ClaimDraft) => void;
+  onDeleteLatestItem?: (claim: ClaimDraft) => void;
+  onIncreaseLatestItem?: (claim: ClaimDraft) => void;
+  onRename?: (claim: ClaimDraft) => void;
 };
 
-export function ClaimDraftList({ claims, isLoading }: ClaimDraftListProps) {
+export function ClaimDraftList({
+  claims,
+  isLoading,
+  onAddItem,
+  onDelete,
+  onDeleteLatestItem,
+  onIncreaseLatestItem,
+  onRename
+}: ClaimDraftListProps) {
   if (isLoading) {
     return (
       <View style={styles.emptyState}>
@@ -44,9 +57,52 @@ export function ClaimDraftList({ claims, isLoading }: ClaimDraftListProps) {
           <View style={styles.syncBadge}>
             <Text style={styles.syncText}>{claim.syncStatus}</Text>
           </View>
+          <View style={styles.actions}>
+            <ClaimAction label="Rename" onPress={() => onRename?.(claim)} />
+            <ClaimAction label="Add item" onPress={() => onAddItem?.(claim)} />
+            <ClaimAction
+              label="+ RM1"
+              onPress={() => onIncreaseLatestItem?.(claim)}
+            />
+            <ClaimAction
+              label="Remove item"
+              onPress={() => onDeleteLatestItem?.(claim)}
+            />
+            <ClaimAction
+              danger
+              label="Delete"
+              onPress={() => onDelete?.(claim)}
+            />
+          </View>
         </View>
       ))}
     </View>
+  );
+}
+
+function ClaimAction({
+  danger,
+  label,
+  onPress
+}: {
+  danger?: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.actionButton,
+        danger ? styles.actionButtonDanger : null,
+        pressed ? styles.actionButtonPressed : null
+      ]}
+    >
+      <Text style={[styles.actionText, danger ? styles.actionTextDanger : null]}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -94,6 +150,35 @@ const styles = StyleSheet.create({
     color: "#0369a1",
     fontSize: typography.caption,
     fontWeight: "700"
+  },
+  actions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm
+  },
+  actionButton: {
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 34,
+    justifyContent: "center",
+    paddingHorizontal: spacing.sm
+  },
+  actionButtonDanger: {
+    backgroundColor: "#fef2f2",
+    borderColor: "#fecaca"
+  },
+  actionButtonPressed: {
+    opacity: 0.72
+  },
+  actionText: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  actionTextDanger: {
+    color: colors.danger
   },
   emptyState: {
     alignItems: "center",

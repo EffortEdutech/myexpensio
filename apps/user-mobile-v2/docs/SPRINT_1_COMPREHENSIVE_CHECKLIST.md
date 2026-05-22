@@ -99,12 +99,12 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 
 - [x] Claims list reads from SQLite.
 - [x] Create local draft claim.
-- [ ] Edit local draft claim title/period.
-- [ ] Soft-delete local draft claim.
+- [x] Edit local draft claim title/period.
+- [x] Soft-delete local draft claim.
 - [x] Create local claim item.
-- [ ] Edit local claim item.
-- [ ] Soft-delete local claim item.
-- [ ] Add local transport item types.
+- [x] Edit local claim item.
+- [x] Soft-delete local claim item.
+- [x] Add local transport item types.
 - [x] Attach local receipt metadata.
 - [x] Show sync status per claim/item.
 - [ ] Prevent submitted claim edits locally.
@@ -188,7 +188,7 @@ Create a real local-first foundation for MyExpensio user mobile v2 while preserv
 - [x] Avoid blocking UI on sync.
 - [x] Add empty states.
 - [x] Add loading states.
-- [ ] Add error states.
+- [x] Add error states.
 - [ ] Add retry actions.
 - [ ] Confirm destructive local deletes.
 

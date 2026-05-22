@@ -238,6 +238,218 @@ export async function createClaimItemDraft(
   return item;
 }
 
+export async function updateClaimDraftTitle(
+  claimId: string,
+  title: string,
+  deviceId: string
+) {
+  const database = await getDatabase();
+  const timestamp = nowIso();
+
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(
+      `UPDATE claims
+        SET title = ?,
+            sync_status = 'pending',
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'draft'
+          AND deleted_at IS NULL;`,
+      [title, timestamp, claimId]
+    );
+
+    await enqueueSyncItem(
+      {
+        entityType: "claim",
+        entityId: claimId,
+        operation: "update",
+        payload: JSON.stringify({
+          id: claimId,
+          title,
+          updatedAt: timestamp,
+          deviceId
+        })
+      },
+      database
+    );
+  });
+}
+
+export async function softDeleteClaimDraft(claimId: string, deviceId: string) {
+  const database = await getDatabase();
+  const timestamp = nowIso();
+
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(
+      `UPDATE claims
+        SET sync_status = 'deleted',
+            deleted_at = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'draft'
+          AND deleted_at IS NULL;`,
+      [timestamp, timestamp, claimId]
+    );
+
+    await database.runAsync(
+      `UPDATE claim_items
+        SET sync_status = 'deleted',
+            deleted_at = ?,
+            updated_at = ?
+        WHERE claim_id = ?
+          AND deleted_at IS NULL;`,
+      [timestamp, timestamp, claimId]
+    );
+
+    await enqueueSyncItem(
+      {
+        entityType: "claim",
+        entityId: claimId,
+        operation: "delete",
+        payload: JSON.stringify({
+          id: claimId,
+          deletedAt: timestamp,
+          deviceId
+        })
+      },
+      database
+    );
+  });
+}
+
+export async function updateClaimItemAmount(
+  itemId: string,
+  amountCents: number,
+  deviceId: string
+) {
+  const database = await getDatabase();
+  const timestamp = nowIso();
+  const existing = await database.getFirstAsync<ClaimItemRow>(
+    `SELECT *
+      FROM claim_items
+      WHERE id = ?
+        AND deleted_at IS NULL;`,
+    [itemId]
+  );
+
+  if (!existing) {
+    return null;
+  }
+
+  const delta = amountCents - existing.amount_cents;
+
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(
+      `UPDATE claim_items
+        SET amount_cents = ?,
+            sync_status = 'pending',
+            updated_at = ?
+        WHERE id = ?
+          AND deleted_at IS NULL;`,
+      [amountCents, timestamp, itemId]
+    );
+
+    await database.runAsync(
+      `UPDATE claims
+        SET total_amount_cents = total_amount_cents + ?,
+            sync_status = 'pending',
+            updated_at = ?
+        WHERE id = ?;`,
+      [delta, timestamp, existing.claim_id]
+    );
+
+    await enqueueSyncItem(
+      {
+        entityType: "claim_item",
+        entityId: itemId,
+        operation: "update",
+        payload: JSON.stringify({
+          id: itemId,
+          amountCents,
+          updatedAt: timestamp,
+          deviceId
+        })
+      },
+      database
+    );
+  });
+
+  return {
+    ...mapClaimItemRow(existing),
+    amountCents,
+    updatedAt: timestamp,
+    syncStatus: "pending" as const
+  };
+}
+
+export async function softDeleteClaimItem(itemId: string, deviceId: string) {
+  const database = await getDatabase();
+  const timestamp = nowIso();
+  const existing = await database.getFirstAsync<ClaimItemRow>(
+    `SELECT *
+      FROM claim_items
+      WHERE id = ?
+        AND deleted_at IS NULL;`,
+    [itemId]
+  );
+
+  if (!existing) {
+    return null;
+  }
+
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(
+      `UPDATE claim_items
+        SET sync_status = 'deleted',
+            deleted_at = ?,
+            updated_at = ?
+        WHERE id = ?;`,
+      [timestamp, timestamp, itemId]
+    );
+
+    await database.runAsync(
+      `UPDATE claims
+        SET total_amount_cents = total_amount_cents - ?,
+            sync_status = 'pending',
+            updated_at = ?
+        WHERE id = ?;`,
+      [existing.amount_cents, timestamp, existing.claim_id]
+    );
+
+    await enqueueSyncItem(
+      {
+        entityType: "claim_item",
+        entityId: itemId,
+        operation: "delete",
+        payload: JSON.stringify({
+          id: itemId,
+          claimId: existing.claim_id,
+          deletedAt: timestamp,
+          deviceId
+        })
+      },
+      database
+    );
+  });
+
+  return mapClaimItemRow(existing);
+}
+
+export async function getLatestClaimItem(claimId: string) {
+  const database = await getDatabase();
+  const row = await database.getFirstAsync<ClaimItemRow>(
+    `SELECT *
+      FROM claim_items
+      WHERE claim_id = ?
+        AND deleted_at IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1;`,
+    [claimId]
+  );
+
+  return row ? mapClaimItemRow(row) : null;
+}
+
 function mapClaimRow(row: ClaimRow): ClaimDraft {
   return {
     id: row.id,

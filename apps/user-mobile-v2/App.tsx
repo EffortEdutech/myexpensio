@@ -12,6 +12,13 @@ import {
 } from "react-native";
 
 import { ClaimDraftList } from "@/features/claims/components/ClaimDraftList";
+import {
+  useAddItemToClaimDraft,
+  useDeleteLatestClaimItem,
+  useIncreaseLatestClaimItem,
+  useRenameClaimDraft,
+  useSoftDeleteClaimDraft
+} from "@/features/claims/hooks/useClaimDraftActions";
 import { useClaimDrafts } from "@/features/claims/hooks/useClaimDrafts";
 import { useCreateClaimWithItem } from "@/features/claims/hooks/useCreateClaimWithItem";
 import { ExpenseDraftList } from "@/features/expenses/components/ExpenseDraftList";
@@ -76,7 +83,20 @@ function MobileV2Home() {
   const createDraft = useCreateDraftExpense();
   const claims = useClaimDrafts();
   const createClaim = useCreateClaimWithItem();
+  const addItemToClaim = useAddItemToClaimDraft();
+  const deleteClaim = useSoftDeleteClaimDraft();
+  const deleteLatestItem = useDeleteLatestClaimItem();
+  const increaseLatestItem = useIncreaseLatestClaimItem();
+  const renameClaim = useRenameClaimDraft();
   const pendingSyncItems = usePendingSyncItems();
+  const localActionError =
+    createClaim.error ??
+    createDraft.error ??
+    addItemToClaim.error ??
+    deleteClaim.error ??
+    deleteLatestItem.error ??
+    increaseLatestItem.error ??
+    renameClaim.error;
 
   return (
     <AppShell
@@ -112,12 +132,20 @@ function MobileV2Home() {
             }
             draftCount={drafts.data?.length ?? 0}
             expenseDrafts={drafts.data ?? []}
+            errorMessage={
+              localActionError instanceof Error ? localActionError.message : null
+            }
             isCreatingClaim={createClaim.isPending}
             isCreatingExpense={createDraft.isPending}
             isLoadingClaims={claims.isLoading}
             isLoadingExpenses={drafts.isLoading}
+            onAddItemToClaim={(claim) => addItemToClaim.mutate(claim)}
             onCreateClaim={() => createClaim.mutate()}
             onCreateExpense={() => createDraft.mutate()}
+            onDeleteClaim={(claim) => deleteClaim.mutate(claim.id)}
+            onDeleteLatestItem={(claim) => deleteLatestItem.mutate(claim.id)}
+            onIncreaseLatestItem={(claim) => increaseLatestItem.mutate(claim.id)}
+            onRenameClaim={(claim) => renameClaim.mutate(claim)}
             pendingSyncCount={pendingSyncItems.data?.length ?? 0}
           />
         ) : activeSpace === "business" ? (
@@ -152,13 +180,19 @@ type WorkClaimsSliceProps = {
   createClaimLabel: string;
   createExpenseLabel: string;
   draftCount: number;
+  errorMessage: string | null;
   expenseDrafts: NonNullable<ReturnType<typeof useExpenseDrafts>["data"]>;
   isCreatingClaim: boolean;
   isCreatingExpense: boolean;
   isLoadingClaims: boolean;
   isLoadingExpenses: boolean;
+  onAddItemToClaim: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
   onCreateClaim: () => void;
   onCreateExpense: () => void;
+  onDeleteClaim: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
+  onDeleteLatestItem: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
+  onIncreaseLatestItem: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
+  onRenameClaim: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
   pendingSyncCount: number;
 };
 
@@ -168,17 +202,29 @@ function WorkClaimsSlice({
   createClaimLabel,
   createExpenseLabel,
   draftCount,
+  errorMessage,
   expenseDrafts,
   isCreatingClaim,
   isCreatingExpense,
   isLoadingClaims,
   isLoadingExpenses,
+  onAddItemToClaim,
   onCreateClaim,
   onCreateExpense,
+  onDeleteClaim,
+  onDeleteLatestItem,
+  onIncreaseLatestItem,
+  onRenameClaim,
   pendingSyncCount
 }: WorkClaimsSliceProps) {
   return (
     <>
+      {errorMessage ? (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText}>{errorMessage}</Text>
+        </View>
+      ) : null}
+
       <View style={styles.statusRow}>
         <View style={styles.statusItem}>
           <Text style={styles.statusValue}>{claimCount}</Text>
@@ -220,7 +266,15 @@ function WorkClaimsSlice({
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Work claim drafts</Text>
-        <ClaimDraftList claims={claims} isLoading={isLoadingClaims} />
+        <ClaimDraftList
+          claims={claims}
+          isLoading={isLoadingClaims}
+          onAddItem={onAddItemToClaim}
+          onDelete={onDeleteClaim}
+          onDeleteLatestItem={onDeleteLatestItem}
+          onIncreaseLatestItem={onIncreaseLatestItem}
+          onRename={onRenameClaim}
+        />
       </View>
 
       <View style={styles.section}>
@@ -294,6 +348,18 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontSize: typography.body,
     textAlign: "center"
+  },
+  errorBanner: {
+    backgroundColor: "#fef2f2",
+    borderColor: "#fecaca",
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: spacing.md
+  },
+  errorBannerText: {
+    color: colors.danger,
+    fontSize: typography.body,
+    fontWeight: "700"
   },
   statusRow: {
     flexDirection: "row",
