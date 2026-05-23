@@ -293,6 +293,30 @@ export const localMigrations: LocalMigration[] = [
         updated_at TEXT NOT NULL
       );`
     ]
+  },
+  {
+    id: 5,
+    name: "trips_sprint_4_mobile_fields",
+    statements: [
+      `ALTER TABLE trips ADD COLUMN calculation_mode TEXT;`,
+      `ALTER TABLE trips ADD COLUMN origin_text TEXT;`,
+      `ALTER TABLE trips ADD COLUMN destination_text TEXT;`,
+      `ALTER TABLE trips ADD COLUMN ended_at TEXT;`,
+      `ALTER TABLE trips ADD COLUMN odometer_mode TEXT;`,
+      `ALTER TABLE trips ADD COLUMN odometer_distance_m INTEGER;`,
+      `ALTER TABLE trips ADD COLUMN selected_route_distance_m INTEGER;`,
+      `ALTER TABLE trips ADD COLUMN gps_distance_m INTEGER;`,
+      `ALTER TABLE trips ADD COLUMN notes TEXT;`
+    ]
+  },
+  {
+    id: 6,
+    name: "trips_sprint_4_route_and_evidence_fields",
+    statements: [
+      `ALTER TABLE trips ADD COLUMN odometer_start_evidence_uri TEXT;`,
+      `ALTER TABLE trips ADD COLUMN odometer_end_evidence_uri TEXT;`,
+      `ALTER TABLE trips ADD COLUMN route_option_label TEXT;`
+    ]
   }
 ];
 

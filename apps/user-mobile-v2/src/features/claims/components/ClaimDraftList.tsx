@@ -1,12 +1,4 @@
-import {
-  ActivityIndicator,
-  Alert,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  View
-} from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { ClaimDraft } from "@/features/claims/types";
 import { colors, spacing, typography } from "@/theme/tokens";
@@ -14,23 +6,13 @@ import { colors, spacing, typography } from "@/theme/tokens";
 type ClaimDraftListProps = {
   claims: ClaimDraft[];
   isLoading: boolean;
-  onAddItem?: (claim: ClaimDraft) => void;
-  onDelete?: (claim: ClaimDraft) => void;
-  onDeleteLatestItem?: (claim: ClaimDraft) => void;
-  onIncreaseLatestItem?: (claim: ClaimDraft) => void;
   onOpen?: (claim: ClaimDraft) => void;
-  onRename?: (claim: ClaimDraft) => void;
 };
 
 export function ClaimDraftList({
   claims,
   isLoading,
-  onAddItem,
-  onDelete,
-  onDeleteLatestItem,
-  onIncreaseLatestItem,
-  onOpen,
-  onRename
+  onOpen
 }: ClaimDraftListProps) {
   if (isLoading) {
     return (
@@ -43,9 +25,9 @@ export function ClaimDraftList({
   if (claims.length === 0) {
     return (
       <View style={styles.emptyState}>
-        <Text style={styles.emptyTitle}>No local claims yet</Text>
+        <Text style={styles.emptyTitle}>No claims yet</Text>
         <Text style={styles.emptyCopy}>
-          Create a claim to test local persistence and queued sync mutations.
+          Create a claim to group your trips and expenses for submission.
         </Text>
       </View>
     );
@@ -53,178 +35,216 @@ export function ClaimDraftList({
 
   return (
     <View style={styles.list}>
-      {claims.map((claim) => (
-        <View key={claim.id} style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.title}>{claim.title ?? "Draft claim"}</Text>
-            <Text style={styles.amount}>
-              {(claim.totalAmountCents / 100).toFixed(2)} {claim.currency}
-            </Text>
-          </View>
-          <Text style={styles.meta}>
-            {claim.periodStart ?? "No period"} - {claim.status}
-          </Text>
-          <View style={styles.syncBadge}>
-            <Text style={styles.syncText}>{claim.syncStatus}</Text>
-          </View>
-          <View style={styles.actions}>
-            <ClaimAction label="Open" onPress={() => onOpen?.(claim)} />
-            <ClaimAction label="Rename" onPress={() => onRename?.(claim)} />
-            <ClaimAction label="Add item" onPress={() => onAddItem?.(claim)} />
-            <ClaimAction
-              label="+ RM1"
-              onPress={() => onIncreaseLatestItem?.(claim)}
-            />
-            <ClaimAction
-              label="Remove item"
-              onPress={() =>
-                confirmDestructiveAction(
-                  "Remove latest item?",
-                  "This will soft-delete the latest draft item and queue the change for sync.",
-                  () => onDeleteLatestItem?.(claim)
-                )
-              }
-            />
-            <ClaimAction
-              danger
-              label="Delete"
-              onPress={() =>
-                confirmDestructiveAction(
-                  "Delete draft claim?",
-                  "This keeps a soft-delete record locally so the server can receive the deletion later.",
-                  () => onDelete?.(claim)
-                )
-              }
-            />
-          </View>
-        </View>
-      ))}
+      {claims.map((claim) => {
+        const isDraft = claim.status === "draft";
+        const dateLabel = formatClaimPeriod(claim);
+
+        return (
+          <Pressable
+            accessibilityRole="button"
+            key={claim.id}
+            onPress={() => onOpen?.(claim)}
+            style={({ pressed }) => [
+              styles.card,
+              pressed ? styles.cardPressed : null
+            ]}
+          >
+            <View style={styles.dateCol}>
+              <Text style={styles.dateText}>{dateLabel}</Text>
+              <View
+                style={[
+                  styles.statusBadge,
+                  isDraft ? styles.statusBadgeDraft : styles.statusBadgeSubmitted
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.statusText,
+                    isDraft ? styles.statusTextDraft : styles.statusTextSubmitted
+                  ]}
+                >
+                  {isDraft ? "Draft" : "Submitted"}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.descCol}>
+              <Text numberOfLines={1} style={styles.title}>
+                {claim.title ?? dateLabel}
+              </Text>
+              <Text numberOfLines={1} style={styles.subtitle}>
+                {isDraft
+                  ? `edited ${formatRelative(claim.updatedAt)}`
+                  : `submitted ${formatDate(claim.submittedAt)}`}
+              </Text>
+            </View>
+
+            <View style={styles.amountCol}>
+              <Text style={styles.amount}>{formatMoney(claim)}</Text>
+              <Text style={styles.arrow}>{">"}</Text>
+            </View>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
 
-function confirmDestructiveAction(
-  title: string,
-  message: string,
-  onConfirm: () => void
-) {
-  if (Platform.OS === "web") {
-    const confirmDialog = (globalThis as typeof globalThis & {
-      confirm?: (message?: string) => boolean;
-    }).confirm;
-
-    if (!confirmDialog || confirmDialog(`${title}\n\n${message}`)) {
-      onConfirm();
-    }
-
-    return;
-  }
-
-  Alert.alert(title, message, [
-    { style: "cancel", text: "Cancel" },
-    { onPress: onConfirm, style: "destructive", text: "Continue" }
-  ]);
+function formatMoney(claim: ClaimDraft) {
+  return `${claim.currency} ${(claim.totalAmountCents / 100).toFixed(2)}`;
 }
 
-function ClaimAction({
-  danger,
-  label,
-  onPress
-}: {
-  danger?: boolean;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.actionButton,
-        danger ? styles.actionButtonDanger : null,
-        pressed ? styles.actionButtonPressed : null
-      ]}
-    >
-      <Text style={[styles.actionText, danger ? styles.actionTextDanger : null]}>
-        {label}
-      </Text>
-    </Pressable>
-  );
+function formatClaimPeriod(claim: ClaimDraft) {
+  if (!claim.periodStart && !claim.periodEnd) {
+    return "-";
+  }
+
+  if (claim.periodStart && claim.periodEnd) {
+    if (claim.periodStart === claim.periodEnd) {
+      return formatDate(claim.periodStart);
+    }
+
+    const start = new Date(claim.periodStart);
+    const end = new Date(claim.periodEnd);
+
+    if (
+      start.getMonth() === end.getMonth() &&
+      start.getFullYear() === end.getFullYear()
+    ) {
+      return start.toLocaleDateString("en-MY", {
+        month: "long",
+        year: "numeric"
+      });
+    }
+
+    return `${formatDate(claim.periodStart)} - ${formatDate(claim.periodEnd)}`;
+  }
+
+  return formatDate(claim.periodStart ?? claim.periodEnd);
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) {
+    return "-";
+  }
+
+  try {
+    return new Date(value).toLocaleDateString("en-MY", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric"
+    });
+  } catch {
+    return value;
+  }
+}
+
+function formatRelative(value: string) {
+  const diff = Date.now() - new Date(value).getTime();
+  const days = Math.floor(diff / 86_400_000);
+  const hours = Math.floor(diff / 3_600_000);
+  const minutes = Math.floor(diff / 60_000);
+
+  if (days > 0) {
+    return `${days}d ago`;
+  }
+
+  if (hours > 0) {
+    return `${hours}h ago`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m ago`;
+  }
+
+  return "just now";
 }
 
 const styles = StyleSheet.create({
   list: {
-    gap: spacing.md
-  },
-  card: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.border,
     borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
-    gap: spacing.sm,
-    padding: spacing.md
+    overflow: "hidden"
   },
-  cardHeader: {
-    alignItems: "flex-start",
+  card: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
     flexDirection: "row",
-    gap: spacing.md,
-    justifyContent: "space-between"
+    gap: spacing.sm,
+    minHeight: 76,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  cardPressed: {
+    backgroundColor: "#f8fafc"
+  },
+  dateCol: {
+    flexShrink: 0,
+    gap: 5,
+    width: 96
+  },
+  dateText: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 16
+  },
+  statusBadge: {
+    alignSelf: "flex-start",
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 3
+  },
+  statusBadgeDraft: {
+    backgroundColor: "#fef9c3"
+  },
+  statusBadgeSubmitted: {
+    backgroundColor: "#dcfce7"
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: "800"
+  },
+  statusTextDraft: {
+    color: "#854d0e"
+  },
+  statusTextSubmitted: {
+    color: "#15803d"
+  },
+  descCol: {
+    flex: 1,
+    gap: 3,
+    minWidth: 0
   },
   title: {
-    color: colors.text,
-    flex: 1,
-    fontSize: typography.body,
-    fontWeight: "700"
-  },
-  amount: {
     color: colors.text,
     fontSize: typography.body,
     fontWeight: "800"
   },
-  meta: {
-    color: colors.muted,
-    fontSize: typography.caption
-  },
-  syncBadge: {
-    alignSelf: "flex-start",
-    backgroundColor: "#e0f2fe",
-    borderRadius: 999,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs
-  },
-  syncText: {
-    color: "#0369a1",
-    fontSize: typography.caption,
+  subtitle: {
+    color: "#94a3b8",
+    fontSize: 11,
     fontWeight: "700"
   },
-  actions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm
+  amountCol: {
+    alignItems: "flex-end",
+    flexShrink: 0,
+    gap: 2
   },
-  actionButton: {
-    backgroundColor: "#f8fafc",
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    minHeight: 34,
-    justifyContent: "center",
-    paddingHorizontal: spacing.sm
-  },
-  actionButtonDanger: {
-    backgroundColor: "#fef2f2",
-    borderColor: "#fecaca"
-  },
-  actionButtonPressed: {
-    opacity: 0.72
-  },
-  actionText: {
+  amount: {
     color: colors.text,
     fontSize: typography.caption,
-    fontWeight: "700"
+    fontWeight: "900"
   },
-  actionTextDanger: {
-    color: colors.danger
+  arrow: {
+    color: "#94a3b8",
+    fontSize: 18,
+    fontWeight: "800",
+    lineHeight: 20
   },
   emptyState: {
     alignItems: "center",
@@ -233,7 +253,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     gap: spacing.sm,
-    minHeight: 120,
+    minHeight: 220,
     justifyContent: "center",
     padding: spacing.lg
   },
@@ -246,7 +266,7 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: typography.body,
     lineHeight: 22,
+    maxWidth: 280,
     textAlign: "center"
   }
 });
-

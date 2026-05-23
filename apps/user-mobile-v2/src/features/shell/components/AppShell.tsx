@@ -6,27 +6,33 @@ import { appSpaces } from "@/features/shell/spaceConfig";
 import type { AppSpace } from "@/features/shell/types";
 import { colors, spacing, typography } from "@/theme/tokens";
 
+export type WorkTab = "claims" | "export" | "home" | "tng" | "trips";
+
 type AppShellProps = PropsWithChildren<{
   activeSpace: AppSpace;
+  activeWorkTab: WorkTab;
   displayName: string;
   email: string;
   isSigningOut: boolean;
-  pendingSyncCount: number;
-  onSpaceChange: (space: AppSpace) => void;
   onOpenSettings: () => void;
   onSignOut: () => void;
+  onSpaceChange: (space: AppSpace) => void;
+  onWorkTabChange: (tab: WorkTab) => void;
+  pendingSyncCount: number;
   subscriptionLabel: string;
 }>;
 
 export function AppShell({
   activeSpace,
+  activeWorkTab,
   children,
   displayName,
   email,
   isSigningOut,
-  onSpaceChange,
   onOpenSettings,
   onSignOut,
+  onSpaceChange,
+  onWorkTabChange,
   pendingSyncCount,
   subscriptionLabel
 }: AppShellProps) {
@@ -34,7 +40,10 @@ export function AppShell({
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const activeSpaceMeta =
     appSpaces.find((space) => space.id === activeSpace) ?? appSpaces[0];
-  const footerTabs = useMemo(() => getFooterTabs(activeSpace), [activeSpace]);
+  const footerTabs = useMemo(
+    () => getFooterTabs(activeSpace, activeWorkTab),
+    [activeSpace, activeWorkTab]
+  );
   const accent = getSpaceAccent(activeSpace);
   const avatarLabel = (displayName || email || "U").slice(0, 1).toUpperCase();
   const subLabel = subscriptionLabel === "FREE" ? "Trial" : subscriptionLabel;
@@ -46,7 +55,10 @@ export function AppShell({
         <View style={styles.spaceSwitcher}>
           <Pressable
             accessibilityRole="button"
-            onPress={() => setSpaceMenuOpen((open) => !open)}
+            onPress={() => {
+              setSpaceMenuOpen((open) => !open);
+              setProfileMenuOpen(false);
+            }}
             style={styles.spacePill}
           >
             <Text style={styles.spaceIcon}>{activeSpaceMeta.icon}</Text>
@@ -78,13 +90,14 @@ export function AppShell({
                         <Text style={styles.premiumText}>Premium</Text>
                       ) : null}
                     </View>
-                    {active ? <Text style={styles.checkMark}>✓</Text> : null}
+                    {active ? <Text style={styles.checkMark}>OK</Text> : null}
                   </Pressable>
                 );
               })}
             </View>
           ) : null}
         </View>
+
         <Pressable
           accessibilityLabel="Profile and settings"
           accessibilityRole="button"
@@ -97,8 +110,9 @@ export function AppShell({
             profileMenuOpen ? styles.gearButtonOpen : null
           ]}
         >
-          <Text style={styles.gearText}>⚙</Text>
+          <Text style={styles.gearText}>⚙️</Text>
         </Pressable>
+
         {profileMenuOpen ? (
           <View style={styles.profileMenu}>
             <View style={styles.userBlock}>
@@ -199,6 +213,9 @@ export function AppShell({
                   if (tab.space) {
                     onSpaceChange(tab.space);
                   }
+                  if (tab.workTab) {
+                    onWorkTabChange(tab.workTab);
+                  }
                 }}
                 style={styles.navTab}
               >
@@ -215,7 +232,9 @@ export function AppShell({
                   <View
                     style={[
                       styles.navIconWrap,
-                      active ? { backgroundColor: getSpaceAccentBg(activeSpace) } : null
+                      active
+                        ? { backgroundColor: getSpaceAccentBg(activeSpace) }
+                        : null
                     ]}
                   >
                     <Text
@@ -257,9 +276,10 @@ type FooterTab = {
   label: string;
   primary?: boolean;
   space?: AppSpace;
+  workTab?: WorkTab;
 };
 
-function getFooterTabs(activeSpace: AppSpace): FooterTab[] {
+function getFooterTabs(activeSpace: AppSpace, activeWorkTab: WorkTab): FooterTab[] {
   if (activeSpace === "personal") {
     return [
       { active: true, icon: "⌂", key: "personal-home", label: "Home", space: "personal" },
@@ -281,11 +301,11 @@ function getFooterTabs(activeSpace: AppSpace): FooterTab[] {
   }
 
   return [
-    { active: false, icon: "⌂", key: "work-home", label: "Home", space: "work" },
-    { active: false, icon: "⌖", key: "work-trips", label: "Trips" },
-    { active: true, icon: "□", key: "work-claims", label: "Claims", primary: true, space: "work" },
-    { active: false, icon: "$", key: "work-transactions", label: "TNG" },
-    { active: false, icon: "↥", key: "work-export", label: "Export" }
+    { active: activeWorkTab === "home", icon: "⌂", key: "work-home", label: "Home", space: "work", workTab: "home" },
+    { active: activeWorkTab === "trips", icon: "⌖", key: "work-trips", label: "Trips", space: "work", workTab: "trips" },
+    { active: activeWorkTab === "claims", icon: "□", key: "work-claims", label: "Claims", primary: true, space: "work", workTab: "claims" },
+    { active: activeWorkTab === "tng", icon: "$", key: "work-transactions", label: "TNG", space: "work", workTab: "tng" },
+    { active: activeWorkTab === "export", icon: "↥", key: "work-export", label: "Export", space: "work", workTab: "export" }
   ];
 }
 
@@ -331,10 +351,9 @@ const styles = StyleSheet.create({
   },
   brand: {
     color: colors.text,
+    flex: 1,
     fontSize: typography.body,
-    fontWeight: "800",
-    letterSpacing: -0.5,
-    flex: 1
+    fontWeight: "800"
   },
   spaceSwitcher: {
     position: "relative"
@@ -409,7 +428,7 @@ const styles = StyleSheet.create({
   },
   checkMark: {
     color: colors.text,
-    fontSize: typography.caption,
+    fontSize: 10,
     fontWeight: "800"
   },
   gearButton: {
@@ -549,17 +568,6 @@ const styles = StyleSheet.create({
     fontSize: typography.caption,
     fontWeight: "700"
   },
-  settingsButton: {
-    backgroundColor: "#eff6ff",
-    borderRadius: 999,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs
-  },
-  settingsText: {
-    color: "#1d4ed8",
-    fontSize: typography.caption,
-    fontWeight: "700"
-  },
   syncBadge: {
     backgroundColor: "#dcfce7",
     borderRadius: 999,
@@ -595,7 +603,6 @@ const styles = StyleSheet.create({
   footerSpaceLabel: {
     fontSize: 9,
     fontWeight: "800",
-    letterSpacing: 0,
     opacity: 0.72,
     paddingRight: spacing.md,
     paddingTop: 3,
@@ -662,4 +669,3 @@ const styles = StyleSheet.create({
     width: 4
   }
 });
-

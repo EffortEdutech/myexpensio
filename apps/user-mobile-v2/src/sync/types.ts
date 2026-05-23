@@ -3,7 +3,8 @@ export type SyncEntityType =
   | "claim_item"
   | "expense"
   | "receipt"
-  | "sync_state";
+  | "sync_state"
+  | "trip";
 
 export type SyncOperation = "create" | "update" | "delete";
 

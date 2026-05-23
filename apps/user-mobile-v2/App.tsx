@@ -44,9 +44,16 @@ import type {
 import { useCreateBlankClaimDraft } from "@/features/claims/hooks/useCreateClaimWithItem";
 import { useReceiptUploadSummary } from "@/features/receipts/hooks/useReceiptUploadSummary";
 import { AppShell } from "@/features/shell/components/AppShell";
+import type { WorkTab } from "@/features/shell/components/AppShell";
 import type { AppSpace } from "@/features/shell/types";
 import { FeatureGate } from "@/features/subscription/components/FeatureGate";
 import type { SubscriptionTier } from "@/features/subscription/types";
+import { TripsScreen } from "@/features/trips/components/TripsScreen";
+import {
+  useCreateTrip,
+  useStopGpsTrip
+} from "@/features/trips/hooks/useTripActions";
+import { useTrips } from "@/features/trips/hooks/useTrips";
 import { initializeLocalDatabase } from "@/local-db/database";
 import { usePendingSyncItems } from "@/sync/hooks/usePendingSyncItems";
 import { useSyncQueueSummary } from "@/sync/hooks/useSyncQueueSummary";
@@ -103,6 +110,7 @@ export default function App() {
 function MobileV2Home() {
   const authStatus = useSessionRestore();
   const [activeSpace, setActiveSpace] = useState<AppSpace>("work");
+  const [activeWorkTab, setActiveWorkTab] = useState<WorkTab>("claims");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const subscriptionTier: SubscriptionTier = "FREE";
 
@@ -122,11 +130,16 @@ function MobileV2Home() {
   return (
     <AuthenticatedHome
       activeSpace={activeSpace}
+      activeWorkTab={activeWorkTab}
       onSpaceChange={(space) => {
         setActiveSpace(space);
         setSettingsOpen(false);
       }}
       settingsOpen={settingsOpen}
+      onWorkTabChange={(tab) => {
+        setActiveWorkTab(tab);
+        setSettingsOpen(false);
+      }}
       onOpenSettings={() => setSettingsOpen(true)}
       subscriptionTier={subscriptionTier}
     />
@@ -135,32 +148,40 @@ function MobileV2Home() {
 
 function AuthenticatedHome({
   activeSpace,
+  activeWorkTab,
   onOpenSettings,
   onSpaceChange,
+  onWorkTabChange,
   settingsOpen,
   subscriptionTier
 }: {
   activeSpace: AppSpace;
+  activeWorkTab: WorkTab;
   onOpenSettings: () => void;
   onSpaceChange: (space: AppSpace) => void;
+  onWorkTabChange: (tab: WorkTab) => void;
   settingsOpen: boolean;
   subscriptionTier: SubscriptionTier;
 }) {
   const session = useAuthStore((state) => state.session);
   const profile = useUserSettingsStore((state) => state.profile);
+  const settingsRates = useUserSettingsStore((state) => state.rates);
   const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null);
   const [newClaimOpen, setNewClaimOpen] = useState(false);
   const signOut = useSignOut();
   const claims = useClaimDrafts();
+  const trips = useTrips();
   const selectedClaim = useClaimDraft(selectedClaimId);
   const selectedClaimItems = useClaimItems(selectedClaimId);
   const createBlankClaim = useCreateBlankClaimDraft();
   const createClaimItem = useCreateClaimItemDraft();
+  const createTrip = useCreateTrip();
   const deleteClaim = useSoftDeleteClaimDraft();
   const deleteClaimItem = useSoftDeleteClaimItem();
   const updateClaim = useUpdateClaimDraft();
   const updateClaimItem = useUpdateClaimItemDraft();
   const submitClaim = useSubmitClaimDraft();
+  const stopGpsTrip = useStopGpsTrip();
   const attachReceiptMetadata = useAttachReceiptMetadataToClaimItem();
   const receiptUploadSummary = useReceiptUploadSummary();
   const pendingSyncItems = usePendingSyncItems();
@@ -168,22 +189,26 @@ function AuthenticatedHome({
   const localActionError =
     createBlankClaim.error ??
     createClaimItem.error ??
+    createTrip.error ??
     deleteClaim.error ??
     deleteClaimItem.error ??
     updateClaim.error ??
     updateClaimItem.error ??
     submitClaim.error ??
+    stopGpsTrip.error ??
     attachReceiptMetadata.error;
 
   return (
     <AppShell
       activeSpace={activeSpace}
+      activeWorkTab={activeWorkTab}
       displayName={profile.displayName || session?.email?.split("@")[0] || ""}
       email={profile.email || session?.email || ""}
       isSigningOut={signOut.isPending}
       onSpaceChange={onSpaceChange}
       onOpenSettings={onOpenSettings}
       onSignOut={() => signOut.mutate()}
+      onWorkTabChange={onWorkTabChange}
       pendingSyncCount={pendingSyncItems.data?.length ?? 0}
       subscriptionLabel={subscriptionTier}
     >
@@ -195,7 +220,7 @@ function AuthenticatedHome({
             onSignOut={() => signOut.mutate()}
             subscriptionTier={subscriptionTier}
           />
-        ) : activeSpace === "work" ? (
+        ) : activeSpace === "work" && activeWorkTab === "claims" ? (
           <WorkClaimsSlice
             activeClaim={selectedClaim.data ?? null}
             claims={claims.data ?? []}
@@ -267,6 +292,33 @@ function AuthenticatedHome({
               }
             }
           />
+        ) : activeSpace === "work" && activeWorkTab === "trips" ? (
+          <TripsScreen
+            claims={claims.data ?? []}
+            isCreatingTrip={createTrip.isPending}
+            isLoading={trips.isLoading}
+            isStoppingTrip={stopGpsTrip.isPending}
+            onAddMileageToClaim={({ amountCents, claim, itemDate, title, trip }) =>
+              createClaimItem.mutate({
+                amountCents,
+                claimId: claim.id,
+                currency: claim.currency,
+                itemDate,
+                notes: `Trip ${trip.id} - ${trip.vehicleType}`,
+                title,
+                tripId: trip.id,
+                type: "mileage"
+              })
+            }
+            onCreateTrip={(input) => createTrip.mutateAsync(input)}
+            onStopGpsTrip={async (input) => {
+              await stopGpsTrip.mutateAsync(input);
+            }}
+            rates={settingsRates}
+            trips={trips.data ?? []}
+          />
+        ) : activeSpace === "work" ? (
+          <DeferredSpace spaceName={workTabLabel(activeWorkTab)} />
         ) : activeSpace === "business" ? (
           <FeatureGate feature="business_space" tier={subscriptionTier}>
             <DeferredSpace spaceName="Business Space" />
@@ -1230,6 +1282,22 @@ function DeferredSpace({ spaceName }: { spaceName: string }) {
       </Text>
     </View>
   );
+}
+
+function workTabLabel(tab: WorkTab) {
+  if (tab === "home") {
+    return "Work Home";
+  }
+
+  if (tab === "tng") {
+    return "TNG Transactions";
+  }
+
+  if (tab === "export") {
+    return "Exports";
+  }
+
+  return "Work Claims";
 }
 
 const styles = StyleSheet.create({

@@ -99,7 +99,7 @@ export async function createClaimDraft(
   const claim: ClaimDraft = {
     id: createId("claim"),
     spaceId: input.spaceId ?? null,
-    title: input.title ?? "Draft claim",
+    title: input.title === undefined ? "Draft claim" : input.title,
     status: "draft",
     periodStart: input.periodStart ?? null,
     periodEnd: input.periodEnd ?? null,

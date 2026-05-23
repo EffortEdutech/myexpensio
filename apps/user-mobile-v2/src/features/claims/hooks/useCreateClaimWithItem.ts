@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { claimQueryKeys } from "@/features/claims/hooks/useClaimDrafts";
+import type { CreateClaimDraftInput } from "@/features/claims/types";
 import {
   createClaimDraft,
   createClaimItemDraft
@@ -73,13 +74,13 @@ export function useCreateBlankClaimDraft() {
   const deviceId = useDeviceStore((state) => state.deviceId);
 
   return useMutation({
-    mutationFn: async () => {
+    mutationFn: async (input?: CreateClaimDraftInput) => {
       const today = new Date().toISOString().slice(0, 10);
       const claim = await createClaimDraft(
         {
-          title: `Blank claim ${nowIso().slice(11, 16)}`,
-          periodStart: today,
-          periodEnd: today,
+          title: input?.title ?? null,
+          periodStart: input?.periodStart ?? today,
+          periodEnd: input?.periodEnd ?? today,
           currency: "MYR"
         },
         deviceId

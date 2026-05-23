@@ -8,10 +8,12 @@ export type ClaimItemType =
   | "taxi"
   | "grab"
   | "train"
+  | "bus"
   | "flight"
   | "mileage"
   | "meal"
   | "lodging"
+  | "per_diem"
   | "other";
 
 export type ClaimDraft = {
