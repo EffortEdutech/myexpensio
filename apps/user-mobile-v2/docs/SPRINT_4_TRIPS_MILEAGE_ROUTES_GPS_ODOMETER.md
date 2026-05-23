@@ -22,7 +22,11 @@ Port the Work Trips experience into the new local-first mobile v2 app so trips c
   - GPS draft trip
   - odometer final trip
   - selected-route/manual mileage final trip
-  - local route calculator with map-style preview and route alternatives
+  - Leaflet/OpenStreetMap route calculator on web:
+    - tap map to set origin and destination
+    - search address and place it on the map
+    - draggable origin/destination pins
+    - OSRM route alternatives drawn on the map
   - vehicle type: car / motorcycle
   - date picker and time input
   - origin/destination
@@ -40,7 +44,8 @@ Port the Work Trips experience into the new local-first mobile v2 app so trips c
 ## Production Follow-Ups
 
 - Replace GPS draft stop distance entry with real native GPS point tracking.
-- Replace the local route option generator with a real route/map API and route-cache-backed selection.
+- Add route-cache-backed selection and backend proxy for route APIs.
+- Wire native mobile map tapping with the selected native map package.
 - Connect odometer evidence choices to native camera, gallery, scan pipeline, upload queue, and metadata.
 - Add stale GPS trip recovery/auto-close policy.
 - Sync trip schema with backend/NestJS API in Sprint 12.

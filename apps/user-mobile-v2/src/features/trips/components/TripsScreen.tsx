@@ -12,6 +12,11 @@ import {
 
 import { DatePickerField } from "@/components/DatePickerField";
 import type { ClaimDraft } from "@/features/claims/types";
+import {
+  RouteMap,
+  type LatLng,
+  type RouteMapRoute
+} from "@/features/trips/components/RouteMap";
 import type {
   CreateTripInput,
   TripCalculationMode,
@@ -44,6 +49,7 @@ type TripFormMode = "route" | "odometer" | "gps" | null;
 type RouteAlternative = {
   distanceKm: number;
   durationMin: number;
+  geometry: RouteMapRoute["geometry"];
   id: string;
   label: string;
   note: string;
@@ -259,7 +265,16 @@ function TripFormModal({
   const [routeAlternatives, setRouteAlternatives] = useState<
     RouteAlternative[]
   >([]);
+  const [originLatLng, setOriginLatLng] = useState<LatLng | null>(null);
+  const [destinationLatLng, setDestinationLatLng] = useState<LatLng | null>(
+    null
+  );
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  const [routeError, setRouteError] = useState<string | null>(null);
+  const [isRouteLoading, setIsRouteLoading] = useState(false);
+  const [geocodingTarget, setGeocodingTarget] = useState<
+    "origin" | "destination" | null
+  >(null);
   const [startEvidence, setStartEvidence] = useState<string | null>(null);
   const [endEvidence, setEndEvidence] = useState<string | null>(null);
   const [vehicleType, setVehicleType] = useState<VehicleType>("car");
@@ -273,12 +288,24 @@ function TripFormModal({
   const selectedRoute = routeAlternatives.find(
     (route) => route.id === selectedRouteId
   );
+  const mapRoutes: RouteMapRoute[] = routeAlternatives.map((route) => ({
+    distanceM: Math.round(route.distanceKm * 1000),
+    durationS: route.durationMin * 60,
+    geometry: route.geometry,
+    id: route.id,
+    summary: route.label
+  }));
+  const selectedRouteIndex = routeAlternatives.findIndex(
+    (route) => route.id === selectedRouteId
+  );
   const hasBaseRouteInput =
     origin.trim().length > 0 &&
     destination.trim().length > 0 &&
     distanceKm.length > 0 &&
     !Number.isNaN(distance) &&
     distance > 0;
+  const hasRouteSearchInput =
+    origin.trim().length > 0 && destination.trim().length > 0;
   const valid =
     isGps || (mode === "route" ? Boolean(selectedRoute) : hasBaseRouteInput);
   const title =
@@ -320,14 +347,103 @@ function TripFormModal({
     });
   }
 
-  function calculateRouteOptions() {
-    if (!hasBaseRouteInput) {
+  async function findAddressOnMap(target: "origin" | "destination") {
+    const query = target === "origin" ? origin : destination;
+    if (!query.trim()) {
       return;
     }
 
-    const options = buildRouteAlternatives(distance);
-    setRouteAlternatives(options);
-    setSelectedRouteId(options[0]?.id ?? null);
+    setRouteError(null);
+    setGeocodingTarget(target);
+
+    try {
+      const result = await geocodeAddress(query);
+      if (target === "origin") {
+        setOriginLatLng(result.latLng);
+        setOrigin(result.label);
+      } else {
+        setDestinationLatLng(result.latLng);
+        setDestination(result.label);
+      }
+      clearRouteSelection();
+    } catch (error) {
+      setRouteError(
+        error instanceof Error ? error.message : "Could not find that location."
+      );
+    } finally {
+      setGeocodingTarget(null);
+    }
+  }
+
+  async function useCurrentPosition(target: "origin" | "destination") {
+    setRouteError(null);
+
+    try {
+      const latLng = await getCurrentLatLng();
+      if (target === "origin") {
+        handleOriginMapSet(latLng);
+      } else {
+        handleDestinationMapSet(latLng);
+      }
+    } catch (error) {
+      setRouteError(
+        error instanceof Error
+          ? error.message
+          : "Current position is not available."
+      );
+    }
+  }
+
+  async function calculateRouteOptions() {
+    if (!hasRouteSearchInput) {
+      setRouteError("Set both origin and destination first.");
+      return;
+    }
+
+    setRouteError(null);
+    setIsRouteLoading(true);
+
+    try {
+      const resolvedOrigin = originLatLng ?? (await geocodeAddress(origin)).latLng;
+      const resolvedDestination =
+        destinationLatLng ?? (await geocodeAddress(destination)).latLng;
+      setOriginLatLng(resolvedOrigin);
+      setDestinationLatLng(resolvedDestination);
+
+      const options = await fetchRouteAlternatives(
+        resolvedOrigin,
+        resolvedDestination
+      );
+      setRouteAlternatives(options);
+      setSelectedRouteId(options[0]?.id ?? null);
+    } catch (error) {
+      setRouteError(
+        error instanceof Error
+          ? error.message
+          : "Could not calculate route. Check your connection and try again."
+      );
+    } finally {
+      setIsRouteLoading(false);
+    }
+  }
+
+  function clearRouteSelection() {
+    setRouteAlternatives([]);
+    setSelectedRouteId(null);
+  }
+
+  function handleOriginMapSet(latLng: LatLng) {
+    setOriginLatLng(latLng);
+    setOrigin(formatLatLng(latLng));
+    clearRouteSelection();
+    setRouteError(null);
+  }
+
+  function handleDestinationMapSet(latLng: LatLng) {
+    setDestinationLatLng(latLng);
+    setDestination(formatLatLng(latLng));
+    clearRouteSelection();
+    setRouteError(null);
   }
 
   return (
@@ -358,53 +474,70 @@ function TripFormModal({
 
             {!isGps ? (
               <>
-                <Field
-                  label="🟢 Origin"
-                  onChangeText={setOrigin}
-                  placeholder="e.g. Ayer Keroh, Melaka"
-                  value={origin}
-                />
-                <Field
-                  label="🔴 Destination"
-                  onChangeText={setDestination}
-                  placeholder="e.g. Putrajaya, Selangor"
-                  value={destination}
-                />
-                <Field
-                  keyboardType="decimal-pad"
-                  label={mode === "odometer" ? "Odometer Distance (km) *" : "Selected Route Distance (km) *"}
-                  onChangeText={(value) => {
-                    if (value === "" || /^\d*\.?\d*$/.test(value)) {
-                      setDistanceKm(value);
-                      if (mode === "route") {
-                        setRouteAlternatives([]);
-                        setSelectedRouteId(null);
-                      }
-                    }
-                  }}
-                  placeholder="e.g. 52.40"
-                  value={distanceKm}
-                />
                 {mode === "route" ? (
                   <>
+                    <RouteMap
+                      destinationLatLng={destinationLatLng}
+                      mode={routeAlternatives.length > 0 ? "routing" : "pinning"}
+                      onDestinationSet={handleDestinationMapSet}
+                      onOriginSet={handleOriginMapSet}
+                      onRouteClick={(index: number) =>
+                        setSelectedRouteId(routeAlternatives[index]?.id ?? null)
+                      }
+                      originLatLng={originLatLng}
+                      routes={mapRoutes}
+                      selectedIndex={
+                        selectedRouteIndex >= 0 ? selectedRouteIndex : null
+                      }
+                    />
+                    <RouteAddressField
+                      isLoading={geocodingTarget === "origin"}
+                      label="Origin"
+                      onChangeText={(value) => {
+                        setOrigin(value);
+                        setOriginLatLng(null);
+                        clearRouteSelection();
+                      }}
+                      onFind={() => void findAddressOnMap("origin")}
+                      onUseCurrent={() => void useCurrentPosition("origin")}
+                      pin="green"
+                      value={origin}
+                    />
+                    <RouteAddressField
+                      isLoading={geocodingTarget === "destination"}
+                      label="Destination"
+                      onChangeText={(value) => {
+                        setDestination(value);
+                        setDestinationLatLng(null);
+                        clearRouteSelection();
+                      }}
+                      onFind={() => void findAddressOnMap("destination")}
+                      onUseCurrent={() =>
+                        void useCurrentPosition("destination")
+                      }
+                      pin="red"
+                      value={destination}
+                    />
+                    {routeError ? (
+                      <View style={styles.errorBox}>
+                        <Text style={styles.errorText}>{routeError}</Text>
+                      </View>
+                    ) : null}
                     <Pressable
                       accessibilityRole="button"
-                      disabled={!hasBaseRouteInput}
-                      onPress={calculateRouteOptions}
+                      disabled={!hasRouteSearchInput || isRouteLoading}
+                      onPress={() => void calculateRouteOptions()}
                       style={[
                         styles.calculateButton,
-                        !hasBaseRouteInput ? styles.disabled : null
+                        !hasRouteSearchInput || isRouteLoading
+                          ? styles.disabled
+                          : null
                       ]}
                     >
                       <Text style={styles.calculateButtonText}>
-                        Calculate Routes
+                        {isRouteLoading ? "Calculating..." : "Calculate Route"}
                       </Text>
                     </Pressable>
-                    <RouteMapPreview
-                      destination={destination}
-                      origin={origin}
-                      selectedRoute={selectedRoute}
-                    />
                     {routeAlternatives.length > 0 ? (
                       <View style={styles.routeOptions}>
                         <Text style={styles.routeOptionsTitle}>
@@ -421,7 +554,33 @@ function TripFormModal({
                       </View>
                     ) : null}
                   </>
-                ) : null}
+                ) : (
+                  <>
+                    <Field
+                      label="Origin"
+                      onChangeText={setOrigin}
+                      placeholder="e.g. Ayer Keroh, Melaka"
+                      value={origin}
+                    />
+                    <Field
+                      label="Destination"
+                      onChangeText={setDestination}
+                      placeholder="e.g. Putrajaya, Selangor"
+                      value={destination}
+                    />
+                    <Field
+                      keyboardType="decimal-pad"
+                      label="Odometer Distance (km) *"
+                      onChangeText={(value) => {
+                        if (value === "" || /^\d*\.?\d*$/.test(value)) {
+                          setDistanceKm(value);
+                        }
+                      }}
+                      placeholder="e.g. 52.40"
+                      value={distanceKm}
+                    />
+                  </>
+                )}
                 {mode === "odometer" ? (
                   <View style={styles.evidenceSection}>
                     <EvidenceCapture
@@ -705,6 +864,67 @@ function VehicleSelector({
   );
 }
 
+function RouteAddressField({
+  isLoading,
+  label,
+  onChangeText,
+  onFind,
+  onUseCurrent,
+  pin,
+  value
+}: {
+  isLoading: boolean;
+  label: string;
+  onChangeText: (value: string) => void;
+  onFind: () => void;
+  onUseCurrent: () => void;
+  pin: "green" | "red";
+  value: string;
+}) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      <View style={styles.routeInputShell}>
+        <Text style={pin === "green" ? styles.originDot : styles.destDot}>
+          ●
+        </Text>
+        <TextInput
+          onChangeText={onChangeText}
+          placeholder="Search or tap map..."
+          placeholderTextColor="#94a3b8"
+          style={styles.routeInput}
+          value={value}
+        />
+      </View>
+      <View style={styles.routeFieldActions}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onUseCurrent}
+          style={styles.routeMiniButton}
+        >
+          <Text style={styles.routeMiniButtonText}>Use Current Position</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          disabled={!value.trim() || isLoading}
+          onPress={onFind}
+          style={[
+            styles.routeMiniButton,
+            styles.routeMiniButtonPrimary,
+            !value.trim() || isLoading ? styles.disabled : null
+          ]}
+        >
+          <Text
+            style={[styles.routeMiniButtonText, styles.routeMiniButtonTextDark]}
+          >
+            {isLoading ? "Finding..." : "Find on Map"}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 function RouteMapPreview({
   destination,
   origin,
@@ -957,40 +1177,121 @@ function nowTimeInput() {
   ).padStart(2, "0")}`;
 }
 
-function buildRouteAlternatives(baseKm: number): RouteAlternative[] {
-  const safeKm = Math.max(baseKm, 0.1);
-
-  return [
+async function geocodeAddress(query: string) {
+  const params = new URLSearchParams({
+    countrycodes: "my",
+    format: "jsonv2",
+    limit: "1",
+    q: query
+  });
+  const response = await fetch(
+    `https://nominatim.openstreetmap.org/search?${params.toString()}`,
     {
-      distanceKm: roundKm(safeKm),
-      durationMin: estimateDuration(safeKm, 52),
-      id: "recommended",
-      label: "Recommended",
-      note: "Balanced route"
-    },
-    {
-      distanceKm: roundKm(safeKm * 1.05),
-      durationMin: estimateDuration(safeKm * 1.05, 68),
-      id: "fastest",
-      label: "Fastest",
-      note: "Fastest estimated drive"
-    },
-    {
-      distanceKm: roundKm(safeKm * 0.94),
-      durationMin: estimateDuration(safeKm * 0.94, 42),
-      id: "shortest",
-      label: "Shortest",
-      note: "Shortest estimated distance"
+      headers: {
+        Accept: "application/json"
+      }
     }
-  ];
+  );
+
+  if (!response.ok) {
+    throw new Error("Location search failed. Please try a more specific place.");
+  }
+
+  const results = (await response.json()) as Array<{
+    display_name?: string;
+    lat?: string;
+    lon?: string;
+  }>;
+  const first = results[0];
+
+  if (!first?.lat || !first.lon) {
+    throw new Error("Location not found. Try a nearby landmark or city.");
+  }
+
+  return {
+    label: first.display_name ?? query,
+    latLng: [Number(first.lat), Number(first.lon)] as LatLng
+  };
 }
 
-function roundKm(value: number) {
-  return Math.round(value * 100) / 100;
+async function fetchRouteAlternatives(origin: LatLng, destination: LatLng) {
+  const coordinates = `${origin[1]},${origin[0]};${destination[1]},${destination[0]}`;
+  const params = new URLSearchParams({
+    alternatives: "true",
+    geometries: "geojson",
+    overview: "full",
+    steps: "false"
+  });
+  const response = await fetch(
+    `https://router.project-osrm.org/route/v1/driving/${coordinates}?${params.toString()}`
+  );
+
+  if (!response.ok) {
+    throw new Error("Route calculation failed. Please try again.");
+  }
+
+  const data = (await response.json()) as {
+    routes?: Array<{
+      distance: number;
+      duration: number;
+      geometry: RouteMapRoute["geometry"];
+      legs?: Array<{ summary?: string }>;
+    }>;
+  };
+
+  const routes = data.routes ?? [];
+  if (routes.length === 0) {
+    throw new Error("No route found between those two points.");
+  }
+
+  return routes.slice(0, 3).map((route, index): RouteAlternative => {
+    const label = index === 0 ? "Recommended" : index === 1 ? "Alternative 1" : "Alternative 2";
+    const summary = route.legs?.[0]?.summary || label;
+
+    return {
+      distanceKm: Math.round((route.distance / 1000) * 100) / 100,
+      durationMin: Math.max(1, Math.round(route.duration / 60)),
+      geometry: route.geometry,
+      id: `route-${index}`,
+      label,
+      note: summary
+    };
+  });
 }
 
-function estimateDuration(distanceKm: number, speedKmh: number) {
-  return Math.max(1, Math.round((distanceKm / speedKmh) * 60));
+function getCurrentLatLng() {
+  return new Promise<LatLng>((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(
+        new Error(
+          "Current position is not available in this environment. Search or tap the map instead."
+        )
+      );
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve([position.coords.latitude, position.coords.longitude]);
+      },
+      () => {
+        reject(
+          new Error(
+            "Location permission was denied or unavailable. Search or tap the map instead."
+          )
+        );
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 30000,
+        timeout: 12000
+      }
+    );
+  });
+}
+
+function formatLatLng(latLng: LatLng) {
+  return `${latLng[0].toFixed(5)}, ${latLng[1].toFixed(5)}`;
 }
 
 const styles = StyleSheet.create({
@@ -1245,6 +1546,74 @@ const styles = StyleSheet.create({
     minHeight: 86,
     paddingTop: spacing.sm,
     textAlignVertical: "top"
+  },
+  routeInputShell: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 44,
+    paddingHorizontal: spacing.md
+  },
+  routeInput: {
+    color: colors.text,
+    flex: 1,
+    fontSize: typography.body,
+    minHeight: 42
+  },
+  originDot: {
+    color: "#16a34a",
+    fontSize: 16,
+    fontWeight: "900"
+  },
+  destDot: {
+    color: "#dc2626",
+    fontSize: 16,
+    fontWeight: "900"
+  },
+  routeFieldActions: {
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  routeMiniButton: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 38,
+    paddingHorizontal: spacing.sm
+  },
+  routeMiniButtonPrimary: {
+    backgroundColor: "#eff6ff",
+    borderColor: "#2563eb"
+  },
+  routeMiniButtonText: {
+    color: "#475569",
+    fontSize: 11,
+    fontWeight: "900",
+    textAlign: "center"
+  },
+  routeMiniButtonTextDark: {
+    color: "#1d4ed8"
+  },
+  errorBox: {
+    backgroundColor: "#fef2f2",
+    borderColor: "#fecaca",
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: spacing.md
+  },
+  errorText: {
+    color: "#b91c1c",
+    fontSize: typography.caption,
+    fontWeight: "800",
+    lineHeight: 18
   },
   vehicleRow: {
     flexDirection: "row",
