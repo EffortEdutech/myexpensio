@@ -3,26 +3,25 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View
 } from "react-native";
 
+import { DatePickerField } from "@/components/DatePickerField";
 import { LoginScreen } from "@/features/auth/components/LoginScreen";
 import { useSignOut } from "@/features/auth/hooks/useDevAuthActions";
 import { useSessionRestore } from "@/features/auth/hooks/useSessionRestore";
 import { ClaimDetail } from "@/features/claims/components/ClaimDetail";
 import { ClaimDraftList } from "@/features/claims/components/ClaimDraftList";
 import {
-  useAddItemToClaimDraft,
   useAttachReceiptMetadataToClaimItem,
   useCreateClaimItemDraft,
-  useDeleteLatestClaimItem,
-  useIncreaseLatestClaimItem,
-  useRenameClaimDraft,
   useSoftDeleteClaimDraft,
   useSoftDeleteClaimItem,
   useSubmitClaimDraft,
@@ -36,32 +35,19 @@ import {
 } from "@/features/claims/hooks/useClaimDrafts";
 import type {
   ClaimDraft,
+  CreateClaimDraftInput,
   ClaimItemDraft,
   ClaimItemType
 } from "@/features/claims/types";
-import {
-  useCreateBlankClaimDraft,
-  useCreateClaimWithItem
-} from "@/features/claims/hooks/useCreateClaimWithItem";
-import { ExpenseDraftList } from "@/features/expenses/components/ExpenseDraftList";
-import { useCreateDraftExpense } from "@/features/expenses/hooks/useCreateDraftExpense";
-import { useExpenseDrafts } from "@/features/expenses/hooks/useExpenseDrafts";
-import {
-  useReceiptUploadSummary,
-  useRetryFailedReceiptUploads
-} from "@/features/receipts/hooks/useReceiptUploadSummary";
+import { useCreateBlankClaimDraft } from "@/features/claims/hooks/useCreateClaimWithItem";
+import { useReceiptUploadSummary } from "@/features/receipts/hooks/useReceiptUploadSummary";
 import { AppShell } from "@/features/shell/components/AppShell";
 import type { AppSpace } from "@/features/shell/types";
 import { FeatureGate } from "@/features/subscription/components/FeatureGate";
 import type { SubscriptionTier } from "@/features/subscription/types";
-import { useLocalFirstSmokeTest } from "@/features/verification/hooks/useLocalFirstSmokeTest";
-import type { LocalVerificationResult } from "@/features/verification/types";
 import { initializeLocalDatabase } from "@/local-db/database";
 import { usePendingSyncItems } from "@/sync/hooks/usePendingSyncItems";
-import {
-  useRetryFailedSyncItems,
-  useSyncQueueSummary
-} from "@/sync/hooks/useSyncQueueSummary";
+import { useSyncQueueSummary } from "@/sync/hooks/useSyncQueueSummary";
 import { useAuthStore } from "@/state/authStore";
 import { colors, spacing, typography } from "@/theme/tokens";
 
@@ -153,42 +139,27 @@ function AuthenticatedHome({
 }) {
   const session = useAuthStore((state) => state.session);
   const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null);
+  const [newClaimOpen, setNewClaimOpen] = useState(false);
   const signOut = useSignOut();
-  const drafts = useExpenseDrafts();
-  const createDraft = useCreateDraftExpense();
   const claims = useClaimDrafts();
   const selectedClaim = useClaimDraft(selectedClaimId);
   const selectedClaimItems = useClaimItems(selectedClaimId);
   const createBlankClaim = useCreateBlankClaimDraft();
-  const createClaim = useCreateClaimWithItem();
-  const addItemToClaim = useAddItemToClaimDraft();
   const createClaimItem = useCreateClaimItemDraft();
   const deleteClaim = useSoftDeleteClaimDraft();
-  const deleteLatestItem = useDeleteLatestClaimItem();
   const deleteClaimItem = useSoftDeleteClaimItem();
-  const increaseLatestItem = useIncreaseLatestClaimItem();
-  const renameClaim = useRenameClaimDraft();
   const updateClaim = useUpdateClaimDraft();
   const updateClaimItem = useUpdateClaimItemDraft();
   const submitClaim = useSubmitClaimDraft();
   const attachReceiptMetadata = useAttachReceiptMetadataToClaimItem();
   const receiptUploadSummary = useReceiptUploadSummary();
-  const retryFailedReceiptUploads = useRetryFailedReceiptUploads();
-  const localFirstSmokeTest = useLocalFirstSmokeTest();
   const pendingSyncItems = usePendingSyncItems();
-  const retryFailedSyncItems = useRetryFailedSyncItems();
   const syncQueueSummary = useSyncQueueSummary();
   const localActionError =
-    createClaim.error ??
     createBlankClaim.error ??
-    createDraft.error ??
-    addItemToClaim.error ??
     createClaimItem.error ??
     deleteClaim.error ??
     deleteClaimItem.error ??
-    deleteLatestItem.error ??
-    increaseLatestItem.error ??
-    renameClaim.error ??
     updateClaim.error ??
     updateClaimItem.error ??
     submitClaim.error ??
@@ -212,49 +183,31 @@ function AuthenticatedHome({
           />
         ) : null}
 
-        <View style={styles.header}>
-          <Text style={styles.eyebrow}>Work Claims</Text>
-          <Text style={styles.title}>Claims</Text>
-          <Text style={styles.subtitle}>
-            Create, edit, and submit claim drafts. Changes are saved locally and
-            queued for sync.
-          </Text>
-        </View>
-
         {activeSpace === "work" ? (
           <WorkClaimsSlice
             activeClaim={selectedClaim.data ?? null}
-            claimCount={claims.data?.length ?? 0}
             claims={claims.data ?? []}
             createBlankClaimLabel={
-              createBlankClaim.isPending ? "Creating..." : "Create blank claim"
+              createBlankClaim.isPending ? "Creating..." : "+ New"
             }
-            createClaimLabel={
-              createClaim.isPending ? "Creating..." : "Create claim + item"
-            }
-            createExpenseLabel={
-              createDraft.isPending ? "Creating..." : "Create local draft"
-            }
-            draftCount={drafts.data?.length ?? 0}
-            expenseDrafts={drafts.data ?? []}
             errorMessage={
               localActionError instanceof Error ? localActionError.message : null
             }
-            isCreatingClaim={createClaim.isPending}
             isCreatingBlankClaim={createBlankClaim.isPending}
-            isCreatingExpense={createDraft.isPending}
             isLoadingClaimDetail={
               selectedClaim.isLoading || selectedClaimItems.isLoading
             }
             isLoadingClaims={claims.isLoading}
-            isLoadingExpenses={drafts.isLoading}
-            onAddItemToClaim={(claim) => addItemToClaim.mutate(claim)}
             onAttachReceiptToItem={(item) =>
               attachReceiptMetadata.mutate(item.id)
             }
             onBackToClaims={() => setSelectedClaimId(null)}
-            onCreateBlankClaim={() => createBlankClaim.mutate()}
-            onCreateClaim={() => createClaim.mutate()}
+            onCloseNewClaim={() => setNewClaimOpen(false)}
+            onCreateBlankClaim={async (input) => {
+              const result = await createBlankClaim.mutateAsync(input);
+              setNewClaimOpen(false);
+              setSelectedClaimId(result.claim.id);
+            }}
             onCreateClaimItem={(claim, input) =>
               createClaimItem.mutate({
                 claimId: claim.id,
@@ -262,13 +215,13 @@ function AuthenticatedHome({
                 ...input
               })
             }
-            onCreateExpense={() => createDraft.mutate()}
-            onDeleteClaim={(claim) => deleteClaim.mutate(claim.id)}
             onDeleteClaimItem={(item) => deleteClaimItem.mutate(item.id)}
-            onDeleteLatestItem={(claim) => deleteLatestItem.mutate(claim.id)}
-            onIncreaseLatestItem={(claim) => increaseLatestItem.mutate(claim.id)}
+            onDeleteClaim={async (claim) => {
+              await deleteClaim.mutateAsync(claim.id);
+              setSelectedClaimId(null);
+            }}
             onOpenClaim={(claim) => setSelectedClaimId(claim.id)}
-            onRenameClaim={(claim) => renameClaim.mutate(claim)}
+            onOpenNewClaim={() => setNewClaimOpen(true)}
             onSubmitClaim={(claim) => submitClaim.mutate(claim.id)}
             onUpdateClaim={(claim, input) =>
               updateClaim.mutate({
@@ -283,6 +236,7 @@ function AuthenticatedHome({
               })
             }
             pendingSyncCount={pendingSyncItems.data?.length ?? 0}
+            showNewClaimModal={newClaimOpen}
             selectedClaimItems={selectedClaimItems.data ?? []}
             syncQueueSummary={
               syncQueueSummary.data ?? {
@@ -292,10 +246,6 @@ function AuthenticatedHome({
                 syncing: 0
               }
             }
-            onRetryFailedSync={() => retryFailedSyncItems.mutate()}
-            retryLabel={
-              retryFailedSyncItems.isPending ? "Retrying..." : "Retry failed"
-            }
             receiptUploadSummary={
               receiptUploadSummary.data ?? {
                 failed: 0,
@@ -304,24 +254,6 @@ function AuthenticatedHome({
                 uploading: 0
               }
             }
-            onRetryFailedReceipts={() => retryFailedReceiptUploads.mutate()}
-            receiptRetryLabel={
-              retryFailedReceiptUploads.isPending
-                ? "Retrying..."
-                : "Retry receipt uploads"
-            }
-            onRunSmokeTest={() => localFirstSmokeTest.mutate()}
-            smokeTestError={
-              localFirstSmokeTest.error instanceof Error
-                ? localFirstSmokeTest.error.message
-                : null
-            }
-            smokeTestLabel={
-              localFirstSmokeTest.isPending
-                ? "Running..."
-                : "Run local-first smoke test"
-            }
-            smokeTestResult={localFirstSmokeTest.data ?? null}
           />
         ) : activeSpace === "business" ? (
           <FeatureGate feature="business_space" tier={subscriptionTier}>
@@ -375,25 +307,16 @@ function SettingsPanel({
 
 type WorkClaimsSliceProps = {
   activeClaim: ClaimDraft | null;
-  claimCount: number;
-  claims: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>;
+  claims: ClaimDraft[];
   createBlankClaimLabel: string;
-  createClaimLabel: string;
-  createExpenseLabel: string;
-  draftCount: number;
   errorMessage: string | null;
-  expenseDrafts: NonNullable<ReturnType<typeof useExpenseDrafts>["data"]>;
-  isCreatingClaim: boolean;
   isCreatingBlankClaim: boolean;
-  isCreatingExpense: boolean;
   isLoadingClaimDetail: boolean;
   isLoadingClaims: boolean;
-  isLoadingExpenses: boolean;
-  onAddItemToClaim: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
   onAttachReceiptToItem: (item: ClaimItemDraft) => void;
   onBackToClaims: () => void;
-  onCreateBlankClaim: () => void;
-  onCreateClaim: () => void;
+  onCloseNewClaim: () => void;
+  onCreateBlankClaim: (input: CreateClaimDraftInput) => Promise<void>;
   onCreateClaimItem: (
     claim: ClaimDraft,
     input: {
@@ -404,13 +327,10 @@ type WorkClaimsSliceProps = {
       type: ClaimItemType;
     }
   ) => void;
-  onCreateExpense: () => void;
-  onDeleteClaim: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
   onDeleteClaimItem: (item: ClaimItemDraft) => void;
-  onDeleteLatestItem: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
-  onIncreaseLatestItem: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
+  onDeleteClaim: (claim: ClaimDraft) => Promise<void>;
   onOpenClaim: (claim: ClaimDraft) => void;
-  onRenameClaim: (claim: NonNullable<ReturnType<typeof useClaimDrafts>["data"]>[number]) => void;
+  onOpenNewClaim: () => void;
   onSubmitClaim: (claim: ClaimDraft) => void;
   onUpdateClaim: (
     claim: ClaimDraft,
@@ -431,6 +351,7 @@ type WorkClaimsSliceProps = {
     }
   ) => void;
   pendingSyncCount: number;
+  showNewClaimModal: boolean;
   selectedClaimItems: ClaimItemDraft[];
   syncQueueSummary: {
     failed: number;
@@ -438,77 +359,63 @@ type WorkClaimsSliceProps = {
     synced: number;
     syncing: number;
   };
-  onRetryFailedSync: () => void;
-  retryLabel: string;
   receiptUploadSummary: {
     failed: number;
     local: number;
     uploaded: number;
     uploading: number;
   };
-  onRetryFailedReceipts: () => void;
-  onRunSmokeTest: () => void;
-  receiptRetryLabel: string;
-  smokeTestError: string | null;
-  smokeTestLabel: string;
-  smokeTestResult: LocalVerificationResult | null;
 };
 
 function WorkClaimsSlice({
   activeClaim,
-  claimCount,
   claims,
   createBlankClaimLabel,
-  createClaimLabel,
-  createExpenseLabel,
-  draftCount,
   errorMessage,
-  expenseDrafts,
-  isCreatingClaim,
   isCreatingBlankClaim,
-  isCreatingExpense,
   isLoadingClaimDetail,
   isLoadingClaims,
-  isLoadingExpenses,
-  onAddItemToClaim,
   onAttachReceiptToItem,
   onBackToClaims,
+  onCloseNewClaim,
   onCreateBlankClaim,
-  onCreateClaim,
   onCreateClaimItem,
-  onCreateExpense,
-  onDeleteClaim,
   onDeleteClaimItem,
-  onDeleteLatestItem,
-  onIncreaseLatestItem,
+  onDeleteClaim,
   onOpenClaim,
-  onRenameClaim,
+  onOpenNewClaim,
   onSubmitClaim,
   onUpdateClaim,
   onUpdateClaimItem,
   pendingSyncCount,
+  showNewClaimModal,
   selectedClaimItems,
   syncQueueSummary,
-  onRetryFailedSync,
-  retryLabel,
-  receiptUploadSummary,
-  onRetryFailedReceipts,
-  onRunSmokeTest,
-  receiptRetryLabel,
-  smokeTestError,
-  smokeTestLabel,
-  smokeTestResult
+  receiptUploadSummary
 }: WorkClaimsSliceProps) {
+  const [claimFilter, setClaimFilter] = useState<"all" | "draft" | "submitted">(
+    "all"
+  );
+  const draftClaimCount = claims.filter((claim) => claim.status === "draft").length;
+  const submittedClaimCount = claims.filter(
+    (claim) => claim.status === "submitted"
+  ).length;
+  const filteredClaims =
+    claimFilter === "all"
+      ? claims
+      : claims.filter((claim) => claim.status === claimFilter);
+
   if (activeClaim) {
     return (
       <ClaimDetail
         claim={activeClaim}
         isLoading={isLoadingClaimDetail}
-        items={selectedClaimItems}
-        onAddItem={(input) => onCreateClaimItem(activeClaim, input)}
-        onAttachReceipt={onAttachReceiptToItem}
-        onBack={onBackToClaims}
-        onDeleteItem={onDeleteClaimItem}
+            items={selectedClaimItems}
+            onAddItem={(input) => onCreateClaimItem(activeClaim, input)}
+            onAttachReceipt={onAttachReceiptToItem}
+            onBack={onBackToClaims}
+            onDeleteClaim={() => onDeleteClaim(activeClaim)}
+            onDeleteItem={onDeleteClaimItem}
         onSubmitClaim={onSubmitClaim}
         onUpdateClaim={(input) => onUpdateClaim(activeClaim, input)}
         onUpdateItem={onUpdateClaimItem}
@@ -517,178 +424,272 @@ function WorkClaimsSlice({
   }
 
   return (
-    <>
+    <View style={styles.claimsPage}>
       {errorMessage ? (
         <View style={styles.errorBanner}>
           <Text style={styles.errorBannerText}>{errorMessage}</Text>
         </View>
       ) : null}
 
-      <View style={styles.statusRow}>
-        <View style={styles.statusItem}>
-          <Text style={styles.statusValue}>{claimCount}</Text>
-          <Text style={styles.statusLabel}>Local claims</Text>
+      <View style={styles.claimsHeader}>
+        <View>
+          <Text style={styles.claimsTitle}>Claims</Text>
+          <Text style={styles.claimsSubtitle}>
+            Work reimbursements ready for draft, review, and submission.
+          </Text>
         </View>
-        <View style={styles.statusItem}>
-          <Text style={styles.statusValue}>{draftCount}</Text>
-          <Text style={styles.statusLabel}>Local expenses</Text>
-        </View>
-        <View style={styles.statusItem}>
-          <Text style={styles.statusValue}>{pendingSyncCount}</Text>
-          <Text style={styles.statusLabel}>Sync queue</Text>
-        </View>
+        <Pressable
+          accessibilityRole="button"
+          disabled={isCreatingBlankClaim}
+          onPress={onOpenNewClaim}
+          style={({ pressed }) => [
+            styles.newClaimButton,
+            pressed || isCreatingBlankClaim ? styles.primaryButtonPressed : null
+          ]}
+        >
+          <Text style={styles.newClaimButtonText}>{createBlankClaimLabel}</Text>
+        </Pressable>
       </View>
 
-      <View style={styles.syncPanel}>
-        <View style={styles.syncPanelHeader}>
-          <Text style={styles.syncPanelTitle}>Sync queue</Text>
-          <Pressable
-            accessibilityRole="button"
-            disabled={syncQueueSummary.failed === 0}
-            onPress={onRetryFailedSync}
-            style={({ pressed }) => [
-              styles.retryButton,
-              syncQueueSummary.failed === 0 ? styles.retryButtonDisabled : null,
-              pressed ? styles.primaryButtonPressed : null
-            ]}
-          >
-            <Text style={styles.retryButtonText}>{retryLabel}</Text>
-          </Pressable>
-        </View>
-        <View style={styles.syncStats}>
-          <Text style={styles.syncStat}>Pending {syncQueueSummary.pending}</Text>
-          <Text style={styles.syncStat}>Syncing {syncQueueSummary.syncing}</Text>
-          <Text style={styles.syncStat}>Failed {syncQueueSummary.failed}</Text>
-          <Text style={styles.syncStat}>Synced {syncQueueSummary.synced}</Text>
-        </View>
+      <View style={styles.claimTabs}>
+        <ClaimFilterTab
+          count={claims.length}
+          isActive={claimFilter === "all"}
+          label="All"
+          onPress={() => setClaimFilter("all")}
+        />
+        <ClaimFilterTab
+          count={draftClaimCount}
+          isActive={claimFilter === "draft"}
+          label="Draft"
+          onPress={() => setClaimFilter("draft")}
+        />
+        <ClaimFilterTab
+          count={submittedClaimCount}
+          isActive={claimFilter === "submitted"}
+          label="Submitted"
+          onPress={() => setClaimFilter("submitted")}
+        />
       </View>
 
-      <View style={styles.syncPanel}>
-        <View style={styles.syncPanelHeader}>
-          <Text style={styles.syncPanelTitle}>Receipt uploads</Text>
-          <Pressable
-            accessibilityRole="button"
-            disabled={receiptUploadSummary.failed === 0}
-            onPress={onRetryFailedReceipts}
-            style={({ pressed }) => [
-              styles.retryButton,
-              receiptUploadSummary.failed === 0 ? styles.retryButtonDisabled : null,
-              pressed ? styles.primaryButtonPressed : null
-            ]}
-          >
-            <Text style={styles.retryButtonText}>{receiptRetryLabel}</Text>
-          </Pressable>
-        </View>
-        <View style={styles.syncStats}>
-          <Text style={styles.syncStat}>Local {receiptUploadSummary.local}</Text>
-          <Text style={styles.syncStat}>Uploading {receiptUploadSummary.uploading}</Text>
-          <Text style={styles.syncStat}>Failed {receiptUploadSummary.failed}</Text>
-          <Text style={styles.syncStat}>Uploaded {receiptUploadSummary.uploaded}</Text>
-        </View>
-      </View>
-
-      <View style={styles.verificationPanel}>
-        <View style={styles.syncPanelHeader}>
-          <Text style={styles.syncPanelTitle}>Sprint 1 verification</Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={onRunSmokeTest}
-            style={({ pressed }) => [
-              styles.retryButton,
-              pressed ? styles.primaryButtonPressed : null
-            ]}
-          >
-            <Text style={styles.retryButtonText}>{smokeTestLabel}</Text>
-          </Pressable>
-        </View>
-        <Text style={styles.verificationCopy}>
-          Creates a smoke-test claim, reads it back from SQLite, then simulates
-          an offline sync failure against only that smoke-test queue.
+      <View style={styles.claimMetaBar}>
+        <Text style={styles.claimMetaText}>Sync queue: {pendingSyncCount}</Text>
+        <Text style={styles.claimMetaDot}>|</Text>
+        <Text style={styles.claimMetaText}>
+          Pending {syncQueueSummary.pending}
         </Text>
-        {smokeTestError ? (
-          <Text style={styles.verificationError}>{smokeTestError}</Text>
-        ) : null}
-        {smokeTestResult ? (
-          <View style={styles.verificationResult}>
-            <Text style={styles.verificationLine}>
-              SQLite read-back: {smokeTestResult.claimReadBack ? "pass" : "fail"}
-            </Text>
-            <Text style={styles.verificationLine}>
-              Failed sync kept claim:{" "}
-              {smokeTestResult.failedNetworkKeptClaim ? "pass" : "fail"}
-            </Text>
-            <Text style={styles.verificationLine}>
-              Smoke queue pushed/failed:{" "}
-              {smokeTestResult.failedNetworkResult.pushed}/
-              {smokeTestResult.failedNetworkResult.failed}
-            </Text>
-            <Text style={styles.verificationLine}>
-              Pending queue before/after create: {smokeTestResult.pendingBefore}/
-              {smokeTestResult.pendingAfterCreate}
-            </Text>
-          </View>
-        ) : null}
+        <Text style={styles.claimMetaDot}>|</Text>
+        <Text style={styles.claimMetaText}>
+          Receipts local {receiptUploadSummary.local}
+        </Text>
       </View>
 
-      <Pressable
-        accessibilityRole="button"
-        disabled={isCreatingBlankClaim}
-        onPress={onCreateBlankClaim}
-        style={({ pressed }) => [
-          styles.primaryButton,
-          pressed || isCreatingBlankClaim ? styles.primaryButtonPressed : null
-        ]}
-      >
-        <Text style={styles.primaryButtonText}>{createBlankClaimLabel}</Text>
-      </Pressable>
+      <ClaimDraftList
+        claims={filteredClaims}
+        isLoading={isLoadingClaims}
+        onOpen={onOpenClaim}
+      />
 
-      <Pressable
-        accessibilityRole="button"
-        disabled={isCreatingClaim}
-        onPress={onCreateClaim}
-        style={({ pressed }) => [
-          styles.primaryButton,
-          pressed || isCreatingClaim ? styles.primaryButtonPressed : null
-        ]}
-      >
-        <Text style={styles.primaryButtonText}>{createClaimLabel}</Text>
-      </Pressable>
-
-      <Pressable
-        accessibilityRole="button"
-        disabled={isCreatingExpense}
-        onPress={onCreateExpense}
-        style={({ pressed }) => [
-          styles.secondaryButton,
-          pressed || isCreatingExpense ? styles.primaryButtonPressed : null
-        ]}
-      >
-        <Text style={styles.secondaryButtonText}>{createExpenseLabel}</Text>
-      </Pressable>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Work claim drafts</Text>
-        <ClaimDraftList
-          claims={claims}
-          isLoading={isLoadingClaims}
-          onAddItem={onAddItemToClaim}
-          onDelete={onDeleteClaim}
-          onDeleteLatestItem={onDeleteLatestItem}
-          onIncreaseLatestItem={onIncreaseLatestItem}
-          onOpen={onOpenClaim}
-          onRename={onRenameClaim}
-        />
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Expense drafts</Text>
-        <ExpenseDraftList
-          drafts={expenseDrafts}
-          isLoading={isLoadingExpenses}
-        />
-      </View>
-    </>
+      <NewClaimModal
+        isCreating={isCreatingBlankClaim}
+        isVisible={showNewClaimModal}
+        onClose={onCloseNewClaim}
+        onCreate={onCreateBlankClaim}
+      />
+    </View>
   );
+}
+
+function ClaimFilterTab({
+  count,
+  isActive,
+  label,
+  onPress
+}: {
+  count: number;
+  isActive: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={[styles.claimTab, isActive ? styles.claimTabActive : null]}
+    >
+      <Text
+        style={[styles.claimTabText, isActive ? styles.claimTabTextActive : null]}
+      >
+        {label}
+      </Text>
+      <Text
+        style={[
+          styles.claimTabCount,
+          isActive ? styles.claimTabCountActive : null
+        ]}
+      >
+        {count}
+      </Text>
+    </Pressable>
+  );
+}
+
+function NewClaimModal({
+  isCreating,
+  isVisible,
+  onClose,
+  onCreate
+}: {
+  isCreating: boolean;
+  isVisible: boolean;
+  onClose: () => void;
+  onCreate: (input: CreateClaimDraftInput) => Promise<void>;
+}) {
+  const range = useMemo(() => currentMonthRange(), []);
+  const [title, setTitle] = useState("");
+  const [periodStart, setPeriodStart] = useState(range.start);
+  const [periodEnd, setPeriodEnd] = useState(range.end);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleCreate() {
+    setError(null);
+
+    if (!periodStart || !periodEnd) {
+      setError("Period start and end are required.");
+      return;
+    }
+
+    if (periodStart > periodEnd) {
+      setError("Start date must be before or equal to end date.");
+      return;
+    }
+
+    try {
+      await onCreate({
+        title: title.trim() || null,
+        periodStart,
+        periodEnd,
+        currency: "MYR"
+      });
+
+      setTitle("");
+      setPeriodStart(range.start);
+      setPeriodEnd(range.end);
+    } catch (createError) {
+      setError(
+        createError instanceof Error
+          ? createError.message
+          : "Failed to create claim."
+      );
+    }
+  }
+
+  return (
+    <Modal
+      animationType="fade"
+      onRequestClose={onClose}
+      transparent
+      visible={isVisible}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.newClaimSheet}>
+          <View style={styles.modalHeader}>
+            <View>
+              <Text style={styles.modalTitle}>New Claim</Text>
+              <Text style={styles.modalSubtitle}>
+                Set the period, then add your trips and expenses.
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              disabled={isCreating}
+              onPress={onClose}
+              style={styles.modalCloseButton}
+            >
+              <Text style={styles.modalCloseText}>x</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.modalBody}>
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Title</Text>
+              <TextInput
+                editable={!isCreating}
+                onChangeText={setTitle}
+                placeholder="e.g. March 2026 - Site Visits"
+                placeholderTextColor="#94a3b8"
+                style={styles.input}
+                value={title}
+              />
+              <Text style={styles.fieldHint}>
+                Leave blank to use the period as the title.
+              </Text>
+            </View>
+
+            <View style={styles.fieldRow}>
+              <DatePickerField
+                disabled={isCreating}
+                label="Period start *"
+                onChange={setPeriodStart}
+                value={periodStart}
+              />
+              <DatePickerField
+                disabled={isCreating}
+                label="Period end *"
+                onChange={setPeriodEnd}
+                value={periodEnd}
+              />
+            </View>
+
+            {error ? (
+              <View style={styles.modalErrorBox}>
+                <Text style={styles.modalErrorText}>{error}</Text>
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.modalFooter}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={isCreating}
+              onPress={onClose}
+              style={styles.cancelButton}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              disabled={isCreating}
+              onPress={() => void handleCreate()}
+              style={({ pressed }) => [
+                styles.createClaimButton,
+                pressed || isCreating ? styles.primaryButtonPressed : null
+              ]}
+            >
+              <Text style={styles.createClaimButtonText}>
+                {isCreating ? "Creating..." : "Create Claim >"}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function currentMonthRange(): { start: string; end: string } {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+  return {
+    start: toDateInput(start),
+    end: toDateInput(end)
+  };
+}
+
+function toDateInput(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
 
 function DeferredSpace({ spaceName }: { spaceName: string }) {
@@ -715,6 +716,234 @@ const styles = StyleSheet.create({
   content: {
     gap: spacing.lg,
     padding: spacing.lg
+  },
+  claimsPage: {
+    gap: spacing.md
+  },
+  claimsHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between"
+  },
+  claimsTitle: {
+    color: colors.text,
+    fontSize: typography.title,
+    fontWeight: "900"
+  },
+  claimsSubtitle: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "600",
+    lineHeight: 18,
+    marginTop: 2,
+    maxWidth: 260
+  },
+  newClaimButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    flexShrink: 0,
+    minHeight: 40,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md
+  },
+  newClaimButtonText: {
+    color: colors.onPrimary,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  claimTabs: {
+    backgroundColor: "#f1f5f9",
+    borderRadius: 8,
+    flexDirection: "row",
+    padding: 4
+  },
+  claimTab: {
+    alignItems: "center",
+    borderRadius: 7,
+    flex: 1,
+    gap: 2,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: spacing.xs
+  },
+  claimTabActive: {
+    backgroundColor: colors.primary
+  },
+  claimTabText: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "800"
+  },
+  claimTabTextActive: {
+    color: colors.onPrimary
+  },
+  claimTabCount: {
+    backgroundColor: "#f1f5f9",
+    borderRadius: 10,
+    color: "#94a3b8",
+    fontSize: 10,
+    fontWeight: "800",
+    minWidth: 18,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    textAlign: "center"
+  },
+  claimTabCountActive: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    color: colors.onPrimary
+  },
+  modalOverlay: {
+    alignItems: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.42)",
+    flex: 1,
+    justifyContent: "center",
+    padding: spacing.lg
+  },
+  newClaimSheet: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    maxWidth: 460,
+    overflow: "hidden",
+    width: "100%"
+  },
+  modalHeader: {
+    alignItems: "flex-start",
+    borderBottomColor: "#f1f5f9",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+    padding: spacing.lg
+  },
+  modalTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "900"
+  },
+  modalSubtitle: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    lineHeight: 18,
+    marginTop: 4
+  },
+  modalCloseButton: {
+    alignItems: "center",
+    borderRadius: 8,
+    height: 34,
+    justifyContent: "center",
+    width: 34
+  },
+  modalCloseText: {
+    color: "#94a3b8",
+    fontSize: 18,
+    fontWeight: "800"
+  },
+  modalBody: {
+    gap: spacing.md,
+    padding: spacing.lg
+  },
+  field: {
+    flex: 1,
+    gap: 6
+  },
+  fieldRow: {
+    flexDirection: "row",
+    gap: spacing.md
+  },
+  fieldLabel: {
+    color: "#374151",
+    fontSize: typography.caption,
+    fontWeight: "800"
+  },
+  fieldHint: {
+    color: "#94a3b8",
+    fontSize: 11,
+    lineHeight: 16
+  },
+  input: {
+    backgroundColor: colors.surface,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    borderWidth: 1,
+    color: colors.text,
+    fontSize: typography.body,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  modalErrorBox: {
+    backgroundColor: "#fef2f2",
+    borderColor: "#fecaca",
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: spacing.md
+  },
+  modalErrorText: {
+    color: colors.danger,
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  modalFooter: {
+    alignItems: "center",
+    borderTopColor: "#f1f5f9",
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "flex-end",
+    padding: spacing.lg
+  },
+  cancelButton: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 42,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md
+  },
+  cancelButtonText: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "800"
+  },
+  createClaimButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: spacing.lg
+  },
+  createClaimButtonText: {
+    color: colors.onPrimary,
+    fontSize: typography.body,
+    fontWeight: "800"
+  },
+  claimMetaBar: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  claimMetaText: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  claimMetaDot: {
+    color: "#cbd5e1",
+    fontSize: typography.caption,
+    fontWeight: "800"
   },
   header: {
     gap: spacing.sm
