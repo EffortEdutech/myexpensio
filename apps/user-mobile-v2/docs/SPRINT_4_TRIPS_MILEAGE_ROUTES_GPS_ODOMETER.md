@@ -24,7 +24,8 @@ Port the Work Trips experience into the new local-first mobile v2 app so trips c
   - selected-route/manual mileage final trip
   - Leaflet/OpenStreetMap route calculator on web:
     - tap map to set origin and destination
-    - search address and place it on the map
+    - address suggestions appear while typing
+    - selecting a suggestion places it on the map
     - draggable origin/destination pins
     - OSRM route alternatives drawn on the map
   - vehicle type: car / motorcycle

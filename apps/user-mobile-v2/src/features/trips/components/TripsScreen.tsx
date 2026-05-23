@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -53,6 +53,12 @@ type RouteAlternative = {
   id: string;
   label: string;
   note: string;
+};
+
+type GeocodeSuggestion = {
+  id: string;
+  label: string;
+  latLng: LatLng;
 };
 
 export function TripsScreen({
@@ -151,9 +157,8 @@ export function TripsScreen({
         mode={formMode}
         onClose={() => setFormMode(null)}
         onCreateTrip={async (input) => {
-          const trip = await onCreateTrip(input);
+          await onCreateTrip(input);
           setFormMode(null);
-          setSelectedTrip(trip);
         }}
       />
 
@@ -279,6 +284,12 @@ function TripFormModal({
   const [endEvidence, setEndEvidence] = useState<string | null>(null);
   const [vehicleType, setVehicleType] = useState<VehicleType>("car");
 
+  useEffect(() => {
+    if (!mode) {
+      resetForm();
+    }
+  }, [mode]);
+
   if (!mode) {
     return null;
   }
@@ -328,23 +339,35 @@ function TripFormModal({
           ? "odometer"
           : "selected_route";
 
-    await onCreateTrip({
-      calculationMode,
-      destinationText: destination.trim() || null,
-      distanceM: isGps
-        ? null
-        : Math.round((selectedRoute?.distanceKm ?? distance) * 1000),
-      endEvidenceUri: endEvidence,
-      notes:
-        [notes.trim(), selectedRoute ? `Route option: ${selectedRoute.label}` : ""]
-          .filter(Boolean)
-          .join("\n") || null,
-      originText: origin.trim() || null,
-      routeOptionLabel: selectedRoute?.label ?? null,
-      startedAt,
-      startEvidenceUri: startEvidence,
-      vehicleType
-    });
+    try {
+      await onCreateTrip({
+        calculationMode,
+        destinationText: destination.trim() || null,
+        distanceM: isGps
+          ? null
+          : Math.round((selectedRoute?.distanceKm ?? distance) * 1000),
+        endEvidenceUri: endEvidence,
+        notes:
+          [
+            notes.trim(),
+            selectedRoute ? `Route option: ${selectedRoute.label}` : ""
+          ]
+            .filter(Boolean)
+            .join("\n") || null,
+        originText: origin.trim() || null,
+        routeOptionLabel: selectedRoute?.label ?? null,
+        startedAt,
+        startEvidenceUri: startEvidence,
+        vehicleType
+      });
+      resetForm();
+    } catch (error) {
+      setRouteError(
+        error instanceof Error
+          ? error.message
+          : "Could not save trip. Please try again."
+      );
+    }
   }
 
   async function findAddressOnMap(target: "origin" | "destination") {
@@ -432,6 +455,25 @@ function TripFormModal({
     setSelectedRouteId(null);
   }
 
+  function resetForm() {
+    setDate(todayInput());
+    setTime(nowTimeInput());
+    setOrigin("");
+    setDestination("");
+    setDistanceKm("");
+    setNotes("");
+    setRouteAlternatives([]);
+    setOriginLatLng(null);
+    setDestinationLatLng(null);
+    setSelectedRouteId(null);
+    setRouteError(null);
+    setIsRouteLoading(false);
+    setGeocodingTarget(null);
+    setStartEvidence(null);
+    setEndEvidence(null);
+    setVehicleType("car");
+  }
+
   function handleOriginMapSet(latLng: LatLng) {
     setOriginLatLng(latLng);
     setOrigin(formatLatLng(latLng));
@@ -459,9 +501,20 @@ function TripFormModal({
                   : "Record route, distance, and vehicle type for mileage claims."}
               </Text>
             </View>
-            <Pressable accessibilityRole="button" onPress={onClose}>
-              <Text style={styles.modalClose}>×</Text>
-            </Pressable>
+            <View style={styles.modalHeaderActions}>
+              {mode === "route" ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={resetForm}
+                  style={styles.resetButton}
+                >
+                  <Text style={styles.resetButtonText}>Reset</Text>
+                </Pressable>
+              ) : null}
+              <Pressable accessibilityRole="button" onPress={onClose}>
+                <Text style={styles.modalClose}>X</Text>
+              </Pressable>
+            </View>
           </View>
 
           <ScrollView contentContainerStyle={styles.modalBody}>
@@ -499,6 +552,11 @@ function TripFormModal({
                         clearRouteSelection();
                       }}
                       onFind={() => void findAddressOnMap("origin")}
+                      onSelect={(suggestion) => {
+                        setOrigin(suggestion.label);
+                        setOriginLatLng(suggestion.latLng);
+                        clearRouteSelection();
+                      }}
                       onUseCurrent={() => void useCurrentPosition("origin")}
                       pin="green"
                       value={origin}
@@ -512,6 +570,11 @@ function TripFormModal({
                         clearRouteSelection();
                       }}
                       onFind={() => void findAddressOnMap("destination")}
+                      onSelect={(suggestion) => {
+                        setDestination(suggestion.label);
+                        setDestinationLatLng(suggestion.latLng);
+                        clearRouteSelection();
+                      }}
                       onUseCurrent={() =>
                         void useCurrentPosition("destination")
                       }
@@ -676,7 +739,9 @@ function TripDetailModal({
       ? rates.mileageMotorcycleRate
       : rates.mileageCarRate
   );
-  const amountCents = Math.round(((trip.finalDistanceM ?? 0) / 1000) * rate * 100);
+  const finalDistanceM = trip.finalDistanceM ?? 0;
+  const safeRate = Number.isFinite(rate) ? rate : 0;
+  const amountCents = Math.round((finalDistanceM / 1000) * safeRate * 100);
   const draftClaims = claims.filter((claim) => claim.status === "draft");
 
   return (
@@ -684,23 +749,23 @@ function TripDetailModal({
       <View style={styles.modalOverlay}>
         <View style={styles.sheet}>
           <View style={styles.modalHeader}>
-            <View>
-              <Text style={styles.modalTitle}>{tripTitle(trip)}</Text>
+            <View style={styles.modalHeaderTitle}>
+              <Text numberOfLines={2} style={styles.modalTitle}>{tripTitle(trip)}</Text>
               <Text style={styles.modalSub}>
-                {formatDate(trip.startedAt)} · {trip.vehicleType}
+                {formatDate(trip.startedAt)} - {trip.vehicleType}
               </Text>
             </View>
             <Pressable accessibilityRole="button" onPress={onClose}>
-              <Text style={styles.modalClose}>×</Text>
+              <Text style={styles.modalClose}>X</Text>
             </Pressable>
           </View>
 
           <ScrollView contentContainerStyle={styles.modalBody}>
             <View style={styles.detailGrid}>
               <Metric label="Status" value={trip.status === "draft" ? "In Progress" : "Final"} />
-              <Metric label="Distance" value={trip.finalDistanceM ? formatKm(trip.finalDistanceM) : "-"} />
+              <Metric label="Distance" value={finalDistanceM > 0 ? formatKm(finalDistanceM) : "-"} />
               <Metric label="Source" value={sourceLabel(trip)} />
-              <Metric label="Rate" value={`MYR ${rate.toFixed(2)}/km`} />
+              <Metric label="Rate" value={`MYR ${safeRate.toFixed(2)}/km`} />
             </View>
 
             {trip.routeOptionLabel ? (
@@ -869,6 +934,7 @@ function RouteAddressField({
   label,
   onChangeText,
   onFind,
+  onSelect,
   onUseCurrent,
   pin,
   value
@@ -877,50 +943,111 @@ function RouteAddressField({
   label: string;
   onChangeText: (value: string) => void;
   onFind: () => void;
+  onSelect: (suggestion: GeocodeSuggestion) => void;
   onUseCurrent: () => void;
   pin: "green" | "red";
   value: string;
 }) {
+  const [suggestions, setSuggestions] = useState<GeocodeSuggestion[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    if (value.trim().length < 3) {
+      setSuggestions([]);
+      setIsOpen(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setIsSearching(true);
+      void searchGeocodeSuggestions(value)
+        .then((results) => {
+          if (!cancelled) {
+            setSuggestions(results);
+            setIsOpen(results.length > 0);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setSuggestions([]);
+            setIsOpen(false);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setIsSearching(false);
+          }
+        });
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [value]);
+
   return (
-    <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
-      <View style={styles.routeInputShell}>
-        <Text style={pin === "green" ? styles.originDot : styles.destDot}>
-          ●
-        </Text>
-        <TextInput
-          onChangeText={onChangeText}
-          placeholder="Search or tap map..."
-          placeholderTextColor="#94a3b8"
-          style={styles.routeInput}
-          value={value}
-        />
-      </View>
-      <View style={styles.routeFieldActions}>
+    <View style={styles.routeAddressCard}>
+      <View style={styles.routeAddressHeader}>
+        <View style={styles.routeAddressTitle}>
+          <Text style={pin === "green" ? styles.originDot : styles.destDot}>
+            ●
+          </Text>
+          <Text style={styles.label}>{label}</Text>
+        </View>
         <Pressable
           accessibilityRole="button"
           onPress={onUseCurrent}
-          style={styles.routeMiniButton}
+          style={styles.currentLocationButton}
         >
-          <Text style={styles.routeMiniButtonText}>Use Current Position</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          disabled={!value.trim() || isLoading}
-          onPress={onFind}
-          style={[
-            styles.routeMiniButton,
-            styles.routeMiniButtonPrimary,
-            !value.trim() || isLoading ? styles.disabled : null
-          ]}
-        >
-          <Text
-            style={[styles.routeMiniButtonText, styles.routeMiniButtonTextDark]}
-          >
-            {isLoading ? "Finding..." : "Find on Map"}
+          <Text style={styles.currentLocationButtonText}>
+            Use Current Position
           </Text>
         </Pressable>
       </View>
+
+      <View style={styles.routeInputShell}>
+        <TextInput
+          onChangeText={onChangeText}
+          onFocus={() => setIsOpen(suggestions.length > 0)}
+          onSubmitEditing={onFind}
+          placeholder="Search or tap map..."
+          placeholderTextColor="#94a3b8"
+          returnKeyType="search"
+          style={styles.routeInput}
+          value={value}
+        />
+        {isSearching || isLoading ? (
+          <Text style={styles.routeInputSpinner}>...</Text>
+        ) : null}
+      </View>
+
+      {isOpen ? (
+        <View style={styles.suggestionPanel}>
+          <Text style={styles.suggestionPanelTitle}>Search results</Text>
+          {suggestions.slice(0, 4).map((suggestion) => (
+            <Pressable
+              accessibilityRole="button"
+              key={suggestion.id}
+              onPress={() => {
+                onSelect(suggestion);
+                setSuggestions([]);
+                setIsOpen(false);
+              }}
+              style={styles.suggestionItem}
+            >
+              <Text style={styles.suggestionMain}>
+                {shortLocationName(suggestion.label)}
+              </Text>
+              <Text numberOfLines={2} style={styles.suggestionSub}>
+                {suggestion.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -1178,10 +1305,24 @@ function nowTimeInput() {
 }
 
 async function geocodeAddress(query: string) {
+  const results = await searchGeocodeSuggestions(query);
+  const first = results[0];
+
+  if (!first) {
+    throw new Error("Location not found. Try a nearby landmark or city.");
+  }
+
+  return {
+    label: first.label,
+    latLng: first.latLng
+  };
+}
+
+async function searchGeocodeSuggestions(query: string) {
   const params = new URLSearchParams({
     countrycodes: "my",
     format: "jsonv2",
-    limit: "1",
+    limit: "5",
     q: query
   });
   const response = await fetch(
@@ -1199,19 +1340,18 @@ async function geocodeAddress(query: string) {
 
   const results = (await response.json()) as Array<{
     display_name?: string;
+    place_id?: number;
     lat?: string;
     lon?: string;
   }>;
-  const first = results[0];
 
-  if (!first?.lat || !first.lon) {
-    throw new Error("Location not found. Try a nearby landmark or city.");
-  }
-
-  return {
-    label: first.display_name ?? query,
-    latLng: [Number(first.lat), Number(first.lon)] as LatLng
-  };
+  return results
+    .filter((result) => result.lat && result.lon)
+    .map((result, index): GeocodeSuggestion => ({
+      id: String(result.place_id ?? `${result.lat}-${result.lon}-${index}`),
+      label: result.display_name ?? query,
+      latLng: [Number(result.lat), Number(result.lon)] as LatLng
+    }));
 }
 
 async function fetchRouteAlternatives(origin: LatLng, destination: LatLng) {
@@ -1292,6 +1432,10 @@ function getCurrentLatLng() {
 
 function formatLatLng(latLng: LatLng) {
   return `${latLng[0].toFixed(5)}, ${latLng[1].toFixed(5)}`;
+}
+
+function shortLocationName(label: string) {
+  return label.split(",").slice(0, 2).join(",").trim();
 }
 
 const styles = StyleSheet.create({
@@ -1491,8 +1635,33 @@ const styles = StyleSheet.create({
     borderBottomColor: "#f1f5f9",
     borderBottomWidth: 1,
     flexDirection: "row",
+    gap: spacing.md,
     justifyContent: "space-between",
     padding: spacing.lg
+  },
+  modalHeaderActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  modalHeaderTitle: {
+    flex: 1,
+    minWidth: 0
+  },
+  resetButton: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 32,
+    paddingHorizontal: spacing.md
+  },
+  resetButtonText: {
+    color: "#475569",
+    fontSize: typography.caption,
+    fontWeight: "900"
   },
   modalTitle: {
     color: colors.text,
@@ -1547,6 +1716,25 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     textAlignVertical: "top"
   },
+  routeAddressCard: {
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md
+  },
+  routeAddressHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between"
+  },
+  routeAddressTitle: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6
+  },
   routeInputShell: {
     alignItems: "center",
     backgroundColor: colors.surface,
@@ -1564,6 +1752,46 @@ const styles = StyleSheet.create({
     fontSize: typography.body,
     minHeight: 42
   },
+  routeInputSpinner: {
+    color: "#94a3b8",
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  suggestionPanel: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 0,
+    overflow: "hidden"
+  },
+  suggestionPanelTitle: {
+    backgroundColor: "#f1f5f9",
+    color: "#475569",
+    fontSize: 11,
+    fontWeight: "900",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    textTransform: "uppercase"
+  },
+  suggestionItem: {
+    borderBottomColor: "#f1f5f9",
+    borderBottomWidth: 1,
+    gap: 2,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  suggestionMain: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  suggestionSub: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 17
+  },
   originDot: {
     color: "#16a34a",
     fontSize: 16,
@@ -1574,33 +1802,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "900"
   },
-  routeFieldActions: {
-    flexDirection: "row",
-    gap: spacing.sm
-  },
-  routeMiniButton: {
+  currentLocationButton: {
     alignItems: "center",
-    backgroundColor: "#f8fafc",
-    borderColor: colors.border,
-    borderRadius: 8,
+    backgroundColor: colors.surface,
+    borderColor: "#dbeafe",
+    borderRadius: 999,
     borderWidth: 1,
-    flex: 1,
     justifyContent: "center",
-    minHeight: 38,
-    paddingHorizontal: spacing.sm
+    minHeight: 30,
+    paddingHorizontal: 10
   },
-  routeMiniButtonPrimary: {
-    backgroundColor: "#eff6ff",
-    borderColor: "#2563eb"
-  },
-  routeMiniButtonText: {
-    color: "#475569",
+  currentLocationButtonText: {
+    color: "#2563eb",
     fontSize: 11,
     fontWeight: "900",
     textAlign: "center"
-  },
-  routeMiniButtonTextDark: {
-    color: "#1d4ed8"
   },
   errorBox: {
     backgroundColor: "#fef2f2",
