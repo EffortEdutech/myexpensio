@@ -98,9 +98,20 @@ export function ClaimDetail({
   onBack,
   onDeleteClaim,
   onDeleteItem,
-  onSubmitClaim
+  onSubmitClaim,
+  onUpdateClaim,
+  onUpdateItem
 }: ClaimDetailProps) {
   const [activeModal, setActiveModal] = useState<ClaimModalKind | null>(null);
+  const [editingClaim, setEditingClaim] = useState(false);
+  const [editingItem, setEditingItem] = useState<ClaimItemDraft | null>(null);
+  const [editTitle, setEditTitle] = useState(claim?.title ?? "");
+  const [editPeriodStart, setEditPeriodStart] = useState(
+    claim?.periodStart ?? todayInput()
+  );
+  const [editPeriodEnd, setEditPeriodEnd] = useState(
+    claim?.periodEnd ?? claim?.periodStart ?? todayInput()
+  );
   const isDraft = claim?.status === "draft";
   const totalAmountCents = useMemo(
     () => items.reduce((sum, item) => sum + item.amountCents, 0),
@@ -146,6 +157,64 @@ export function ClaimDetail({
         </View>
       </View>
 
+      {isDraft ? (
+        <View style={styles.editPanel}>
+          {editingClaim ? (
+            <>
+              <Field
+                label="Claim Title"
+                onChangeText={setEditTitle}
+                value={editTitle}
+              />
+              <View style={styles.fieldRow}>
+                <DatePickerField
+                  label="Start"
+                  onChange={setEditPeriodStart}
+                  value={editPeriodStart}
+                />
+                <DatePickerField
+                  label="End"
+                  onChange={setEditPeriodEnd}
+                  value={editPeriodEnd}
+                />
+              </View>
+              <View style={styles.editActionRow}>
+                <SmallButton label="Cancel" onPress={() => setEditingClaim(false)} />
+                <SmallButton
+                  label="Save Claim"
+                  onPress={() => {
+                    onUpdateClaim({
+                      periodEnd: editPeriodEnd,
+                      periodStart: editPeriodStart,
+                      title: editTitle.trim() || null
+                    });
+                    setEditingClaim(false);
+                  }}
+                />
+              </View>
+            </>
+          ) : (
+            <SmallButton
+              label="Edit Claim"
+              onPress={() => {
+                setEditTitle(claim.title ?? "");
+                setEditPeriodStart(claim.periodStart ?? todayInput());
+                setEditPeriodEnd(
+                  claim.periodEnd ?? claim.periodStart ?? todayInput()
+                );
+                setEditingClaim(true);
+              }}
+            />
+          )}
+        </View>
+      ) : (
+        <View style={styles.lockedPanel}>
+          <Text style={styles.lockedText}>
+            Submitted claims are read-only. Create a new draft for changes.
+          </Text>
+        </View>
+      )}
+
       <View style={styles.itemsSection}>
         <Text style={styles.sectionTitle}>Items ({items.length})</Text>
         {items.length === 0 ? (
@@ -163,6 +232,7 @@ export function ClaimDetail({
                 disabled={!isDraft}
                 item={item}
                 key={item.id}
+                onEdit={() => setEditingItem(item)}
                 onDelete={() =>
                   confirmAction("Delete item?", "Remove this item from the claim.", () =>
                     onDeleteItem(item)
@@ -241,6 +311,15 @@ export function ClaimDetail({
         onAddItem={onAddItem}
         onClose={() => setActiveModal(null)}
       />
+
+      <EditClaimItemModal
+        item={editingItem}
+        onClose={() => setEditingItem(null)}
+        onUpdateItem={(item, input) => {
+          onUpdateItem(item, input);
+          setEditingItem(null);
+        }}
+      />
     </View>
   );
 }
@@ -248,10 +327,12 @@ export function ClaimDetail({
 function ClaimItemRow({
   disabled,
   item,
+  onEdit,
   onDelete
 }: {
   disabled: boolean;
   item: ClaimItemDraft;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const meta = getItemMeta(item.type);
@@ -270,6 +351,14 @@ function ClaimItemRow({
         <Text style={styles.itemAmount}>
           {formatMoney(item.amountCents, item.currency)}
         </Text>
+        <Pressable
+          accessibilityRole="button"
+          disabled={disabled}
+          onPress={onEdit}
+          style={styles.editItemButton}
+        >
+          <Text style={styles.editItemText}>Edit</Text>
+        </Pressable>
         <Pressable
           accessibilityRole="button"
           disabled={disabled}
@@ -420,6 +509,88 @@ function AddClaimItemModal({
               ]}
             >
               <Text style={styles.modalAddText}>Add {meta.buttonLabel}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function EditClaimItemModal({
+  item,
+  onClose,
+  onUpdateItem
+}: {
+  item: ClaimItemDraft | null;
+  onClose: () => void;
+  onUpdateItem: (
+    item: ClaimItemDraft,
+    input: {
+      amountCents: number;
+      itemDate: string;
+      notes: string | null;
+      title: string;
+      type: ClaimItemType;
+    }
+  ) => void;
+}) {
+  const [date, setDate] = useState(todayInput());
+  const [amount, setAmount] = useState("0.00");
+  const [title, setTitle] = useState("");
+  const [notes, setNotes] = useState("");
+
+  useMemo(() => {
+    if (!item) {
+      return;
+    }
+
+    setDate(item.itemDate);
+    setAmount((item.amountCents / 100).toFixed(2));
+    setTitle(item.title);
+    setNotes(item.notes ?? "");
+  }, [item?.id]);
+
+  if (!item) {
+    return null;
+  }
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+      <View style={styles.modalOverlay}>
+        <View style={styles.sheet}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Edit Item</Text>
+            <Pressable accessibilityRole="button" onPress={onClose}>
+              <Text style={styles.modalClose}>X</Text>
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={styles.modalBody}>
+            <DatePickerField label="Date" onChange={setDate} value={date} />
+            <Field
+              keyboardType="decimal-pad"
+              label="Amount (MYR)"
+              onChangeText={setAmount}
+              value={amount}
+            />
+            <Field label="Description" onChangeText={setTitle} value={title} />
+            <Field label="Notes" onChangeText={setNotes} value={notes} />
+          </ScrollView>
+          <View style={styles.modalFooter}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() =>
+                onUpdateItem(item, {
+                  amountCents: moneyToCents(amount),
+                  itemDate: date,
+                  notes: notes.trim() || null,
+                  title: title.trim() || getItemMeta(item.type).label,
+                  type: item.type
+                })
+              }
+              style={styles.modalAddButton}
+            >
+              <Text style={styles.modalAddText}>Save Item</Text>
             </Pressable>
           </View>
         </View>
@@ -644,6 +815,35 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "900"
   },
+  editPanel: {
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md
+  },
+  lockedPanel: {
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: spacing.md
+  },
+  lockedText: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 18
+  },
+  fieldRow: {
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  editActionRow: {
+    flexDirection: "row",
+    gap: spacing.sm
+  },
   itemsSection: {
     gap: spacing.sm
   },
@@ -705,6 +905,19 @@ const styles = StyleSheet.create({
   itemAmount: {
     color: colors.text,
     fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  editItemButton: {
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
+    borderRadius: 8,
+    minHeight: 26,
+    justifyContent: "center",
+    paddingHorizontal: 8
+  },
+  editItemText: {
+    color: "#2563eb",
+    fontSize: 10,
     fontWeight: "900"
   },
   deleteItemButton: {

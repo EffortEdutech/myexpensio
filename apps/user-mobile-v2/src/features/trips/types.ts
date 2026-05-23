@@ -45,3 +45,14 @@ export type CreateTripInput = {
   startEvidenceUri?: string | null;
   vehicleType: VehicleType;
 };
+
+export type UpdateTripInput = {
+  destinationText?: string | null;
+  distanceM?: number | null;
+  notes?: string | null;
+  originText?: string | null;
+  routeOptionLabel?: string | null;
+  startedAt?: string;
+  tripId: string;
+  vehicleType?: VehicleType;
+};

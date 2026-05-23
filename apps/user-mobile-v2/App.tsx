@@ -51,7 +51,9 @@ import type { SubscriptionTier } from "@/features/subscription/types";
 import { TripsScreen } from "@/features/trips/components/TripsScreen";
 import {
   useCreateTrip,
-  useStopGpsTrip
+  useSoftDeleteTrip,
+  useStopGpsTrip,
+  useUpdateTrip
 } from "@/features/trips/hooks/useTripActions";
 import { useTrips } from "@/features/trips/hooks/useTrips";
 import { initializeLocalDatabase } from "@/local-db/database";
@@ -176,6 +178,8 @@ function AuthenticatedHome({
   const createBlankClaim = useCreateBlankClaimDraft();
   const createClaimItem = useCreateClaimItemDraft();
   const createTrip = useCreateTrip();
+  const deleteTrip = useSoftDeleteTrip();
+  const updateTrip = useUpdateTrip();
   const deleteClaim = useSoftDeleteClaimDraft();
   const deleteClaimItem = useSoftDeleteClaimItem();
   const updateClaim = useUpdateClaimDraft();
@@ -190,6 +194,8 @@ function AuthenticatedHome({
     createBlankClaim.error ??
     createClaimItem.error ??
     createTrip.error ??
+    deleteTrip.error ??
+    updateTrip.error ??
     deleteClaim.error ??
     deleteClaimItem.error ??
     updateClaim.error ??
@@ -245,13 +251,14 @@ function AuthenticatedHome({
               setNewClaimOpen(false);
               setSelectedClaimId(result.claim.id);
             }}
-            onCreateClaimItem={(claim, input) =>
+            onCreateClaimItem={(claim, input) => {
               createClaimItem.mutate({
                 claimId: claim.id,
                 currency: claim.currency,
                 ...input
-              })
-            }
+              });
+              setSelectedClaimId(claim.id);
+            }}
             onDeleteClaimItem={(item) => deleteClaimItem.mutate(item.id)}
             onDeleteClaim={async (claim) => {
               await deleteClaim.mutateAsync(claim.id);
@@ -296,6 +303,8 @@ function AuthenticatedHome({
           <TripsScreen
             claims={claims.data ?? []}
             isCreatingTrip={createTrip.isPending}
+            isDeletingTrip={deleteTrip.isPending}
+            isUpdatingTrip={updateTrip.isPending}
             isLoading={trips.isLoading}
             isStoppingTrip={stopGpsTrip.isPending}
             onAddMileageToClaim={({ amountCents, claim, itemDate, title, trip }) =>
@@ -311,9 +320,13 @@ function AuthenticatedHome({
               })
             }
             onCreateTrip={(input) => createTrip.mutateAsync(input)}
+            onDeleteTrip={async (trip) => {
+              await deleteTrip.mutateAsync(trip.id);
+            }}
             onStopGpsTrip={async (input) => {
               await stopGpsTrip.mutateAsync(input);
             }}
+            onUpdateTrip={(input) => updateTrip.mutateAsync(input)}
             rates={settingsRates}
             trips={trips.data ?? []}
           />

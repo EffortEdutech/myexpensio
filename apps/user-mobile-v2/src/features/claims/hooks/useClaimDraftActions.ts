@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+﻿import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { claimQueryKeys } from "@/features/claims/hooks/useClaimDrafts";
 import type {
@@ -27,13 +27,21 @@ import { syncSummaryQueryKey } from "@/sync/hooks/useSyncQueueSummary";
 function useInvalidateClaimData() {
   const queryClient = useQueryClient();
 
-  return () => {
+  return (claimId?: string): void => {
     void queryClient.invalidateQueries({
       queryKey: ["claims"]
     });
     void queryClient.invalidateQueries({
       queryKey: claimQueryKeys.drafts
     });
+    if (claimId) {
+      void queryClient.invalidateQueries({
+        queryKey: claimQueryKeys.detail(claimId)
+      });
+      void queryClient.invalidateQueries({
+        queryKey: claimQueryKeys.items(claimId)
+      });
+    }
     void queryClient.invalidateQueries({
       queryKey: syncQueryKeys.pendingItems
     });
@@ -57,7 +65,7 @@ export function useRenameClaimDraft() {
         `${claim.title ?? "Draft claim"} updated`,
         deviceId
       ),
-    onSuccess: invalidate
+    onSuccess: () => invalidate()
   });
 }
 
@@ -68,7 +76,7 @@ export function useUpdateClaimDraft() {
   return useMutation({
     mutationFn: (input: UpdateClaimDraftInput) =>
       updateClaimDraft(input, deviceId),
-    onSuccess: invalidate
+    onSuccess: () => invalidate()
   });
 }
 
@@ -78,7 +86,7 @@ export function useSubmitClaimDraft() {
 
   return useMutation({
     mutationFn: (claimId: string) => submitClaimDraft(claimId, deviceId),
-    onSuccess: invalidate
+    onSuccess: () => invalidate()
   });
 }
 
@@ -88,7 +96,7 @@ export function useSoftDeleteClaimDraft() {
 
   return useMutation({
     mutationFn: (claimId: string) => softDeleteClaimDraft(claimId, deviceId),
-    onSuccess: invalidate
+    onSuccess: () => invalidate()
   });
 }
 
@@ -110,7 +118,7 @@ export function useAddItemToClaimDraft() {
         },
         deviceId
       ),
-    onSuccess: invalidate
+    onSuccess: () => invalidate()
   });
 }
 
@@ -121,7 +129,7 @@ export function useCreateClaimItemDraft() {
   return useMutation({
     mutationFn: (input: CreateClaimItemDraftInput) =>
       createClaimItemDraft(input, deviceId),
-    onSuccess: invalidate
+    onSuccess: (_item, input) => invalidate(input.claimId)
   });
 }
 
@@ -132,7 +140,7 @@ export function useUpdateClaimItemDraft() {
   return useMutation({
     mutationFn: (input: UpdateClaimItemDraftInput) =>
       updateClaimItemDraft(input, deviceId),
-    onSuccess: invalidate
+    onSuccess: (item) => invalidate(item?.claimId)
   });
 }
 
@@ -143,7 +151,7 @@ export function useAttachReceiptMetadataToClaimItem() {
   return useMutation({
     mutationFn: (itemId: string) =>
       attachReceiptMetadataToClaimItem(itemId, deviceId),
-    onSuccess: invalidate
+    onSuccess: () => invalidate()
   });
 }
 
@@ -165,7 +173,7 @@ export function useIncreaseLatestClaimItem() {
         deviceId
       );
     },
-    onSuccess: invalidate
+    onSuccess: () => invalidate()
   });
 }
 
@@ -183,7 +191,7 @@ export function useDeleteLatestClaimItem() {
 
       return softDeleteClaimItem(latestItem.id, deviceId);
     },
-    onSuccess: invalidate
+    onSuccess: () => invalidate()
   });
 }
 
@@ -193,7 +201,7 @@ export function useSoftDeleteClaimItem() {
 
   return useMutation({
     mutationFn: (itemId: string) => softDeleteClaimItem(itemId, deviceId),
-    onSuccess: invalidate
+    onSuccess: () => invalidate()
   });
 }
 

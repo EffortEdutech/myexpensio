@@ -4,6 +4,7 @@ import type {
   TripDistanceSource,
   TripDraft,
   TripStatus,
+  UpdateTripInput,
   VehicleType
 } from "@/features/trips/types";
 import type { SyncStatus } from "@/features/expenses/types";
@@ -195,6 +196,133 @@ export async function stopGpsTrip(tripId: string, distanceM: number, deviceId: s
   });
 
   return getTrip(tripId);
+}
+
+export async function softDeleteTrip(tripId: string, deviceId: string) {
+  const database = await getDatabase();
+  const timestamp = nowIso();
+
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(
+      `UPDATE trips
+        SET sync_status = ?,
+            deleted_at = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND deleted_at IS NULL;`,
+      ["deleted", timestamp, timestamp, tripId]
+    );
+
+    await enqueueSyncItem(
+      {
+        entityType: "trip",
+        entityId: tripId,
+        operation: "delete",
+        payload: JSON.stringify({
+          id: tripId,
+          deletedAt: timestamp,
+          deviceId
+        })
+      },
+      database
+    );
+  });
+
+  return { deletedAt: timestamp, id: tripId };
+}
+
+export async function updateTrip(input: UpdateTripInput, deviceId: string) {
+  const database = await getDatabase();
+  const timestamp = nowIso();
+  const existing = await getTrip(input.tripId);
+
+  if (!existing || existing.status === "draft") {
+    return null;
+  }
+
+  const distanceM = input.distanceM ?? existing.finalDistanceM;
+  const updatedTrip: TripDraft = {
+    ...existing,
+    destinationText: input.destinationText ?? existing.destinationText,
+    endedAt: input.startedAt ?? existing.endedAt,
+    finalDistanceM: distanceM,
+    notes: input.notes ?? existing.notes,
+    odometerDistanceM:
+      existing.calculationMode === "odometer"
+        ? distanceM
+        : existing.odometerDistanceM,
+    originText: input.originText ?? existing.originText,
+    routeOptionLabel: input.routeOptionLabel ?? existing.routeOptionLabel,
+    selectedRouteDistanceM:
+      existing.calculationMode === "selected_route"
+        ? distanceM
+        : existing.selectedRouteDistanceM,
+    startedAt: input.startedAt ?? existing.startedAt,
+    stoppedAt: input.startedAt ?? existing.stoppedAt,
+    syncStatus: "pending",
+    updatedAt: timestamp,
+    vehicleType: input.vehicleType ?? existing.vehicleType
+  };
+
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(
+      `UPDATE trips
+        SET started_at = ?,
+            stopped_at = ?,
+            ended_at = ?,
+            final_distance_m = ?,
+            odometer_distance_m = ?,
+            selected_route_distance_m = ?,
+            origin_text = ?,
+            destination_text = ?,
+            vehicle_type = ?,
+            route_option_label = ?,
+            notes = ?,
+            sync_status = 'pending',
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'final'
+          AND deleted_at IS NULL;`,
+      [
+        updatedTrip.startedAt,
+        updatedTrip.stoppedAt,
+        updatedTrip.endedAt,
+        updatedTrip.finalDistanceM,
+        updatedTrip.odometerDistanceM,
+        updatedTrip.selectedRouteDistanceM,
+        updatedTrip.originText,
+        updatedTrip.destinationText,
+        updatedTrip.vehicleType,
+        updatedTrip.routeOptionLabel,
+        updatedTrip.notes,
+        timestamp,
+        input.tripId
+      ]
+    );
+
+    await enqueueSyncItem(
+      {
+        entityType: "trip",
+        entityId: input.tripId,
+        operation: "update",
+        payload: JSON.stringify({
+          id: input.tripId,
+          destinationText: updatedTrip.destinationText,
+          distanceM: updatedTrip.finalDistanceM,
+          notes: updatedTrip.notes,
+          originText: updatedTrip.originText,
+          routeOptionLabel: updatedTrip.routeOptionLabel,
+          startedAt: updatedTrip.startedAt,
+          updatedAt: timestamp,
+          vehicleType: updatedTrip.vehicleType,
+          deviceId
+        })
+      },
+      database
+    );
+  });
+
+  return updatedTrip;
 }
 
 function getDistanceSource(

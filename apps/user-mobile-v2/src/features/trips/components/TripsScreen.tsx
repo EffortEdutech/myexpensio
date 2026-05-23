@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,6 +23,7 @@ import type {
   CreateTripInput,
   TripCalculationMode,
   TripDraft,
+  UpdateTripInput,
   VehicleType
 } from "@/features/trips/types";
 import type { ClaimRates } from "@/state/settingsStore";
@@ -29,8 +32,10 @@ import { colors, spacing, typography } from "@/theme/tokens";
 type TripsScreenProps = {
   claims: ClaimDraft[];
   isCreatingTrip: boolean;
+  isDeletingTrip: boolean;
   isLoading: boolean;
   isStoppingTrip: boolean;
+  isUpdatingTrip: boolean;
   onAddMileageToClaim: (input: {
     amountCents: number;
     claim: ClaimDraft;
@@ -39,7 +44,9 @@ type TripsScreenProps = {
     trip: TripDraft;
   }) => void;
   onCreateTrip: (input: CreateTripInput) => Promise<TripDraft>;
+  onDeleteTrip: (trip: TripDraft) => Promise<void>;
   onStopGpsTrip: (input: { distanceM: number; tripId: string }) => Promise<void>;
+  onUpdateTrip: (input: UpdateTripInput) => Promise<TripDraft | null>;
   rates: ClaimRates;
   trips: TripDraft[];
 };
@@ -64,11 +71,15 @@ type GeocodeSuggestion = {
 export function TripsScreen({
   claims,
   isCreatingTrip,
+  isDeletingTrip,
   isLoading,
   isStoppingTrip,
+  isUpdatingTrip,
   onAddMileageToClaim,
   onCreateTrip,
+  onDeleteTrip,
   onStopGpsTrip,
+  onUpdateTrip,
   rates,
   trips
 }: TripsScreenProps) {
@@ -164,10 +175,22 @@ export function TripsScreen({
 
       <TripDetailModal
         claims={claims}
+        isDeletingTrip={isDeletingTrip}
         isStoppingTrip={isStoppingTrip}
+        isUpdatingTrip={isUpdatingTrip}
         onAddMileageToClaim={onAddMileageToClaim}
         onClose={() => setSelectedTrip(null)}
+        onDeleteTrip={async (trip) => {
+          await onDeleteTrip(trip);
+          setSelectedTrip(null);
+        }}
         onStopGpsTrip={onStopGpsTrip}
+        onUpdateTrip={async (input) => {
+          const updated = await onUpdateTrip(input);
+          if (updated) {
+            setSelectedTrip(updated);
+          }
+        }}
         rates={rates}
         trip={selectedTrip}
       />
@@ -706,15 +729,21 @@ function TripFormModal({
 
 function TripDetailModal({
   claims,
+  isDeletingTrip,
   isStoppingTrip,
+  isUpdatingTrip,
   onAddMileageToClaim,
   onClose,
+  onDeleteTrip,
   onStopGpsTrip,
+  onUpdateTrip,
   rates,
   trip
 }: {
   claims: ClaimDraft[];
+  isDeletingTrip: boolean;
   isStoppingTrip: boolean;
+  isUpdatingTrip: boolean;
   onAddMileageToClaim: (input: {
     amountCents: number;
     claim: ClaimDraft;
@@ -723,12 +752,35 @@ function TripDetailModal({
     trip: TripDraft;
   }) => void;
   onClose: () => void;
+  onDeleteTrip: (trip: TripDraft) => Promise<void>;
   onStopGpsTrip: (input: { distanceM: number; tripId: string }) => Promise<void>;
+  onUpdateTrip: (input: UpdateTripInput) => Promise<void>;
   rates: ClaimRates;
   trip: TripDraft | null;
 }) {
   const [stopDistanceKm, setStopDistanceKm] = useState("");
   const [claimPickerOpen, setClaimPickerOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editOrigin, setEditOrigin] = useState("");
+  const [editDestination, setEditDestination] = useState("");
+  const [editDistanceKm, setEditDistanceKm] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editVehicleType, setEditVehicleType] = useState<VehicleType>("car");
+
+  useEffect(() => {
+    if (!trip) {
+      return;
+    }
+
+    setEditOrigin(trip.originText ?? "");
+    setEditDestination(trip.destinationText ?? "");
+    setEditDistanceKm(
+      trip.finalDistanceM ? (trip.finalDistanceM / 1000).toFixed(2) : ""
+    );
+    setEditNotes(trip.notes ?? "");
+    setEditVehicleType(trip.vehicleType);
+    setIsEditing(false);
+  }, [trip?.id]);
 
   if (!trip) {
     return null;
@@ -743,6 +795,29 @@ function TripDetailModal({
   const safeRate = Number.isFinite(rate) ? rate : 0;
   const amountCents = Math.round((finalDistanceM / 1000) * safeRate * 100);
   const draftClaims = claims.filter((claim) => claim.status === "draft");
+  const canEditTrip = trip.status === "final";
+
+  async function handleUpdateTrip() {
+    if (!trip) {
+      return;
+    }
+
+    const distance = Number(editDistanceKm);
+    if (!Number.isFinite(distance) || distance <= 0) {
+      return;
+    }
+
+    await onUpdateTrip({
+      destinationText: editDestination.trim() || null,
+      distanceM: Math.round(distance * 1000),
+      notes: editNotes.trim() || null,
+      originText: editOrigin.trim() || null,
+      routeOptionLabel: trip.routeOptionLabel,
+      tripId: trip.id,
+      vehicleType: editVehicleType
+    });
+    setIsEditing(false);
+  }
 
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible>
@@ -767,6 +842,83 @@ function TripDetailModal({
               <Metric label="Source" value={sourceLabel(trip)} />
               <Metric label="Rate" value={`MYR ${safeRate.toFixed(2)}/km`} />
             </View>
+
+            {canEditTrip ? (
+              <View style={styles.infoBox}>
+                <Text style={styles.infoText}>
+                  This trip is still local and can be edited. Trips linked to
+                  submitted claims should be treated as locked in the production
+                  sync flow.
+                </Text>
+                {isEditing ? (
+                  <>
+                    <Field
+                      label="Origin"
+                      onChangeText={setEditOrigin}
+                      value={editOrigin}
+                    />
+                    <Field
+                      label="Destination"
+                      onChangeText={setEditDestination}
+                      value={editDestination}
+                    />
+                    <Field
+                      keyboardType="decimal-pad"
+                      label="Distance (km)"
+                      onChangeText={(value) => {
+                        if (value === "" || /^\d*\.?\d*$/.test(value)) {
+                          setEditDistanceKm(value);
+                        }
+                      }}
+                      value={editDistanceKm}
+                    />
+                    <VehicleSelector
+                      onChange={setEditVehicleType}
+                      value={editVehicleType}
+                    />
+                    <Field
+                      label="Notes"
+                      multiline
+                      onChangeText={setEditNotes}
+                      value={editNotes}
+                    />
+                    <View style={styles.editActionRow}>
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => setIsEditing(false)}
+                        style={styles.secondaryButton}
+                      >
+                        <Text style={styles.secondaryButtonText}>Cancel</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={isUpdatingTrip || Number(editDistanceKm) <= 0}
+                        onPress={() => void handleUpdateTrip()}
+                        style={[
+                          styles.saveButton,
+                          styles.editSaveButton,
+                          isUpdatingTrip || Number(editDistanceKm) <= 0
+                            ? styles.disabled
+                            : null
+                        ]}
+                      >
+                        <Text style={styles.saveButtonText}>
+                          {isUpdatingTrip ? "Saving..." : "Save Changes"}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </>
+                ) : (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => setIsEditing(true)}
+                    style={styles.secondaryButton}
+                  >
+                    <Text style={styles.secondaryButtonText}>Edit Trip</Text>
+                  </Pressable>
+                )}
+              </View>
+            ) : null}
 
             {trip.routeOptionLabel ? (
               <View style={styles.infoBox}>
@@ -847,6 +999,26 @@ function TripDetailModal({
               </>
             )}
           </ScrollView>
+
+          <View style={styles.modalFooter}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={isDeletingTrip}
+              onPress={() =>
+                confirmTripDelete(() => {
+                  void onDeleteTrip(trip);
+                })
+              }
+              style={[
+                styles.deleteTripButton,
+                isDeletingTrip ? styles.disabled : null
+              ]}
+            >
+              <Text style={styles.deleteTripText}>
+                {isDeletingTrip ? "Deleting..." : "Delete Trip"}
+              </Text>
+            </Pressable>
+          </View>
 
           {claimPickerOpen ? (
             <View style={styles.claimPicker}>
@@ -1436,6 +1608,20 @@ function formatLatLng(latLng: LatLng) {
 
 function shortLocationName(label: string) {
   return label.split(",").slice(0, 2).join(",").trim();
+}
+
+function confirmTripDelete(onConfirm: () => void) {
+  if (Platform.OS === "web") {
+    if (window.confirm("Delete this trip?")) {
+      onConfirm();
+    }
+    return;
+  }
+
+  Alert.alert("Delete trip?", "This removes the trip from this device.", [
+    { style: "cancel", text: "Cancel" },
+    { onPress: onConfirm, style: "destructive", text: "Delete" }
+  ]);
 }
 
 const styles = StyleSheet.create({
@@ -2095,6 +2281,42 @@ const styles = StyleSheet.create({
   },
   stopButtonText: {
     color: colors.surface,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  editActionRow: {
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  editSaveButton: {
+    flex: 1
+  },
+  secondaryButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 44
+  },
+  secondaryButtonText: {
+    color: "#475569",
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  deleteTripButton: {
+    alignItems: "center",
+    backgroundColor: "#fff1f2",
+    borderColor: "#fecdd3",
+    borderRadius: 10,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 44
+  },
+  deleteTripText: {
+    color: "#be123c",
     fontSize: typography.body,
     fontWeight: "900"
   },

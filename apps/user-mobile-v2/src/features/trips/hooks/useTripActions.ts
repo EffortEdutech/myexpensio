@@ -1,10 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import type { CreateTripInput } from "@/features/trips/types";
+import type { CreateTripInput, UpdateTripInput } from "@/features/trips/types";
 import { tripQueryKeys } from "@/features/trips/hooks/useTrips";
 import {
   createTrip,
-  stopGpsTrip
+  softDeleteTrip,
+  stopGpsTrip,
+  updateTrip
 } from "@/local-db/repositories/tripRepository";
 import { useDeviceStore } from "@/state/deviceStore";
 import { syncQueryKeys } from "@/sync/hooks/usePendingSyncItems";
@@ -38,6 +40,26 @@ export function useStopGpsTrip() {
   return useMutation({
     mutationFn: (input: { distanceM: number; tripId: string }) =>
       stopGpsTrip(input.tripId, input.distanceM, deviceId),
+    onSuccess: invalidate
+  });
+}
+
+export function useSoftDeleteTrip() {
+  const deviceId = useDeviceStore((state) => state.deviceId);
+  const invalidate = useInvalidateTrips();
+
+  return useMutation({
+    mutationFn: (tripId: string) => softDeleteTrip(tripId, deviceId),
+    onSuccess: invalidate
+  });
+}
+
+export function useUpdateTrip() {
+  const deviceId = useDeviceStore((state) => state.deviceId);
+  const invalidate = useInvalidateTrips();
+
+  return useMutation({
+    mutationFn: (input: UpdateTripInput) => updateTrip(input, deviceId),
     onSuccess: invalidate
   });
 }
