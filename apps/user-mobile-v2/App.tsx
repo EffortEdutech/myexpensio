@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -8,6 +9,7 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View
@@ -49,6 +51,10 @@ import { initializeLocalDatabase } from "@/local-db/database";
 import { usePendingSyncItems } from "@/sync/hooks/usePendingSyncItems";
 import { useSyncQueueSummary } from "@/sync/hooks/useSyncQueueSummary";
 import { useAuthStore } from "@/state/authStore";
+import {
+  defaultRates,
+  useUserSettingsStore
+} from "@/state/settingsStore";
 import { colors, spacing, typography } from "@/theme/tokens";
 
 export default function App() {
@@ -116,9 +122,12 @@ function MobileV2Home() {
   return (
     <AuthenticatedHome
       activeSpace={activeSpace}
-      onSpaceChange={setActiveSpace}
+      onSpaceChange={(space) => {
+        setActiveSpace(space);
+        setSettingsOpen(false);
+      }}
       settingsOpen={settingsOpen}
-      onToggleSettings={() => setSettingsOpen((open) => !open)}
+      onOpenSettings={() => setSettingsOpen(true)}
       subscriptionTier={subscriptionTier}
     />
   );
@@ -126,18 +135,19 @@ function MobileV2Home() {
 
 function AuthenticatedHome({
   activeSpace,
+  onOpenSettings,
   onSpaceChange,
-  onToggleSettings,
   settingsOpen,
   subscriptionTier
 }: {
   activeSpace: AppSpace;
+  onOpenSettings: () => void;
   onSpaceChange: (space: AppSpace) => void;
-  onToggleSettings: () => void;
   settingsOpen: boolean;
   subscriptionTier: SubscriptionTier;
 }) {
   const session = useAuthStore((state) => state.session);
+  const profile = useUserSettingsStore((state) => state.profile);
   const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null);
   const [newClaimOpen, setNewClaimOpen] = useState(false);
   const signOut = useSignOut();
@@ -168,8 +178,12 @@ function AuthenticatedHome({
   return (
     <AppShell
       activeSpace={activeSpace}
+      displayName={profile.displayName || session?.email?.split("@")[0] || ""}
+      email={profile.email || session?.email || ""}
+      isSigningOut={signOut.isPending}
       onSpaceChange={onSpaceChange}
-      onOpenSettings={onToggleSettings}
+      onOpenSettings={onOpenSettings}
+      onSignOut={() => signOut.mutate()}
       pendingSyncCount={pendingSyncItems.data?.length ?? 0}
       subscriptionLabel={subscriptionTier}
     >
@@ -181,9 +195,7 @@ function AuthenticatedHome({
             onSignOut={() => signOut.mutate()}
             subscriptionTier={subscriptionTier}
           />
-        ) : null}
-
-        {activeSpace === "work" ? (
+        ) : activeSpace === "work" ? (
           <WorkClaimsSlice
             activeClaim={selectedClaim.data ?? null}
             claims={claims.data ?? []}
@@ -280,14 +292,349 @@ function SettingsPanel({
   onSignOut: () => void;
   subscriptionTier: SubscriptionTier;
 }) {
+  const profile = useUserSettingsStore((state) => state.profile);
+  const rates = useUserSettingsStore((state) => state.rates);
+  const updateProfile = useUserSettingsStore((state) => state.updateProfile);
+  const updateRates = useUserSettingsStore((state) => state.updateRates);
+  const [openSections, setOpenSections] = useState({
+    billing: false,
+    profile: true,
+    rates: true,
+    system: false
+  });
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+
+  const mealAverage = averageRate([
+    rates.mealMorningRate,
+    rates.mealNoonRate,
+    rates.mealEveningRate
+  ]);
+  const isFree = subscriptionTier === "FREE";
+
+  function toggleSection(key: keyof typeof openSections) {
+    setOpenSections((current) => ({
+      ...current,
+      [key]: !current[key]
+    }));
+  }
+
+  function showSaved(message: string) {
+    setSavedNotice(message);
+    setTimeout(() => setSavedNotice(null), 2600);
+  }
+
   return (
-    <View style={styles.settingsPanel}>
-      <Text style={styles.settingsTitle}>Profile & settings</Text>
-      <Text style={styles.settingsCopy}>
-        Account, profile, rates, biometric login, and billing entry points will
-        live here. Current local tier placeholder: {subscriptionTier}.
-      </Text>
-      <Text style={styles.settingsCopy}>Signed in as {email ?? "local user"}.</Text>
+    <View style={styles.settingsPage}>
+      <View style={styles.settingsHeader}>
+        <Text style={styles.settingsPageTitle}>Settings</Text>
+        <Text style={styles.settingsPageSub}>
+          Profile, rates, billing, and system settings used by claims and trips.
+        </Text>
+      </View>
+
+      {savedNotice ? (
+        <View style={styles.successBanner}>
+          <Text style={styles.successBannerText}>{savedNotice}</Text>
+        </View>
+      ) : null}
+
+      <SettingsAccordion
+        description="Your claimant identity and employer details used in claim headers and declarations."
+        icon="👤"
+        isOpen={openSections.profile}
+        onToggle={() => toggleSection("profile")}
+        previews={[
+          profile.displayName || "Full name",
+          profile.email || email || "Email",
+          profile.companyName || "Company name"
+        ]}
+        title="Profile"
+      >
+        <SettingsCard
+          icon="🪪"
+          sub="Company here means your employer company, not the organization or agent managing your enrolment."
+          title="Claimant Profile"
+        >
+          <SettingsTextField
+            label="Full Name"
+            onChangeText={(value) => updateProfile({ displayName: value })}
+            value={profile.displayName}
+          />
+          <SettingsTextField
+            label="Email"
+            onChangeText={(value) => updateProfile({ email: value })}
+            value={profile.email || email || ""}
+          />
+          <View style={styles.settingsTwoCol}>
+            <SettingsTextField
+              label="Department"
+              onChangeText={(value) => updateProfile({ department: value })}
+              value={profile.department}
+            />
+            <SettingsTextField
+              label="Location"
+              onChangeText={(value) => updateProfile({ location: value })}
+              value={profile.location}
+            />
+          </View>
+          <SettingsTextField
+            label="Company Name"
+            onChangeText={(value) => updateProfile({ companyName: value })}
+            value={profile.companyName}
+          />
+          <PrimarySettingsButton
+            label="Save Profile"
+            onPress={() => showSaved("Profile saved locally.")}
+          />
+        </SettingsCard>
+      </SettingsAccordion>
+
+      <SettingsAccordion
+        description="Your personal claim calculation settings, with template reference and fixed defaults."
+        icon="💸"
+        isOpen={openSections.rates}
+        onToggle={() => toggleSection("rates")}
+        previews={[
+          `Car MYR ${rates.mileageCarRate}/km · Moto MYR ${rates.mileageMotorcycleRate}/km`,
+          `Meal avg MYR ${mealAverage}`,
+          `Lodging MYR ${rates.lodgingRate}/night`,
+          `Per diem MYR ${rates.perDiemRate}/day`
+        ]}
+        title="Rates"
+      >
+        <SettingsCard
+          icon="📚"
+          sub="Company standard templates will sync from admin later. The saved personal rate is what new claims and trips refer to locally."
+          title="Rate Template Reference"
+        >
+          <View style={styles.infoBox}>
+            <Text style={styles.infoText}>{rates.templateName}</Text>
+          </View>
+        </SettingsCard>
+
+        <SettingsCard
+          icon="🧾"
+          sub="This is your own rate record for claim calculations."
+          title="Personal Rate Profile"
+        >
+          <SettingsTextField
+            label="Rate Label"
+            onChangeText={(value) => updateRates({ rateLabel: value })}
+            value={rates.rateLabel}
+          />
+          <SettingsTextField
+            label="Notes"
+            multiline
+            onChangeText={(value) => updateRates({ notes: value })}
+            value={rates.notes}
+          />
+        </SettingsCard>
+
+        <SettingsCard
+          icon="🚗"
+          sub="Users choose Car or Motorcycle when creating each trip. These rates calculate mileage claim amounts."
+          title="Mileage Rates"
+        >
+          <RateInputRow
+            label="🚗 Car rate per km"
+            onChangeText={(value) => updateRates({ mileageCarRate: numericRate(value) })}
+            suffix="/km"
+            value={rates.mileageCarRate}
+          />
+          <RateInputRow
+            label="🏍 Motorcycle rate per km"
+            onChangeText={(value) =>
+              updateRates({ mileageMotorcycleRate: numericRate(value) })
+            }
+            suffix="/km"
+            value={rates.mileageMotorcycleRate}
+          />
+          <View style={styles.infoBox}>
+            <Text style={styles.infoText}>
+              Trips refer to these rates based on vehicle type.
+            </Text>
+          </View>
+        </SettingsCard>
+
+        <SettingsCard
+          icon="🍽"
+          sub="Personal fixed-rate values when no receipt is used."
+          title="Meal Rates"
+        >
+          <RateInputRow
+            label="Morning"
+            onChangeText={(value) => updateRates({ mealMorningRate: numericRate(value) })}
+            suffix="/session"
+            value={rates.mealMorningRate}
+          />
+          <RateInputRow
+            label="Noon"
+            onChangeText={(value) => updateRates({ mealNoonRate: numericRate(value) })}
+            suffix="/session"
+            value={rates.mealNoonRate}
+          />
+          <RateInputRow
+            label="Evening"
+            onChangeText={(value) => updateRates({ mealEveningRate: numericRate(value) })}
+            suffix="/session"
+            value={rates.mealEveningRate}
+          />
+          <RateInputRow
+            label="Full Day"
+            onChangeText={(value) => updateRates({ fullDayMealRate: numericRate(value) })}
+            suffix="/day"
+            value={rates.fullDayMealRate}
+          />
+          <View style={styles.infoBox}>
+            <Text style={styles.infoText}>
+              Calculated meal average per session: MYR {mealAverage}
+            </Text>
+          </View>
+        </SettingsCard>
+
+        <View style={styles.settingsTwoCol}>
+          <SettingsCard
+            icon="🏨"
+            sub="Personal default for lodging without receipt override."
+            title="Lodging Rate"
+          >
+            <RateInputRow
+              label="Rate per night"
+              onChangeText={(value) => updateRates({ lodgingRate: numericRate(value) })}
+              suffix="/night"
+              value={rates.lodgingRate}
+            />
+          </SettingsCard>
+          <SettingsCard
+            icon="📅"
+            sub="Personal default daily travel allowance."
+            title="Per Diem Allowance"
+          >
+            <RateInputRow
+              label="Daily allowance rate"
+              onChangeText={(value) => updateRates({ perDiemRate: numericRate(value) })}
+              suffix="/day"
+              value={rates.perDiemRate}
+            />
+          </SettingsCard>
+        </View>
+
+        <View style={styles.settingsActions}>
+          <PrimarySettingsButton
+            label="Save Personal Rates"
+            onPress={() => showSaved("Personal rates saved locally.")}
+          />
+          <SecondarySettingsButton
+            label="Reset Defaults"
+            onPress={() => {
+              updateRates(defaultRates);
+              showSaved("Default rates restored.");
+            }}
+          />
+        </View>
+      </SettingsAccordion>
+
+      <SettingsAccordion
+        description="Your current plan and export access."
+        icon="💳"
+        isOpen={openSections.billing}
+        onToggle={() => toggleSection("billing")}
+        previews={[
+          isFree ? "Free plan" : `${subscriptionTier} plan`,
+          isFree ? "Exports locked on trial" : "Exports enabled"
+        ]}
+        title="Plan & Billing"
+      >
+        <SettingsCard
+          icon={isFree ? "🆓" : subscriptionTier === "PREMIUM" ? "💎" : "🚀"}
+          sub={
+            isFree
+              ? "Explore myexpensio before upgrading. Claim exports are available on Pro and Premium."
+              : "Your paid plan includes claim exports and paid-plan features."
+          }
+          title={isFree ? "Free trial" : `${subscriptionTier} plan`}
+        >
+          <View style={styles.infoBox}>
+            <Text style={styles.infoText}>
+              {isFree
+                ? "Free trial includes core tracking. Upgrade when ready for exports and paid-plan workflows."
+                : "Manage invoices, plan changes, and cancellation from billing when backend billing is connected."}
+            </Text>
+          </View>
+          <PrimarySettingsButton
+            label={isFree ? "See pricing" : "Manage billing"}
+            onPress={() => showSaved("Billing screen will connect to the sync API.")}
+          />
+        </SettingsCard>
+      </SettingsAccordion>
+
+      <SettingsAccordion
+        description="Device setup and account access controls for install, biometrics, password, and app details."
+        icon="⚙️"
+        isOpen={openSections.system}
+        onToggle={() => toggleSection("system")}
+        previews={["App Install", "Biometric Login", "Password", "About"]}
+        title="System Settings"
+      >
+        <SettingsCard
+          icon="📲"
+          sub="Install behavior will use the platform app install prompt when available."
+          title="App Install"
+        >
+          <View style={styles.infoBox}>
+            <Text style={styles.infoText}>
+              Mobile v2 is built as a native-friendly Expo app. PWA install can
+              remain a web fallback, but the mobile app should prioritize native
+              store builds.
+            </Text>
+          </View>
+        </SettingsCard>
+
+        <SettingsCard
+          icon="🔐"
+          sub="Fast local unlock after a secure session is restored."
+          title="Biometric Login"
+        >
+          <View style={styles.switchRow}>
+            <View style={styles.switchCopy}>
+              <Text style={styles.switchTitle}>Enable biometric login</Text>
+              <Text style={styles.switchSub}>
+                Use Face ID, Touch ID, or device biometrics when supported.
+              </Text>
+            </View>
+            <Switch
+              onValueChange={setBiometricEnabled}
+              value={biometricEnabled}
+            />
+          </View>
+        </SettingsCard>
+
+        <SettingsCard
+          icon="🔑"
+          sub="Password changes will be handled by auth backend once sync API is connected."
+          title="Password"
+        >
+          <SecondarySettingsButton
+            label="Change Password"
+            onPress={() => showSaved("Password change modal is queued for auth parity.")}
+          />
+        </SettingsCard>
+
+        <SettingsCard
+          icon="ℹ️"
+          sub="Application information and legal links."
+          title="About myexpensio"
+        >
+          <Text style={styles.aboutName}>myexpensio</Text>
+          <Text style={styles.aboutText}>Version 0.1.0 mobile v2</Text>
+          <Text style={styles.aboutText}>Terms of Service · Privacy Policy</Text>
+          <Text style={styles.aboutMuted}>
+            Copyright © EffortEdutech 2026. All rights reserved.
+          </Text>
+        </SettingsCard>
+      </SettingsAccordion>
+
       <Pressable
         accessibilityRole="button"
         disabled={isSigningOut}
@@ -303,6 +650,187 @@ function SettingsPanel({
       </Pressable>
     </View>
   );
+}
+
+function SettingsAccordion({
+  children,
+  description,
+  icon,
+  isOpen,
+  onToggle,
+  previews,
+  title
+}: {
+  children: ReactNode;
+  description: string;
+  icon: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  previews: string[];
+  title: string;
+}) {
+  return (
+    <View style={styles.settingsAccordion}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onToggle}
+        style={styles.accordionButton}
+      >
+        <View style={styles.accordionLeft}>
+          <View style={styles.accordionTitleRow}>
+            <Text style={styles.accordionIcon}>{icon}</Text>
+            <Text style={styles.accordionTitle}>{title}</Text>
+          </View>
+          <Text style={styles.accordionDesc}>{description}</Text>
+          {!isOpen ? (
+            <View style={styles.previewWrap}>
+              {previews.map((item) => (
+                <Text key={item} numberOfLines={1} style={styles.previewPill}>
+                  {item}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+        </View>
+        <Text style={styles.accordionChevron}>{isOpen ? "⌄" : "›"}</Text>
+      </Pressable>
+      {isOpen ? <View style={styles.accordionBody}>{children}</View> : null}
+    </View>
+  );
+}
+
+function SettingsCard({
+  children,
+  icon,
+  sub,
+  title
+}: {
+  children: ReactNode;
+  icon: string;
+  sub: string;
+  title: string;
+}) {
+  return (
+    <View style={styles.settingsCard}>
+      <View style={styles.cardHead}>
+        <Text style={styles.cardIcon}>{icon}</Text>
+        <View style={styles.cardText}>
+          <Text style={styles.cardTitle}>{title}</Text>
+          <Text style={styles.cardSub}>{sub}</Text>
+        </View>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function SettingsTextField({
+  label,
+  multiline,
+  onChangeText,
+  value
+}: {
+  label: string;
+  multiline?: boolean;
+  onChangeText: (value: string) => void;
+  value: string;
+}) {
+  return (
+    <View style={styles.settingsField}>
+      <Text style={styles.settingsLabel}>{label}</Text>
+      <TextInput
+        multiline={multiline}
+        onChangeText={onChangeText}
+        placeholderTextColor="#94a3b8"
+        style={[styles.settingsInput, multiline ? styles.settingsTextarea : null]}
+        value={value}
+      />
+    </View>
+  );
+}
+
+function RateInputRow({
+  label,
+  onChangeText,
+  suffix,
+  value
+}: {
+  label: string;
+  onChangeText: (value: string) => void;
+  suffix: string;
+  value: string;
+}) {
+  return (
+    <View style={styles.rateRow}>
+      <Text style={styles.rateLabel}>{label}</Text>
+      <View style={styles.rateRight}>
+        <Text style={styles.ratePrefix}>MYR</Text>
+        <TextInput
+          keyboardType="decimal-pad"
+          onChangeText={onChangeText}
+          style={styles.rateInput}
+          value={value}
+        />
+        <Text style={styles.rateSuffix}>{suffix}</Text>
+      </View>
+    </View>
+  );
+}
+
+function PrimarySettingsButton({
+  label,
+  onPress
+}: {
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.settingsPrimaryButton,
+        pressed ? styles.primaryButtonPressed : null
+      ]}
+    >
+      <Text style={styles.settingsPrimaryText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function SecondarySettingsButton({
+  label,
+  onPress
+}: {
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.settingsSecondaryButton,
+        pressed ? styles.primaryButtonPressed : null
+      ]}
+    >
+      <Text style={styles.settingsSecondaryText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function numericRate(value: string) {
+  if (value === "" || /^\d*\.?\d*$/.test(value)) {
+    return value;
+  }
+
+  return value.replace(/[^\d.]/g, "");
+}
+
+function averageRate(values: string[]) {
+  const total = values.reduce((sum, value) => sum + (Number(value) || 0), 0);
+
+  return (total / values.length).toFixed(2);
 }
 
 type WorkClaimsSliceProps = {
@@ -1135,23 +1663,283 @@ const styles = StyleSheet.create({
     fontSize: typography.body,
     lineHeight: 22
   },
-  settingsPanel: {
-    backgroundColor: "#eff6ff",
-    borderColor: "#bfdbfe",
+  settingsPage: {
+    gap: spacing.md,
+    paddingBottom: spacing.xl
+  },
+  settingsHeader: {
+    gap: spacing.xs
+  },
+  settingsPageTitle: {
+    color: colors.text,
+    fontSize: typography.title,
+    fontWeight: "900"
+  },
+  settingsPageSub: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    lineHeight: 20
+  },
+  successBanner: {
+    backgroundColor: "#f0fdf4",
+    borderColor: "#bbf7d0",
     borderRadius: 8,
     borderWidth: 1,
-    gap: spacing.sm,
     padding: spacing.md
   },
-  settingsTitle: {
-    color: "#1e3a8a",
-    fontSize: typography.body,
+  successBannerText: {
+    color: "#15803d",
+    fontSize: typography.caption,
     fontWeight: "800"
   },
-  settingsCopy: {
-    color: "#1d4ed8",
+  settingsAccordion: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: "hidden"
+  },
+  accordionButton: {
+    alignItems: "flex-start",
+    backgroundColor: colors.surface,
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+    padding: spacing.md
+  },
+  accordionLeft: {
+    flex: 1,
+    gap: spacing.xs
+  },
+  accordionTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  accordionIcon: {
+    fontSize: 20,
+    lineHeight: 24
+  },
+  accordionTitle: {
+    color: colors.text,
     fontSize: typography.body,
-    lineHeight: 22
+    fontWeight: "900"
+  },
+  accordionDesc: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    lineHeight: 18
+  },
+  accordionChevron: {
+    color: colors.muted,
+    fontSize: 22,
+    fontWeight: "900",
+    lineHeight: 24
+  },
+  accordionBody: {
+    backgroundColor: "#f8fafc",
+    borderTopColor: "#f1f5f9",
+    borderTopWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md
+  },
+  previewWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    marginTop: spacing.xs
+  },
+  previewPill: {
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    color: "#475569",
+    fontSize: 11,
+    fontWeight: "700",
+    maxWidth: "100%",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5
+  },
+  settingsCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md
+  },
+  cardHead: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  cardIcon: {
+    fontSize: 20,
+    width: 28
+  },
+  cardText: {
+    flex: 1,
+    gap: 2
+  },
+  cardTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  cardSub: {
+    color: "#94a3b8",
+    fontSize: 11,
+    lineHeight: 16
+  },
+  settingsField: {
+    flex: 1,
+    gap: 6
+  },
+  settingsLabel: {
+    color: "#374151",
+    fontSize: typography.caption,
+    fontWeight: "800"
+  },
+  settingsInput: {
+    backgroundColor: colors.surface,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    borderWidth: 1,
+    color: colors.text,
+    fontSize: typography.body,
+    minHeight: 44,
+    paddingHorizontal: spacing.md
+  },
+  settingsTextarea: {
+    minHeight: 86,
+    paddingTop: spacing.sm,
+    textAlignVertical: "top"
+  },
+  settingsTwoCol: {
+    gap: spacing.md
+  },
+  infoBox: {
+    backgroundColor: "#f0f9ff",
+    borderColor: "#bae6fd",
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: spacing.md
+  },
+  infoText: {
+    color: "#0369a1",
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 18
+  },
+  rateRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between"
+  },
+  rateLabel: {
+    color: "#374151",
+    flex: 1,
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  rateRight: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6
+  },
+  ratePrefix: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "800"
+  },
+  rateInput: {
+    backgroundColor: colors.surface,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    borderWidth: 1,
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900",
+    minHeight: 38,
+    paddingHorizontal: spacing.sm,
+    textAlign: "right",
+    width: 88
+  },
+  rateSuffix: {
+    color: "#94a3b8",
+    fontSize: 11,
+    fontWeight: "700",
+    width: 58
+  },
+  settingsActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm
+  },
+  settingsPrimaryButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: spacing.lg
+  },
+  settingsPrimaryText: {
+    color: colors.onPrimary,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  settingsSecondaryButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: spacing.lg
+  },
+  settingsSecondaryText: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  switchRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between"
+  },
+  switchCopy: {
+    flex: 1,
+    gap: 3
+  },
+  switchTitle: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  switchSub: {
+    color: colors.muted,
+    fontSize: 11,
+    lineHeight: 16
+  },
+  aboutName: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  aboutText: {
+    color: "#475569",
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  aboutMuted: {
+    color: "#94a3b8",
+    fontSize: 11,
+    lineHeight: 16
   },
   signOutButton: {
     alignItems: "center",

@@ -8,25 +8,36 @@ import { colors, spacing, typography } from "@/theme/tokens";
 
 type AppShellProps = PropsWithChildren<{
   activeSpace: AppSpace;
+  displayName: string;
+  email: string;
+  isSigningOut: boolean;
   pendingSyncCount: number;
   onSpaceChange: (space: AppSpace) => void;
   onOpenSettings: () => void;
+  onSignOut: () => void;
   subscriptionLabel: string;
 }>;
 
 export function AppShell({
   activeSpace,
   children,
+  displayName,
+  email,
+  isSigningOut,
   onSpaceChange,
   onOpenSettings,
+  onSignOut,
   pendingSyncCount,
   subscriptionLabel
 }: AppShellProps) {
   const [spaceMenuOpen, setSpaceMenuOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const activeSpaceMeta =
     appSpaces.find((space) => space.id === activeSpace) ?? appSpaces[0];
   const footerTabs = useMemo(() => getFooterTabs(activeSpace), [activeSpace]);
   const accent = getSpaceAccent(activeSpace);
+  const avatarLabel = (displayName || email || "U").slice(0, 1).toUpperCase();
+  const subLabel = subscriptionLabel === "FREE" ? "Trial" : subscriptionLabel;
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -77,11 +88,73 @@ export function AppShell({
         <Pressable
           accessibilityLabel="Profile and settings"
           accessibilityRole="button"
-          onPress={onOpenSettings}
-          style={styles.gearButton}
+          onPress={() => {
+            setProfileMenuOpen((open) => !open);
+            setSpaceMenuOpen(false);
+          }}
+          style={[
+            styles.gearButton,
+            profileMenuOpen ? styles.gearButtonOpen : null
+          ]}
         >
           <Text style={styles.gearText}>⚙</Text>
         </Pressable>
+        {profileMenuOpen ? (
+          <View style={styles.profileMenu}>
+            <View style={styles.userBlock}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{avatarLabel}</Text>
+              </View>
+              <View style={styles.userInfo}>
+                <Text numberOfLines={1} style={styles.displayName}>
+                  {displayName || email.split("@")[0] || "User"}
+                </Text>
+                <Text numberOfLines={1} style={styles.emailText}>
+                  {email || "local user"}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.subRow}>
+              <Text
+                style={[
+                  styles.subBadge,
+                  subscriptionLabel === "FREE"
+                    ? styles.subBadgeFree
+                    : styles.subBadgePaid
+                ]}
+              >
+                {subLabel}
+              </Text>
+            </View>
+            <View style={styles.divider} />
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setProfileMenuOpen(false);
+                onOpenSettings();
+              }}
+              style={styles.profileMenuItem}
+            >
+              <Text style={styles.profileMenuIcon}>⚙️</Text>
+              <Text style={styles.profileMenuText}>Settings</Text>
+            </Pressable>
+            <View style={styles.divider} />
+            <Pressable
+              accessibilityRole="button"
+              disabled={isSigningOut}
+              onPress={() => {
+                setProfileMenuOpen(false);
+                onSignOut();
+              }}
+              style={styles.signOutMenuItem}
+            >
+              <Text style={styles.profileMenuIcon}>🚪</Text>
+              <Text style={styles.signOutMenuText}>
+                {isSigningOut ? "Signing Out..." : "Sign Out"}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.statusBar}>
@@ -346,10 +419,113 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 34
   },
+  gearButtonOpen: {
+    backgroundColor: "#f1f5f9"
+  },
   gearText: {
     color: colors.text,
     fontSize: 20,
     fontWeight: "800"
+  },
+  profileMenu: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    minWidth: 240,
+    overflow: "hidden",
+    position: "absolute",
+    right: spacing.md,
+    top: 46,
+    zIndex: 80
+  },
+  userBlock: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+    paddingTop: spacing.md
+  },
+  avatar: {
+    alignItems: "center",
+    backgroundColor: colors.text,
+    borderRadius: 18,
+    height: 36,
+    justifyContent: "center",
+    width: 36
+  },
+  avatarText: {
+    color: colors.surface,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  userInfo: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0
+  },
+  displayName: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  emailText: {
+    color: "#94a3b8",
+    fontSize: 11,
+    fontWeight: "700"
+  },
+  subRow: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md
+  },
+  subBadge: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: "900",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4
+  },
+  subBadgeFree: {
+    backgroundColor: "#f1f5f9",
+    color: "#475569"
+  },
+  subBadgePaid: {
+    backgroundColor: "#fef9c3",
+    color: "#854d0e"
+  },
+  divider: {
+    backgroundColor: "#f1f5f9",
+    height: 1
+  },
+  profileMenuItem: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 46,
+    paddingHorizontal: spacing.md
+  },
+  signOutMenuItem: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 46,
+    paddingHorizontal: spacing.md
+  },
+  profileMenuIcon: {
+    fontSize: 18,
+    width: 24
+  },
+  profileMenuText: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "700"
+  },
+  signOutMenuText: {
+    color: colors.danger,
+    fontSize: typography.body,
+    fontWeight: "700"
   },
   statusBar: {
     alignItems: "center",
