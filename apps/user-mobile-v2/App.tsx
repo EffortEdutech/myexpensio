@@ -213,11 +213,11 @@ function AuthenticatedHome({
         ) : null}
 
         <View style={styles.header}>
-          <Text style={styles.eyebrow}>Local-first rewrite</Text>
-          <Text style={styles.title}>MyExpensio Mobile v2</Text>
+          <Text style={styles.eyebrow}>Work Claims</Text>
+          <Text style={styles.title}>Claims</Text>
           <Text style={styles.subtitle}>
-            Sprint 1 slice: create claims and expense drafts locally, queue them
-            for sync, and keep the current app untouched.
+            Create, edit, and submit claim drafts. Changes are saved locally and
+            queued for sync.
           </Text>
         </View>
 
@@ -696,8 +696,8 @@ function DeferredSpace({ spaceName }: { spaceName: string }) {
     <View style={styles.deferredState}>
       <Text style={styles.deferredTitle}>{spaceName}</Text>
       <Text style={styles.deferredCopy}>
-        This space is mapped in the full delivery roadmap. Sprint 1 keeps the
-        navigation slot ready while the Work Claims local-first slice is built.
+        This space is available from the workspace switcher. Its full workflow
+        will follow the established MyExpensio mobile navigation pattern.
       </Text>
     </View>
   );

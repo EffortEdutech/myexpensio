@@ -1,4 +1,5 @@
 import type { PropsWithChildren } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 
 import { appSpaces } from "@/features/shell/spaceConfig";
@@ -21,69 +22,222 @@ export function AppShell({
   pendingSyncCount,
   subscriptionLabel
 }: AppShellProps) {
+  const [spaceMenuOpen, setSpaceMenuOpen] = useState(false);
   const activeSpaceMeta =
     appSpaces.find((space) => space.id === activeSpace) ?? appSpaces[0];
+  const footerTabs = useMemo(() => getFooterTabs(activeSpace), [activeSpace]);
+  const accent = getSpaceAccent(activeSpace);
 
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.header}>
-        <View style={styles.brandGroup}>
-          <Text style={styles.brand}>myexpensio</Text>
-          <Text style={styles.spaceLabel}>{activeSpaceMeta.label}</Text>
-        </View>
-        <View style={styles.headerBadges}>
-          <View style={styles.subscriptionBadge}>
-            <Text style={styles.subscriptionText}>{subscriptionLabel}</Text>
-          </View>
+        <Text style={styles.brand}>myexpensio</Text>
+        <View style={styles.spaceSwitcher}>
           <Pressable
             accessibilityRole="button"
-            onPress={onOpenSettings}
-            style={styles.settingsButton}
+            onPress={() => setSpaceMenuOpen((open) => !open)}
+            style={styles.spacePill}
           >
-            <Text style={styles.settingsText}>Settings</Text>
+            <Text style={styles.spaceIcon}>{activeSpaceMeta.icon}</Text>
+            <Text style={styles.spaceLabel}>{activeSpaceMeta.label}</Text>
+            <Text style={styles.chevron}>{spaceMenuOpen ? "^" : "v"}</Text>
           </Pressable>
-          <View
+          {spaceMenuOpen ? (
+            <View style={styles.spaceMenu}>
+              {appSpaces.map((space) => {
+                const active = space.id === activeSpace;
+
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    key={space.id}
+                    onPress={() => {
+                      setSpaceMenuOpen(false);
+                      onSpaceChange(space.id);
+                    }}
+                    style={[
+                      styles.spaceOption,
+                      active ? styles.spaceOptionActive : null
+                    ]}
+                  >
+                    <Text style={styles.spaceOptionIcon}>{space.icon}</Text>
+                    <View style={styles.spaceOptionText}>
+                      <Text style={styles.spaceOptionLabel}>{space.label}</Text>
+                      {space.premium ? (
+                        <Text style={styles.premiumText}>Premium</Text>
+                      ) : null}
+                    </View>
+                    {active ? <Text style={styles.checkMark}>✓</Text> : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
+        <Pressable
+          accessibilityLabel="Profile and settings"
+          accessibilityRole="button"
+          onPress={onOpenSettings}
+          style={styles.gearButton}
+        >
+          <Text style={styles.gearText}>⚙</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.statusBar}>
+        <View style={styles.subscriptionBadge}>
+          <Text style={styles.subscriptionText}>{subscriptionLabel}</Text>
+        </View>
+        <View
+          style={[
+            styles.syncBadge,
+            pendingSyncCount > 0 ? styles.syncBadgePending : null
+          ]}
+        >
+          <Text
             style={[
-              styles.syncBadge,
-              pendingSyncCount > 0 ? styles.syncBadgePending : null
+              styles.syncText,
+              pendingSyncCount > 0 ? styles.syncTextPending : null
             ]}
           >
-            <Text
-              style={[
-                styles.syncText,
-                pendingSyncCount > 0 ? styles.syncTextPending : null
-              ]}
-            >
-              {pendingSyncCount > 0 ? `${pendingSyncCount} pending` : "Synced"}
-            </Text>
-          </View>
+            {pendingSyncCount > 0 ? `${pendingSyncCount} pending` : "Synced"}
+          </Text>
         </View>
       </View>
 
       <View style={styles.content}>{children}</View>
 
       <View style={styles.nav}>
-        {appSpaces.map((space) => {
-          const active = space.id === activeSpace;
+        <View style={[styles.accentBar, { backgroundColor: accent }]} />
+        <Text style={[styles.footerSpaceLabel, { color: accent }]}>
+          {activeSpaceMeta.label}
+        </Text>
+        <View style={styles.navTabs}>
+          {footerTabs.map((tab) => {
+            const active = tab.active;
 
-          return (
-            <Pressable
-              accessibilityRole="tab"
-              accessibilityState={{ selected: active }}
-              key={space.id}
-              onPress={() => onSpaceChange(space.id)}
-              style={[styles.navTab, active ? styles.navTabActive : null]}
-            >
-              <Text style={[styles.navLabel, active ? styles.navLabelActive : null]}>
-                {space.shortLabel}
-              </Text>
-              {active ? <View style={styles.navDot} /> : null}
-            </Pressable>
-          );
-        })}
+            return (
+              <Pressable
+                accessibilityRole="tab"
+                accessibilityState={{ selected: active }}
+                disabled={tab.disabled}
+                key={tab.key}
+                onPress={() => {
+                  if (tab.space) {
+                    onSpaceChange(tab.space);
+                  }
+                }}
+                style={styles.navTab}
+              >
+                {tab.primary ? (
+                  <View
+                    style={[
+                      styles.primaryNavIcon,
+                      { backgroundColor: accent, shadowColor: accent }
+                    ]}
+                  >
+                    <Text style={styles.primaryNavIconText}>{tab.icon}</Text>
+                  </View>
+                ) : (
+                  <View
+                    style={[
+                      styles.navIconWrap,
+                      active ? { backgroundColor: getSpaceAccentBg(activeSpace) } : null
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.navIcon,
+                        !active || tab.disabled ? styles.navIconMuted : null
+                      ]}
+                    >
+                      {tab.icon}
+                    </Text>
+                  </View>
+                )}
+                <Text
+                  style={[
+                    styles.navLabel,
+                    active ? { color: accent, fontWeight: "800" } : null,
+                    tab.disabled ? styles.navLabelDisabled : null
+                  ]}
+                >
+                  {tab.label}
+                </Text>
+                {active && !tab.primary ? (
+                  <View style={[styles.navDot, { backgroundColor: accent }]} />
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
     </SafeAreaView>
   );
+}
+
+type FooterTab = {
+  active: boolean;
+  disabled?: boolean;
+  icon: string;
+  key: string;
+  label: string;
+  primary?: boolean;
+  space?: AppSpace;
+};
+
+function getFooterTabs(activeSpace: AppSpace): FooterTab[] {
+  if (activeSpace === "personal") {
+    return [
+      { active: true, icon: "⌂", key: "personal-home", label: "Home", space: "personal" },
+      { active: false, icon: "$", key: "personal-expenses", label: "Expenses" },
+      { active: false, icon: "+", key: "personal-add", label: "Add", primary: true },
+      { active: false, icon: "□", key: "personal-bills", label: "Bills" },
+      { active: false, icon: "%", key: "personal-tax", label: "Tax" }
+    ];
+  }
+
+  if (activeSpace === "business") {
+    return [
+      { active: true, icon: "▦", key: "business-dashboard", label: "Dashboard", space: "business" },
+      { active: false, icon: "$", key: "business-income", label: "Income" },
+      { active: false, icon: "+", key: "business-add", label: "Add", primary: true },
+      { active: false, icon: "□", key: "business-expenses", label: "Expenses" },
+      { active: false, icon: "↗", key: "business-reports", label: "Reports" }
+    ];
+  }
+
+  return [
+    { active: false, icon: "⌂", key: "work-home", label: "Home", space: "work" },
+    { active: false, icon: "⌖", key: "work-trips", label: "Trips" },
+    { active: true, icon: "□", key: "work-claims", label: "Claims", primary: true, space: "work" },
+    { active: false, icon: "$", key: "work-transactions", label: "TNG" },
+    { active: false, icon: "↥", key: "work-export", label: "Export" }
+  ];
+}
+
+function getSpaceAccent(space: AppSpace) {
+  if (space === "personal") {
+    return "#4f46e5";
+  }
+
+  if (space === "business") {
+    return "#16a34a";
+  }
+
+  return "#0f172a";
+}
+
+function getSpaceAccentBg(space: AppSpace) {
+  if (space === "personal") {
+    return "#eef2ff";
+  }
+
+  if (space === "business") {
+    return "#f0fdf4";
+  }
+
+  return "#f1f5f9";
 }
 
 const styles = StyleSheet.create({
@@ -98,25 +252,115 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     flexDirection: "row",
     gap: spacing.md,
-    minHeight: 58,
-    paddingHorizontal: spacing.lg
-  },
-  brandGroup: {
-    flex: 1
+    minHeight: 52,
+    paddingHorizontal: spacing.md,
+    zIndex: 20
   },
   brand: {
     color: colors.text,
     fontSize: typography.body,
+    fontWeight: "800",
+    letterSpacing: -0.5,
+    flex: 1
+  },
+  spaceSwitcher: {
+    position: "relative"
+  },
+  spacePill: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    minHeight: 30,
+    paddingHorizontal: spacing.sm
+  },
+  spaceIcon: {
+    color: colors.text,
+    fontSize: typography.caption,
     fontWeight: "800"
   },
   spaceLabel: {
-    color: colors.muted,
+    color: colors.text,
     fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  chevron: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "800"
+  },
+  spaceMenu: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    minWidth: 210,
+    padding: 4,
+    position: "absolute",
+    right: 0,
+    top: 38,
+    zIndex: 50
+  },
+  spaceOption: {
+    alignItems: "center",
+    borderRadius: 8,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm
+  },
+  spaceOptionActive: {
+    backgroundColor: "#f1f5f9"
+  },
+  spaceOptionIcon: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "800"
+  },
+  spaceOptionText: {
+    flex: 1
+  },
+  spaceOptionLabel: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  premiumText: {
+    color: "#7c3aed",
+    fontSize: 10,
+    fontWeight: "800",
     marginTop: 2
   },
-  headerBadges: {
-    alignItems: "flex-end",
-    gap: spacing.xs
+  checkMark: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "800"
+  },
+  gearButton: {
+    alignItems: "center",
+    borderRadius: 8,
+    minHeight: 34,
+    justifyContent: "center",
+    width: 34
+  },
+  gearText: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: "800"
+  },
+  statusBar: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: spacing.xs,
+    justifyContent: "flex-end",
+    minHeight: 30,
+    paddingHorizontal: spacing.md
   },
   subscriptionBadge: {
     backgroundColor: "#f1f5f9",
@@ -158,38 +402,87 @@ const styles = StyleSheet.create({
     color: "#92400e"
   },
   content: {
-    flex: 1
+    flex: 1,
+    paddingBottom: 70
   },
   nav: {
     backgroundColor: colors.surface,
     borderTopColor: colors.border,
     borderTopWidth: 1,
-    flexDirection: "row",
-    minHeight: 62,
+    minHeight: 66,
     paddingBottom: spacing.xs
+  },
+  accentBar: {
+    height: 3,
+    width: "100%"
+  },
+  footerSpaceLabel: {
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0,
+    opacity: 0.72,
+    paddingRight: spacing.md,
+    paddingTop: 3,
+    textAlign: "right",
+    textTransform: "uppercase"
+  },
+  navTabs: {
+    alignItems: "flex-end",
+    flexDirection: "row",
+    height: 52
   },
   navTab: {
     alignItems: "center",
     flex: 1,
-    justifyContent: "center",
+    gap: 2,
+    justifyContent: "flex-end",
+    minWidth: 0,
+    paddingBottom: 7,
     position: "relative"
   },
-  navTabActive: {
-    backgroundColor: "#f8fafc"
+  navIconWrap: {
+    alignItems: "center",
+    borderRadius: 8,
+    height: 28,
+    justifyContent: "center",
+    width: 36
+  },
+  navIcon: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "800"
+  },
+  navIconMuted: {
+    color: "#94a3b8"
+  },
+  primaryNavIcon: {
+    alignItems: "center",
+    borderRadius: 22,
+    height: 44,
+    justifyContent: "center",
+    marginBottom: 2,
+    top: -8,
+    width: 44
+  },
+  primaryNavIconText: {
+    color: colors.surface,
+    fontSize: 24,
+    fontWeight: "700",
+    lineHeight: 26
   },
   navLabel: {
     color: colors.muted,
-    fontSize: typography.caption,
+    fontSize: 10,
     fontWeight: "700"
   },
-  navLabelActive: {
-    color: colors.primary
+  navLabelDisabled: {
+    color: "#cbd5e1"
   },
   navDot: {
-    backgroundColor: colors.primary,
     borderRadius: 2,
     height: 4,
-    marginTop: spacing.xs,
+    position: "absolute",
+    top: 4,
     width: 4
   }
 });
