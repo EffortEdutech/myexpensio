@@ -43,6 +43,7 @@ import type {
 } from "@/features/claims/types";
 import { useCreateBlankClaimDraft } from "@/features/claims/hooks/useCreateClaimWithItem";
 import { useReceiptUploadSummary } from "@/features/receipts/hooks/useReceiptUploadSummary";
+import type { LocalReceiptFile } from "@/features/receipts/types";
 import { AppShell } from "@/features/shell/components/AppShell";
 import type { WorkTab } from "@/features/shell/components/AppShell";
 import type { AppSpace } from "@/features/shell/types";
@@ -241,8 +242,13 @@ function AuthenticatedHome({
               selectedClaim.isLoading || selectedClaimItems.isLoading
             }
             isLoadingClaims={claims.isLoading}
-            onAttachReceiptToItem={(item) =>
-              attachReceiptMetadata.mutate(item.id)
+            onAttachReceiptToItem={(item, receipt) =>
+              attachReceiptMetadata.mutate({
+                fileSize: receipt.fileSize,
+                itemId: item.id,
+                localUri: receipt.localUri,
+                mimeType: receipt.mimeType
+              })
             }
             onBackToClaims={() => setSelectedClaimId(null)}
             onCloseNewClaim={() => setNewClaimOpen(false)}
@@ -251,12 +257,20 @@ function AuthenticatedHome({
               setNewClaimOpen(false);
               setSelectedClaimId(result.claim.id);
             }}
-            onCreateClaimItem={(claim, input) => {
-              createClaimItem.mutate({
+            onCreateClaimItem={async (claim, input) => {
+              const item = await createClaimItem.mutateAsync({
                 claimId: claim.id,
                 currency: claim.currency,
                 ...input
               });
+              if (input.receipt) {
+                await attachReceiptMetadata.mutateAsync({
+                  fileSize: input.receipt.fileSize,
+                  itemId: item.id,
+                  localUri: input.receipt.localUri,
+                  mimeType: input.receipt.mimeType
+                });
+              }
               setSelectedClaimId(claim.id);
             }}
             onDeleteClaimItem={(item) => deleteClaimItem.mutate(item.id)}
@@ -273,12 +287,20 @@ function AuthenticatedHome({
                 ...input
               })
             }
-            onUpdateClaimItem={(item, input) =>
-              updateClaimItem.mutate({
+            onUpdateClaimItem={async (item, input) => {
+              await updateClaimItem.mutateAsync({
                 itemId: item.id,
                 ...input
-              })
-            }
+              });
+              if (input.receipt) {
+                await attachReceiptMetadata.mutateAsync({
+                  fileSize: input.receipt.fileSize,
+                  itemId: item.id,
+                  localUri: input.receipt.localUri,
+                  mimeType: input.receipt.mimeType
+                });
+              }
+            }}
             pendingSyncCount={pendingSyncItems.data?.length ?? 0}
             showNewClaimModal={newClaimOpen}
             selectedClaimItems={selectedClaimItems.data ?? []}
@@ -906,7 +928,7 @@ type WorkClaimsSliceProps = {
   isCreatingBlankClaim: boolean;
   isLoadingClaimDetail: boolean;
   isLoadingClaims: boolean;
-  onAttachReceiptToItem: (item: ClaimItemDraft) => void;
+  onAttachReceiptToItem: (item: ClaimItemDraft, receipt: LocalReceiptFile) => void;
   onBackToClaims: () => void;
   onCloseNewClaim: () => void;
   onCreateBlankClaim: (input: CreateClaimDraftInput) => Promise<void>;
@@ -916,10 +938,11 @@ type WorkClaimsSliceProps = {
       amountCents: number;
       itemDate: string;
       notes: string | null;
+      receipt?: LocalReceiptFile | null;
       title: string;
       type: ClaimItemType;
     }
-  ) => void;
+  ) => Promise<void>;
   onDeleteClaimItem: (item: ClaimItemDraft) => void;
   onDeleteClaim: (claim: ClaimDraft) => Promise<void>;
   onOpenClaim: (claim: ClaimDraft) => void;
@@ -939,10 +962,12 @@ type WorkClaimsSliceProps = {
       amountCents: number;
       itemDate: string;
       notes: string | null;
+      receipt?: LocalReceiptFile | null;
+      receiptId?: string | null;
       title: string;
       type: ClaimItemType;
     }
-  ) => void;
+  ) => Promise<void>;
   pendingSyncCount: number;
   showNewClaimModal: boolean;
   selectedClaimItems: ClaimItemDraft[];

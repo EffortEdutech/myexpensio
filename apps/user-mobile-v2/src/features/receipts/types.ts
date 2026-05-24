@@ -27,3 +27,11 @@ export type CreateReceiptDraftInput = {
   fileSize?: number | null;
 };
 
+export type LocalReceiptFile = {
+  fileSize: number | null;
+  localUri: string;
+  mimeType: string | null;
+  name: string;
+  source: "camera" | "gallery";
+};
+

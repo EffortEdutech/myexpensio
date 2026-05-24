@@ -87,6 +87,7 @@ export type UpdateClaimItemDraftInput = {
   itemDate?: string;
   itemId: string;
   notes?: string | null;
+  receiptId?: string | null;
   title?: string;
   type?: ClaimItemType;
 };

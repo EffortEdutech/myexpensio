@@ -18,6 +18,7 @@ import type {
   ClaimItemDraft,
   ClaimItemType
 } from "@/features/claims/types";
+import type { LocalReceiptFile } from "@/features/receipts/types";
 import { colors, spacing, typography } from "@/theme/tokens";
 
 type ClaimDetailProps = {
@@ -28,10 +29,11 @@ type ClaimDetailProps = {
     amountCents: number;
     itemDate: string;
     notes: string | null;
+    receipt?: LocalReceiptFile | null;
     title: string;
     type: ClaimItemType;
   }) => void;
-  onAttachReceipt: (item: ClaimItemDraft) => void;
+  onAttachReceipt: (item: ClaimItemDraft, receipt: LocalReceiptFile) => void;
   onBack: () => void;
   onDeleteClaim: () => void;
   onDeleteItem: (item: ClaimItemDraft) => void;
@@ -47,6 +49,8 @@ type ClaimDetailProps = {
       amountCents: number;
       itemDate: string;
       notes: string | null;
+      receipt?: LocalReceiptFile | null;
+      receiptId?: string | null;
       title: string;
       type: ClaimItemType;
     }
@@ -95,6 +99,7 @@ export function ClaimDetail({
   isLoading,
   items,
   onAddItem,
+  onAttachReceipt,
   onBack,
   onDeleteClaim,
   onDeleteItem,
@@ -232,6 +237,7 @@ export function ClaimDetail({
                 disabled={!isDraft}
                 item={item}
                 key={item.id}
+                onAttachReceipt={(receipt) => onAttachReceipt(item, receipt)}
                 onEdit={() => setEditingItem(item)}
                 onDelete={() =>
                   confirmAction("Delete item?", "Remove this item from the claim.", () =>
@@ -327,11 +333,13 @@ export function ClaimDetail({
 function ClaimItemRow({
   disabled,
   item,
+  onAttachReceipt,
   onEdit,
   onDelete
 }: {
   disabled: boolean;
   item: ClaimItemDraft;
+  onAttachReceipt: (receipt: LocalReceiptFile) => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -346,11 +354,30 @@ function ClaimItemRow({
       <View style={styles.itemBody}>
         <Text style={styles.itemType}>{meta.label}</Text>
         <Text style={styles.itemTitle}>{item.title}</Text>
+        <Text style={item.receiptId ? styles.receiptStatusAttached : styles.receiptStatusMissing}>
+          {item.receiptId ? "Receipt attached" : "No receipt"}
+        </Text>
       </View>
       <View style={styles.itemAmountCol}>
         <Text style={styles.itemAmount}>
           {formatMoney(item.amountCents, item.currency)}
         </Text>
+        <Pressable
+          accessibilityRole="button"
+          disabled={disabled}
+          onPress={() =>
+            void openLocalReceiptPicker("gallery").then((receipt) => {
+              if (receipt) {
+                onAttachReceipt(receipt);
+              }
+            })
+          }
+          style={styles.receiptChipButton}
+        >
+          <Text style={styles.receiptChipText}>
+            {item.receiptId ? "Replace" : "Receipt"}
+          </Text>
+        </Pressable>
         <Pressable
           accessibilityRole="button"
           disabled={disabled}
@@ -382,6 +409,7 @@ function AddClaimItemModal({
     amountCents: number;
     itemDate: string;
     notes: string | null;
+    receipt?: LocalReceiptFile | null;
     title: string;
     type: ClaimItemType;
   }) => void;
@@ -393,6 +421,7 @@ function AddClaimItemModal({
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
   const [paidViaTng, setPaidViaTng] = useState(false);
+  const [receipt, setReceipt] = useState<LocalReceiptFile | null>(null);
 
   if (!kind) {
     return null;
@@ -405,6 +434,7 @@ function AddClaimItemModal({
       amountCents: moneyToCents(amount),
       itemDate: date,
       notes: notes.trim() || null,
+      receipt,
       title: description.trim() || meta.defaultTitle,
       type: meta.type
     });
@@ -412,6 +442,7 @@ function AddClaimItemModal({
     setDescription("");
     setNotes("");
     setPaidViaTng(false);
+    setReceipt(null);
     onClose();
   }
 
@@ -486,6 +517,7 @@ function AddClaimItemModal({
 
             <View style={styles.field}>
               <Text style={styles.label}>Receipt (optional)</Text>
+              <ReceiptCaptureField onChange={setReceipt} value={receipt} />
               <ReceiptChoice
                 icon="📷"
                 title="Scan Document"
@@ -530,6 +562,8 @@ function EditClaimItemModal({
       amountCents: number;
       itemDate: string;
       notes: string | null;
+      receipt?: LocalReceiptFile | null;
+      receiptId?: string | null;
       title: string;
       type: ClaimItemType;
     }
@@ -539,6 +573,7 @@ function EditClaimItemModal({
   const [amount, setAmount] = useState("0.00");
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
+  const [receipt, setReceipt] = useState<LocalReceiptFile | null>(null);
 
   useMemo(() => {
     if (!item) {
@@ -549,6 +584,7 @@ function EditClaimItemModal({
     setAmount((item.amountCents / 100).toFixed(2));
     setTitle(item.title);
     setNotes(item.notes ?? "");
+    setReceipt(null);
   }, [item?.id]);
 
   if (!item) {
@@ -575,6 +611,38 @@ function EditClaimItemModal({
             />
             <Field label="Description" onChangeText={setTitle} value={title} />
             <Field label="Notes" onChangeText={setNotes} value={notes} />
+            <View style={styles.field}>
+              <Text style={styles.label}>Receipt</Text>
+              {item.receiptId && !receipt ? (
+                <View style={styles.receiptAttached}>
+                  <Text style={styles.receiptAttachedText}>
+                    Receipt attached locally
+                  </Text>
+                  <Text style={styles.receiptAttachedSub}>
+                    Replace it below or remove it before saving.
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() =>
+                      setReceipt({
+                        fileSize: null,
+                        localUri: "",
+                        mimeType: null,
+                        name: "Remove receipt",
+                        source: "gallery"
+                      })
+                    }
+                    style={styles.receiptRemoveButton}
+                  >
+                    <Text style={styles.receiptRemoveText}>Remove Receipt</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+              <ReceiptCaptureField
+                onChange={setReceipt}
+                value={receipt?.localUri === "" ? null : receipt}
+              />
+            </View>
           </ScrollView>
           <View style={styles.modalFooter}>
             <Pressable
@@ -584,6 +652,8 @@ function EditClaimItemModal({
                   amountCents: moneyToCents(amount),
                   itemDate: date,
                   notes: notes.trim() || null,
+                  receipt: receipt?.localUri ? receipt : null,
+                  receiptId: receipt?.localUri === "" ? null : item.receiptId,
                   title: title.trim() || getItemMeta(item.type).label,
                   type: item.type
                 })
@@ -601,15 +671,27 @@ function EditClaimItemModal({
 
 function ReceiptChoice({
   icon,
+  onPress,
+  selected,
   sub,
   title
 }: {
   icon: string;
+  onPress?: () => void;
+  selected?: boolean;
   sub: string;
   title: string;
 }) {
+  if (!onPress) {
+    return null;
+  }
+
   return (
-    <Pressable accessibilityRole="button" style={styles.receiptChoice}>
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={[styles.receiptChoice, selected ? styles.receiptChoiceSelected : null]}
+    >
       <Text style={styles.receiptIcon}>{icon}</Text>
       <View style={styles.receiptBody}>
         <Text style={styles.receiptTitle}>{title}</Text>
@@ -617,6 +699,62 @@ function ReceiptChoice({
       </View>
       <Text style={styles.receiptArrow}>›</Text>
     </Pressable>
+  );
+}
+
+function ReceiptCaptureField({
+  onChange,
+  value
+}: {
+  onChange: (receipt: LocalReceiptFile | null) => void;
+  value: LocalReceiptFile | null;
+}) {
+  return (
+    <View style={styles.receiptCapture}>
+      <ReceiptChoice
+        icon="Camera"
+        onPress={() =>
+          void openLocalReceiptPicker("camera").then((receipt) => {
+            if (receipt) {
+              onChange(receipt);
+            }
+          })
+        }
+        selected={value?.source === "camera"}
+        sub="Camera - auto edge detect - perspective fix"
+        title="Scan Document"
+      />
+      <ReceiptChoice
+        icon="Attach"
+        onPress={() =>
+          void openLocalReceiptPicker("gallery").then((receipt) => {
+            if (receipt) {
+              onChange(receipt);
+            }
+          })
+        }
+        selected={value?.source === "gallery"}
+        sub="JPEG - PNG - WebP - Max 5 MB"
+        title="Attach from Gallery"
+      />
+      {value ? (
+        <View style={styles.receiptPreview}>
+          <View style={styles.receiptPreviewBody}>
+            <Text style={styles.receiptPreviewTitle}>{value.name}</Text>
+            <Text style={styles.receiptPreviewSub}>
+              {value.mimeType ?? "image"} - {formatFileSize(value.fileSize)} - pending sync
+            </Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => onChange(null)}
+            style={styles.receiptRemoveButton}
+          >
+            <Text style={styles.receiptRemoveText}>Remove</Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -759,6 +897,80 @@ function moneyToCents(value: string) {
   return Math.round(amount * 100);
 }
 
+async function openLocalReceiptPicker(
+  source: LocalReceiptFile["source"]
+): Promise<LocalReceiptFile | null> {
+  if (Platform.OS !== "web") {
+    return {
+      fileSize: null,
+      localUri: `local://${source}/receipt/${Date.now()}.jpg`,
+      mimeType: "image/jpeg",
+      name: source === "camera" ? "Camera receipt" : "Gallery receipt",
+      source
+    };
+  }
+
+  const documentRef = (globalThis as typeof globalThis & {
+    document?: Document;
+    URL?: typeof URL;
+  }).document;
+
+  if (!documentRef) {
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    const input = documentRef.createElement("input");
+    input.type = "file";
+    input.accept = "image/jpeg,image/jpg,image/png,image/webp";
+    if (source === "camera") {
+      input.setAttribute("capture", "environment");
+    }
+    input.style.display = "none";
+    input.onchange = () => {
+      const file = input.files?.[0] ?? null;
+      input.remove();
+
+      if (!file) {
+        resolve(null);
+        return;
+      }
+
+      if (!["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(file.type)) {
+        resolve(null);
+        return;
+      }
+
+      if (file.size > 5_242_880) {
+        resolve(null);
+        return;
+      }
+
+      resolve({
+        fileSize: file.size,
+        localUri: URL.createObjectURL(file),
+        mimeType: file.type,
+        name: file.name || `${source}-receipt.jpg`,
+        source
+      });
+    };
+    documentRef.body.appendChild(input);
+    input.click();
+  });
+}
+
+function formatFileSize(fileSize: number | null) {
+  if (!fileSize) {
+    return "local file";
+  }
+
+  if (fileSize < 1024 * 1024) {
+    return `${Math.max(1, Math.round(fileSize / 1024))} KB`;
+  }
+
+  return `${(fileSize / 1024 / 1024).toFixed(1)} MB`;
+}
+
 function todayInput() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -898,6 +1110,18 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginTop: 2
   },
+  receiptStatusAttached: {
+    color: "#15803d",
+    fontSize: 10,
+    fontWeight: "900",
+    marginTop: 3
+  },
+  receiptStatusMissing: {
+    color: "#94a3b8",
+    fontSize: 10,
+    fontWeight: "800",
+    marginTop: 3
+  },
   itemAmountCol: {
     alignItems: "flex-end",
     gap: 3
@@ -917,6 +1141,21 @@ const styles = StyleSheet.create({
   },
   editItemText: {
     color: "#2563eb",
+    fontSize: 10,
+    fontWeight: "900"
+  },
+  receiptChipButton: {
+    alignItems: "center",
+    backgroundColor: "#f0fdf4",
+    borderColor: "#bbf7d0",
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 26,
+    justifyContent: "center",
+    paddingHorizontal: 8
+  },
+  receiptChipText: {
+    color: "#15803d",
     fontSize: 10,
     fontWeight: "900"
   },
@@ -1162,6 +1401,13 @@ const styles = StyleSheet.create({
     minHeight: 58,
     paddingHorizontal: spacing.md
   },
+  receiptChoiceSelected: {
+    backgroundColor: "#f0fdf4",
+    borderColor: "#22c55e"
+  },
+  receiptCapture: {
+    gap: spacing.sm
+  },
   receiptIcon: {
     fontSize: 20,
     width: 24
@@ -1184,6 +1430,65 @@ const styles = StyleSheet.create({
     color: "#94a3b8",
     fontSize: 22,
     fontWeight: "800"
+  },
+  receiptAttached: {
+    backgroundColor: "#f0fdf4",
+    borderColor: "#bbf7d0",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 4,
+    padding: spacing.md
+  },
+  receiptAttachedText: {
+    color: "#15803d",
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  receiptAttachedSub: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 16
+  },
+  receiptPreview: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.md
+  },
+  receiptPreviewBody: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0
+  },
+  receiptPreviewTitle: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  receiptPreviewSub: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "700"
+  },
+  receiptRemoveButton: {
+    alignItems: "center",
+    backgroundColor: "#fef2f2",
+    borderColor: "#fecaca",
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 30,
+    justifyContent: "center",
+    paddingHorizontal: spacing.sm
+  },
+  receiptRemoveText: {
+    color: colors.danger,
+    fontSize: 10,
+    fontWeight: "900"
   },
   modalFooter: {
     borderTopColor: "#f1f5f9",

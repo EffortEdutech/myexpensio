@@ -149,8 +149,20 @@ export function useAttachReceiptMetadataToClaimItem() {
   const invalidate = useInvalidateClaimData();
 
   return useMutation({
-    mutationFn: (itemId: string) =>
-      attachReceiptMetadataToClaimItem(itemId, deviceId),
+    mutationFn: (input:
+      | string
+      | {
+          fileSize?: number | null;
+          itemId: string;
+          localUri?: string | null;
+          mimeType?: string | null;
+        }) => {
+      if (typeof input === "string") {
+        return attachReceiptMetadataToClaimItem(input, deviceId);
+      }
+
+      return attachReceiptMetadataToClaimItem(input.itemId, deviceId, input);
+    },
     onSuccess: () => invalidate()
   });
 }

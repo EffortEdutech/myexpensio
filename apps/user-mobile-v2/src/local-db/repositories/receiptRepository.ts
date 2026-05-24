@@ -193,6 +193,40 @@ export async function retryFailedReceiptUploads(limit = 25) {
   return failedReceipts.length;
 }
 
+export async function softDeleteReceipt(receiptId: string, deviceId: string) {
+  const database = await getDatabase();
+  const timestamp = nowIso();
+
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(
+      `UPDATE receipts
+        SET upload_status = 'failed',
+            sync_status = 'deleted',
+            deleted_at = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND deleted_at IS NULL;`,
+      [timestamp, timestamp, receiptId]
+    );
+
+    await enqueueSyncItem(
+      {
+        entityType: "receipt",
+        entityId: receiptId,
+        operation: "delete",
+        payload: JSON.stringify({
+          id: receiptId,
+          deletedAt: timestamp,
+          deviceId
+        })
+      },
+      database
+    );
+  });
+
+  return { deletedAt: timestamp, id: receiptId };
+}
+
 export async function getReceiptUploadSummary() {
   const database = await getDatabase();
   const rows = await database.getAllAsync<{

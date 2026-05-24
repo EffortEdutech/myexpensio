@@ -539,6 +539,10 @@ export async function updateClaimItemDraft(
     amountCents: nextAmountCents,
     itemDate: input.itemDate ?? existing.item_date,
     notes: input.notes ?? existing.notes,
+    receiptId:
+      Object.prototype.hasOwnProperty.call(input, "receiptId")
+        ? input.receiptId ?? null
+        : existing.receipt_id,
     syncStatus: "pending" as const,
     title: input.title ?? existing.title,
     type: input.type ?? existing.type,
@@ -553,6 +557,7 @@ export async function updateClaimItemDraft(
             amount_cents = ?,
             item_date = ?,
             notes = ?,
+            receipt_id = ?,
             sync_status = 'pending',
             updated_at = ?
         WHERE id = ?
@@ -563,6 +568,7 @@ export async function updateClaimItemDraft(
         updatedItem.amountCents,
         updatedItem.itemDate,
         updatedItem.notes,
+        updatedItem.receiptId,
         timestamp,
         input.itemId
       ]
@@ -589,6 +595,7 @@ export async function updateClaimItemDraft(
           amountCents: updatedItem.amountCents,
           itemDate: updatedItem.itemDate,
           notes: updatedItem.notes,
+          receiptId: updatedItem.receiptId,
           updatedAt: timestamp,
           deviceId
         })
@@ -655,7 +662,12 @@ export async function softDeleteClaimItem(itemId: string, deviceId: string) {
 
 export async function attachReceiptMetadataToClaimItem(
   itemId: string,
-  deviceId: string
+  deviceId: string,
+  file?: {
+    fileSize?: number | null;
+    localUri?: string | null;
+    mimeType?: string | null;
+  }
 ) {
   const database = await getDatabase();
   const timestamp = nowIso();
@@ -681,9 +693,9 @@ export async function attachReceiptMetadataToClaimItem(
     {
       ownerEntityType: "claim_item",
       ownerEntityId: itemId,
-      localUri: `local://receipt/${itemId}/${timestamp}`,
-      mimeType: "image/jpeg",
-      fileSize: null
+      localUri: file?.localUri ?? `local://receipt/${itemId}/${timestamp}`,
+      mimeType: file?.mimeType ?? "image/jpeg",
+      fileSize: file?.fileSize ?? null
     },
     deviceId
   );

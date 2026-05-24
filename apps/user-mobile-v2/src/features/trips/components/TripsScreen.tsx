@@ -1308,17 +1308,45 @@ function EvidenceCapture({
       <EvidenceChoice
         icon="Camera"
         label="Take Photo"
-        onPress={() => onChange(`${label} camera photo pending upload`)}
+        onPress={() =>
+          void openEvidencePicker(label, "camera").then((uri) => {
+            if (uri) {
+              onChange(uri);
+            }
+          })
+        }
         selected={value?.includes("camera")}
         sub="Camera · auto edge detect · perspective fix"
       />
       <EvidenceChoice
         icon={label.startsWith("Start") ? "Start" : "End"}
         label={label.startsWith("Start") ? "Start" : "End"}
-        onPress={() => onChange(`${label} gallery image pending upload`)}
+        onPress={() =>
+          void openEvidencePicker(label, "gallery").then((uri) => {
+            if (uri) {
+              onChange(uri);
+            }
+          })
+        }
         selected={value?.includes("gallery")}
         sub="JPEG · PNG · WebP · Max 5 MB"
       />
+      {value ? (
+        <View style={styles.evidencePreview}>
+          <Text style={styles.evidencePreviewText}>
+            {value.startsWith("blob:") || value.startsWith("local://")
+              ? "Evidence photo attached - pending sync"
+              : value}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => onChange("")}
+            style={styles.evidenceRemoveButton}
+          >
+            <Text style={styles.evidenceRemoveText}>Remove</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -1622,6 +1650,56 @@ function confirmTripDelete(onConfirm: () => void) {
     { style: "cancel", text: "Cancel" },
     { onPress: onConfirm, style: "destructive", text: "Delete" }
   ]);
+}
+
+async function openEvidencePicker(
+  label: string,
+  source: "camera" | "gallery"
+): Promise<string | null> {
+  if (Platform.OS !== "web") {
+    return `local://${source}/odometer/${label.toLowerCase().replace(/\s+/g, "-")}/${Date.now()}.jpg`;
+  }
+
+  const documentRef = (globalThis as typeof globalThis & {
+    document?: Document;
+  }).document;
+
+  if (!documentRef) {
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    const input = documentRef.createElement("input");
+    input.type = "file";
+    input.accept = "image/jpeg,image/jpg,image/png,image/webp";
+    if (source === "camera") {
+      input.setAttribute("capture", "environment");
+    }
+    input.style.display = "none";
+    input.onchange = () => {
+      const file = input.files?.[0] ?? null;
+      input.remove();
+
+      if (!file) {
+        resolve(null);
+        return;
+      }
+
+      if (!["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(file.type)) {
+        resolve(null);
+        return;
+      }
+
+      if (file.size > 5_242_880) {
+        resolve(null);
+        return;
+      }
+
+      resolve(URL.createObjectURL(file));
+    };
+    documentRef.body.appendChild(input);
+    input.click();
+  });
 }
 
 const styles = StyleSheet.create({
@@ -2234,6 +2312,37 @@ const styles = StyleSheet.create({
   evidenceChoiceArrow: {
     color: "#94a3b8",
     fontSize: 18,
+    fontWeight: "900"
+  },
+  evidencePreview: {
+    alignItems: "center",
+    backgroundColor: "#f0fdf4",
+    borderColor: "#bbf7d0",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.md
+  },
+  evidencePreviewText: {
+    color: "#15803d",
+    flex: 1,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  evidenceRemoveButton: {
+    alignItems: "center",
+    backgroundColor: "#fef2f2",
+    borderColor: "#fecaca",
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 30,
+    justifyContent: "center",
+    paddingHorizontal: spacing.sm
+  },
+  evidenceRemoveText: {
+    color: "#dc2626",
+    fontSize: 10,
     fontWeight: "900"
   },
   saveButton: {
