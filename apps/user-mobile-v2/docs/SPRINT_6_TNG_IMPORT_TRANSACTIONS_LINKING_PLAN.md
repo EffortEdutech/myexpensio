@@ -34,6 +34,16 @@ Verified:
 
 Runtime browser click-through was attempted but blocked in this environment: the static server failed with Windows socket provider error `WinError 10106`, and the Node QA path did not have Playwright installed. Manual browser QA should be done from the local Expo app after commit.
 
+Runtime QA update on 2026-05-24:
+
+- Started Expo web locally on port `8082`.
+- Imported sample TNG rows into the local TNG library.
+- Created a draft toll item with `Paid via TNG` enabled and confirmed it saved as `TNG pending`.
+- Linked the toll item to the imported toll transaction and confirmed the claim item amount, claim total, and TNG transaction claimed state updated.
+- Unlinked the transaction and confirmed the claim item returned to pending, the total returned to zero, and the TNG transaction returned to open.
+- Checked TNG sector/status filters and browser console errors.
+- Polished filtered empty-state wording so `Claimed` with no rows says `No claimed TNG rows` instead of suggesting the user has no imported statement.
+
 ## V1 Reference Studied
 
 - `apps/user/app/(app)/tng/page.tsx`

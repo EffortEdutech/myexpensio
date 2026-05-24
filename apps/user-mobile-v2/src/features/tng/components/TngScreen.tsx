@@ -167,17 +167,19 @@ export function TngScreen() {
           </View>
         ) : (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>No TNG rows yet</Text>
+            <Text style={styles.emptyTitle}>{emptyStateTitle(filters)}</Text>
             <Text style={styles.emptyCopy}>
-              Import a statement preview to build the local transaction library.
+              {emptyStateCopy(filters)}
             </Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setImportOpen(true)}
-              style={styles.emptyButton}
-            >
-              <Text style={styles.emptyButtonText}>Import Statement</Text>
-            </Pressable>
+            {isUnfiltered(filters) ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setImportOpen(true)}
+                style={styles.emptyButton}
+              >
+                <Text style={styles.emptyButtonText}>Import Statement</Text>
+              </Pressable>
+            ) : null}
           </View>
         )}
       </View>
@@ -558,6 +560,34 @@ function formatDate(value: string) {
     timeZone: "Asia/Kuala_Lumpur",
     year: "numeric"
   });
+}
+
+function emptyStateTitle(filters: TngTransactionFilters) {
+  if (isUnfiltered(filters)) {
+    return "No TNG rows yet";
+  }
+
+  if (filters.claimed === "claimed") {
+    return "No claimed TNG rows";
+  }
+
+  if (filters.claimed === "unclaimed") {
+    return "No open TNG rows";
+  }
+
+  return `No ${sectorLabel(filters.sector ?? "ALL")} rows`;
+}
+
+function emptyStateCopy(filters: TngTransactionFilters) {
+  if (isUnfiltered(filters)) {
+    return "Import a statement preview to build the local transaction library.";
+  }
+
+  return "Change the filters to view other imported transactions.";
+}
+
+function isUnfiltered(filters: TngTransactionFilters) {
+  return (filters.sector ?? "ALL") === "ALL" && (filters.claimed ?? "all") === "all";
 }
 
 const styles = StyleSheet.create({
