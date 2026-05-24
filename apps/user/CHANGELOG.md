@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.2.27](https://github.com/EffortEdutech/myexpensio/compare/v4.2.26...v4.2.27) (2026-05-24)
+
 ### [4.2.26](https://github.com/EffortEdutech/myexpensio/compare/v4.2.25...v4.2.26) (2026-05-24)
 
 ### [4.2.25](https://github.com/EffortEdutech/myexpensio/compare/v4.2.24...v4.2.25) (2026-05-24)
