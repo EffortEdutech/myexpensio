@@ -1,0 +1,674 @@
+import { useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View
+} from "react-native";
+
+import type { ClaimDraft } from "@/features/claims/types";
+import { useCreateLocalExportJob } from "@/features/exports/hooks/useExportActions";
+import {
+  useExportJobs,
+  useExportPreview,
+  useExportUsageSummary
+} from "@/features/exports/hooks/useExports";
+import type { ExportFormat, ExportJob } from "@/features/exports/types";
+import { colors, spacing, typography } from "@/theme/tokens";
+
+type ExportScreenProps = {
+  claims: ClaimDraft[];
+  isLoadingClaims: boolean;
+};
+
+export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
+  const [selectedClaimIds, setSelectedClaimIds] = useState<string[]>([]);
+  const [format, setFormat] = useState<ExportFormat>("CSV");
+  const exportJobs = useExportJobs();
+  const usage = useExportUsageSummary();
+  const preview = useExportPreview(selectedClaimIds);
+  const createExport = useCreateLocalExportJob();
+  const selectableClaims = useMemo(
+    () => claims.filter((claim) => claim.deletedAt === null),
+    [claims]
+  );
+  const selectedSet = useMemo(
+    () => new Set(selectedClaimIds),
+    [selectedClaimIds]
+  );
+  const limitReached =
+    usage.data?.limit != null &&
+    usage.data.exportsCreated >= usage.data.limit;
+
+  function toggleClaim(claimId: string) {
+    setSelectedClaimIds((current) =>
+      current.includes(claimId)
+        ? current.filter((id) => id !== claimId)
+        : [...current, claimId]
+    );
+  }
+
+  return (
+    <View style={styles.page}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Exports</Text>
+        <Text style={styles.subtitle}>
+          Prepare local claim export previews now. Final PDF/XLSX generation will use the backend export service later.
+        </Text>
+      </View>
+
+      <View style={styles.summaryGrid}>
+        <Metric
+          label="Selected"
+          value={`${selectedClaimIds.length}`}
+        />
+        <Metric
+          label="Rows"
+          value={`${preview.data?.rowCount ?? 0}`}
+        />
+        <Metric
+          label="Total"
+          value={formatMoney(preview.data?.totalAmountCents ?? 0)}
+        />
+      </View>
+
+      <UsageCard
+        exportsCreated={usage.data?.exportsCreated ?? 0}
+        limit={usage.data?.limit ?? null}
+        periodEnd={usage.data?.periodEnd ?? ""}
+      />
+
+      <View style={styles.segmentGroup}>
+        {(["CSV", "PDF", "XLSX"] as const).map((value) => (
+          <Pressable
+            accessibilityRole="button"
+            key={value}
+            onPress={() => setFormat(value)}
+            style={[styles.segment, format === value ? styles.segmentActive : null]}
+          >
+            <Text
+              style={[
+                styles.segmentText,
+                format === value ? styles.segmentTextActive : null
+              ]}
+            >
+              {value}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Claims</Text>
+        {isLoadingClaims ? (
+          <View style={styles.emptyState}>
+            <ActivityIndicator color={colors.primary} />
+          </View>
+        ) : selectableClaims.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>No claims available</Text>
+            <Text style={styles.emptyCopy}>
+              Create or submit claims before preparing an export preview.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.claimList}>
+            {selectableClaims.map((claim) => (
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: selectedSet.has(claim.id) }}
+                key={claim.id}
+                onPress={() => toggleClaim(claim.id)}
+                style={[
+                  styles.claimRow,
+                  selectedSet.has(claim.id) ? styles.claimRowSelected : null
+                ]}
+              >
+                <Text style={styles.checkbox}>
+                  {selectedSet.has(claim.id) ? "x" : ""}
+                </Text>
+                <View style={styles.claimMain}>
+                  <Text style={styles.claimTitle}>
+                    {claim.title || periodLabel(claim)}
+                  </Text>
+                  <Text style={styles.claimMeta}>
+                    {claim.status} - {periodLabel(claim)}
+                  </Text>
+                </View>
+                <Text style={styles.claimAmount}>
+                  {formatMoney(claim.totalAmountCents)}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </View>
+
+      {selectedClaimIds.length > 0 ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Preview</Text>
+          {preview.isLoading ? (
+            <View style={styles.previewBox}>
+              <ActivityIndicator color={colors.primary} />
+            </View>
+          ) : (
+            <View style={styles.previewBox}>
+              <Text style={styles.previewTitle}>Standard claim export</Text>
+              <Text style={styles.previewCopy}>
+                {preview.data?.payload.rows.length ?? 0} item rows across {preview.data?.payload.claims.length ?? 0} claim(s).
+              </Text>
+              <View style={styles.previewRows}>
+                {(preview.data?.payload.rows ?? []).slice(0, 4).map((row) => (
+                  <View key={row.itemId} style={styles.previewRow}>
+                    <View style={styles.previewRowMain}>
+                      <Text style={styles.previewRowTitle}>{row.title}</Text>
+                      <Text style={styles.previewRowSub}>
+                        {row.itemType} - {formatDate(row.itemDate)}
+                      </Text>
+                    </View>
+                    <Text style={styles.previewRowAmount}>
+                      {formatMoney(row.amountCents)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+        </View>
+      ) : null}
+
+      {preview.data?.appendices.length ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Appendix B - TNG</Text>
+          <View style={styles.appendixBox}>
+            {preview.data.appendices.map((appendix) => (
+              <View key={appendix.uploadBatchId ?? appendix.statementLabel} style={styles.appendixRow}>
+                <View style={styles.appendixMain}>
+                  <Text style={styles.appendixTitle}>{appendix.statementLabel}</Text>
+                  <Text style={styles.appendixSub}>
+                    {appendix.transactionCount} linked row(s) - {appendix.hasSourcePdf ? "PDF available" : "PDF pending"}
+                  </Text>
+                </View>
+                <Text style={styles.appendixAmount}>
+                  {formatMoney(appendix.totalAmountCents)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
+      <Pressable
+        accessibilityRole="button"
+        disabled={selectedClaimIds.length === 0 || createExport.isPending || limitReached}
+        onPress={() =>
+          createExport.mutate({
+            claimIds: selectedClaimIds,
+            format,
+            templateName: "Standard claim export"
+          })
+        }
+        style={[
+          styles.generateButton,
+          selectedClaimIds.length === 0 || createExport.isPending || limitReached
+            ? styles.disabled
+            : null
+        ]}
+      >
+        <Text style={styles.generateText}>
+          {limitReached
+            ? "Preview Limit Reached"
+            : createExport.isPending
+              ? "Saving Preview..."
+              : `Save ${format} Preview`}
+        </Text>
+      </Pressable>
+
+      {createExport.error instanceof Error ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{createExport.error.message}</Text>
+        </View>
+      ) : null}
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Export History</Text>
+        {exportJobs.isLoading ? (
+          <View style={styles.emptyState}>
+            <ActivityIndicator color={colors.primary} />
+          </View>
+        ) : exportJobs.data && exportJobs.data.length > 0 ? (
+          <View style={styles.historyList}>
+            {exportJobs.data.map((job) => (
+              <ExportJobRow key={job.id} job={job} />
+            ))}
+          </View>
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>No export previews yet</Text>
+            <Text style={styles.emptyCopy}>
+              Save a local preview to create the first export history entry.
+            </Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function ExportJobRow({ job }: { job: ExportJob }) {
+  return (
+    <View style={styles.historyRow}>
+      <View style={styles.historyMain}>
+        <Text style={styles.historyTitle}>{job.format} preview</Text>
+        <Text style={styles.historySub}>
+          {formatDate(job.createdAt)} - {job.rowCount} row(s) - {job.status}
+        </Text>
+      </View>
+      <Text style={styles.historyAmount}>{formatMoney(job.totalAmountCents)}</Text>
+    </View>
+  );
+}
+
+function UsageCard({
+  exportsCreated,
+  limit,
+  periodEnd
+}: {
+  exportsCreated: number;
+  limit: number | null;
+  periodEnd: string;
+}) {
+  const remaining = limit == null ? null : Math.max(0, limit - exportsCreated);
+
+  return (
+    <View style={styles.usageCard}>
+      <View style={styles.usageMain}>
+        <Text style={styles.usageTitle}>Trial export previews</Text>
+        <Text style={styles.usageCopy}>
+          Local previews cost nothing. Final production exports stay deferred to the backend service.
+        </Text>
+      </View>
+      <View style={styles.usageRight}>
+        <Text style={styles.usageMetric}>
+          {limit == null ? "Unlimited" : `${exportsCreated}/${limit}`}
+        </Text>
+        <Text style={styles.usageSub}>
+          {remaining == null ? "available" : `${remaining} left`}
+          {periodEnd ? ` until ${formatDate(periodEnd)}` : ""}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.metric}>
+      <Text style={styles.metricValue}>{value}</Text>
+      <Text style={styles.metricLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function periodLabel(claim: ClaimDraft) {
+  if (claim.periodStart && claim.periodEnd) {
+    if (claim.periodStart === claim.periodEnd) {
+      return formatDate(claim.periodStart);
+    }
+
+    return `${formatDate(claim.periodStart)} - ${formatDate(claim.periodEnd)}`;
+  }
+
+  return formatDate(claim.periodStart ?? claim.periodEnd ?? claim.createdAt);
+}
+
+function formatMoney(amountCents: number) {
+  return `MYR ${(amountCents / 100).toFixed(2)}`;
+}
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString("en-MY", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  });
+}
+
+const styles = StyleSheet.create({
+  page: {
+    gap: spacing.md
+  },
+  header: {
+    gap: spacing.xs
+  },
+  title: {
+    color: colors.text,
+    fontSize: typography.title,
+    fontWeight: "900"
+  },
+  subtitle: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 18
+  },
+  summaryGrid: {
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  metric: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    gap: 2,
+    padding: spacing.md
+  },
+  metricValue: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  metricLabel: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  usageCard: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    padding: spacing.md
+  },
+  usageMain: {
+    flex: 1,
+    gap: 3,
+    minWidth: 0
+  },
+  usageTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  usageCopy: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 18
+  },
+  usageRight: {
+    alignItems: "flex-end",
+    gap: 2
+  },
+  usageMetric: {
+    color: colors.primary,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  usageSub: {
+    color: "#94a3b8",
+    fontSize: 10,
+    fontWeight: "800",
+    textAlign: "right"
+  },
+  segmentGroup: {
+    backgroundColor: "#f1f5f9",
+    borderRadius: 8,
+    flexDirection: "row",
+    gap: 4,
+    padding: 4
+  },
+  segment: {
+    alignItems: "center",
+    borderRadius: 7,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 38
+  },
+  segmentActive: {
+    backgroundColor: colors.primary
+  },
+  segmentText: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  segmentTextActive: {
+    color: colors.onPrimary
+  },
+  section: {
+    gap: spacing.sm
+  },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  claimList: {
+    gap: spacing.sm
+  },
+  claimRow: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    minHeight: 64,
+    padding: spacing.md
+  },
+  claimRowSelected: {
+    backgroundColor: "#f0fdf4",
+    borderColor: "#86efac"
+  },
+  checkbox: {
+    borderColor: colors.border,
+    borderRadius: 6,
+    borderWidth: 1,
+    color: "#15803d",
+    fontSize: typography.caption,
+    fontWeight: "900",
+    height: 24,
+    lineHeight: 22,
+    textAlign: "center",
+    width: 24
+  },
+  claimMain: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0
+  },
+  claimTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  claimMeta: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  claimAmount: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  previewBox: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md
+  },
+  previewTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  previewCopy: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 18
+  },
+  previewRows: {
+    gap: spacing.xs
+  },
+  previewRow: {
+    alignItems: "center",
+    borderTopColor: "#f1f5f9",
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    paddingTop: spacing.sm
+  },
+  previewRowMain: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0
+  },
+  previewRowTitle: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  previewRowSub: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "700"
+  },
+  previewRowAmount: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  appendixBox: {
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: "hidden"
+  },
+  appendixRow: {
+    alignItems: "center",
+    borderBottomColor: "#dbeafe",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    padding: spacing.md
+  },
+  appendixMain: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0
+  },
+  appendixTitle: {
+    color: "#1e3a8a",
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  appendixSub: {
+    color: "#2563eb",
+    fontSize: 11,
+    fontWeight: "700"
+  },
+  appendixAmount: {
+    color: "#1e3a8a",
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  generateButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    justifyContent: "center",
+    minHeight: 48
+  },
+  generateText: {
+    color: colors.onPrimary,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  historyList: {
+    gap: spacing.sm
+  },
+  historyRow: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    minHeight: 58,
+    padding: spacing.md
+  },
+  historyMain: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0
+  },
+  historyTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  historySub: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  historyAmount: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  emptyState: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.xs,
+    minHeight: 150,
+    justifyContent: "center",
+    padding: spacing.lg
+  },
+  emptyTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  emptyCopy: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 18,
+    maxWidth: 260,
+    textAlign: "center"
+  },
+  errorBox: {
+    backgroundColor: "#fef2f2",
+    borderColor: "#fecaca",
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: spacing.md
+  },
+  errorText: {
+    color: colors.danger,
+    fontSize: typography.caption,
+    fontWeight: "800"
+  },
+  disabled: {
+    opacity: 0.45
+  }
+});

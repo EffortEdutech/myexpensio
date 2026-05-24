@@ -2,6 +2,7 @@ export type SyncEntityType =
   | "claim"
   | "claim_item"
   | "expense"
+  | "export_job"
   | "receipt"
   | "sync_state"
   | "tng_statement_batch"

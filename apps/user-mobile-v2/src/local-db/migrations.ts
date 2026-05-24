@@ -355,6 +355,33 @@ export const localMigrations: LocalMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_tng_statement_batches_imported
         ON tng_statement_batches (imported_at);`
     ]
+  },
+  {
+    id: 8,
+    name: "exports_sprint_7_foundation",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS export_jobs (
+        id TEXT PRIMARY KEY NOT NULL,
+        format TEXT NOT NULL,
+        status TEXT NOT NULL,
+        claim_ids TEXT NOT NULL,
+        row_count INTEGER NOT NULL DEFAULT 0,
+        total_amount_cents INTEGER NOT NULL DEFAULT 0,
+        currency TEXT NOT NULL,
+        filter_status TEXT,
+        template_name TEXT,
+        preview_payload TEXT,
+        tng_appendix_payload TEXT,
+        local_uri TEXT,
+        sync_status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT,
+        device_id TEXT NOT NULL
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_export_jobs_created_at
+        ON export_jobs (created_at);`
+    ]
   }
 ];
 

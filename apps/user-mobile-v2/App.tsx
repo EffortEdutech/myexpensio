@@ -43,6 +43,7 @@ import type {
   ClaimItemDraft,
   ClaimItemType
 } from "@/features/claims/types";
+import { ExportScreen } from "@/features/exports/components/ExportScreen";
 import { useCreateBlankClaimDraft } from "@/features/claims/hooks/useCreateClaimWithItem";
 import { useReceiptUploadSummary } from "@/features/receipts/hooks/useReceiptUploadSummary";
 import type { LocalReceiptFile } from "@/features/receipts/types";
@@ -384,6 +385,11 @@ function AuthenticatedHome({
           />
         ) : activeSpace === "work" && activeWorkTab === "tng" ? (
           <TngScreen />
+        ) : activeSpace === "work" && activeWorkTab === "export" ? (
+          <ExportScreen
+            claims={claims.data ?? []}
+            isLoadingClaims={claims.isLoading}
+          />
         ) : activeSpace === "work" ? (
           <DeferredSpace spaceName={workTabLabel(activeWorkTab)} />
         ) : activeSpace === "business" ? (
