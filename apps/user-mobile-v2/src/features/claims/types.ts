@@ -85,9 +85,11 @@ export type UpdateClaimDraftInput = {
 export type UpdateClaimItemDraftInput = {
   amountCents?: number;
   itemDate?: string;
+  mode?: string | null;
   itemId: string;
   notes?: string | null;
   receiptId?: string | null;
+  tngTransactionId?: string | null;
   title?: string;
   type?: ClaimItemType;
 };

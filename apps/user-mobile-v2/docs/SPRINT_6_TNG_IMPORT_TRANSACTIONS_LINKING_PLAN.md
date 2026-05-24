@@ -24,6 +24,8 @@ Implemented on 2026-05-24:
 - Added local matcher groundwork for toll, parking, and retail transport rows.
 - Added the Work > TNG screen with statement summary, filters, transaction library, PDF/sample preview modal, row selection, local save, and statement delete.
 - Wired the existing TNG footer tab to the real screen instead of the deferred placeholder.
+- Added claim-item TNG linking: the claim modal now preserves `Paid via TNG` as `tng_pending`, eligible claim rows can open a ranked TNG link picker, linking updates the claim item amount and claim total, and linked transactions become claimed in the local TNG library.
+- Added unlink support for draft claim items so the TNG transaction returns to unclaimed and the item returns to pending.
 
 Verified:
 

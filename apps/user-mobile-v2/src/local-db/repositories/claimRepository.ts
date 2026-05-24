@@ -539,11 +539,19 @@ export async function updateClaimItemDraft(
     amountCents: nextAmountCents,
     itemDate: input.itemDate ?? existing.item_date,
     notes: input.notes ?? existing.notes,
+    mode:
+      Object.prototype.hasOwnProperty.call(input, "mode")
+        ? input.mode ?? null
+        : existing.mode,
     receiptId:
       Object.prototype.hasOwnProperty.call(input, "receiptId")
         ? input.receiptId ?? null
         : existing.receipt_id,
     syncStatus: "pending" as const,
+    tngTransactionId:
+      Object.prototype.hasOwnProperty.call(input, "tngTransactionId")
+        ? input.tngTransactionId ?? null
+        : existing.tng_transaction_id,
     title: input.title ?? existing.title,
     type: input.type ?? existing.type,
     updatedAt: timestamp
@@ -557,7 +565,9 @@ export async function updateClaimItemDraft(
             amount_cents = ?,
             item_date = ?,
             notes = ?,
+            mode = ?,
             receipt_id = ?,
+            tng_transaction_id = ?,
             sync_status = 'pending',
             updated_at = ?
         WHERE id = ?
@@ -568,7 +578,9 @@ export async function updateClaimItemDraft(
         updatedItem.amountCents,
         updatedItem.itemDate,
         updatedItem.notes,
+        updatedItem.mode,
         updatedItem.receiptId,
+        updatedItem.tngTransactionId,
         timestamp,
         input.itemId
       ]
@@ -594,8 +606,10 @@ export async function updateClaimItemDraft(
           title: updatedItem.title,
           amountCents: updatedItem.amountCents,
           itemDate: updatedItem.itemDate,
+          mode: updatedItem.mode,
           notes: updatedItem.notes,
           receiptId: updatedItem.receiptId,
+          tngTransactionId: updatedItem.tngTransactionId,
           updatedAt: timestamp,
           deviceId
         })
@@ -605,6 +619,239 @@ export async function updateClaimItemDraft(
   });
 
   return updatedItem;
+}
+
+export async function linkTngTransactionToClaimItem(
+  input: { claimId: string; itemId: string; transactionId: string },
+  deviceId: string
+) {
+  const database = await getDatabase();
+  const timestamp = nowIso();
+  const claim = await getClaimDraft(input.claimId);
+
+  if (!claim || claim.status !== "draft") {
+    return null;
+  }
+
+  const item = await database.getFirstAsync<ClaimItemRow>(
+    `SELECT *
+      FROM claim_items
+      WHERE id = ?
+        AND claim_id = ?
+        AND deleted_at IS NULL;`,
+    [input.itemId, input.claimId]
+  );
+  const transaction = await database.getFirstAsync<{
+    amount_cents: number;
+    claim_item_id: string | null;
+    claimed: number;
+    currency: string;
+    id: string;
+  }>(
+    `SELECT id, amount_cents, currency, claimed, claim_item_id
+      FROM tng_transactions
+      WHERE id = ?
+        AND deleted_at IS NULL;`,
+    [input.transactionId]
+  );
+
+  if (!item || !transaction) {
+    return null;
+  }
+
+  if (transaction.claimed === 1 && transaction.claim_item_id !== input.itemId) {
+    throw new Error("This TNG transaction is already linked to another item.");
+  }
+
+  const delta = transaction.amount_cents - item.amount_cents;
+
+  await database.withTransactionAsync(async () => {
+    if (item.tng_transaction_id && item.tng_transaction_id !== input.transactionId) {
+      await database.runAsync(
+        `UPDATE tng_transactions
+          SET claimed = 0,
+              claim_item_id = NULL,
+              linked_claim_id = NULL,
+              link_status = 'unlinked',
+              sync_status = 'pending',
+              updated_at = ?
+          WHERE id = ?;`,
+        [timestamp, item.tng_transaction_id]
+      );
+    }
+
+    await database.runAsync(
+      `UPDATE claim_items
+        SET amount_cents = ?,
+            currency = ?,
+            mode = 'tng_linked',
+            tng_transaction_id = ?,
+            sync_status = 'pending',
+            updated_at = ?
+        WHERE id = ?
+          AND deleted_at IS NULL;`,
+      [
+        transaction.amount_cents,
+        transaction.currency,
+        transaction.id,
+        timestamp,
+        input.itemId
+      ]
+    );
+
+    await database.runAsync(
+      `UPDATE claims
+        SET total_amount_cents = total_amount_cents + ?,
+            sync_status = 'pending',
+            updated_at = ?
+        WHERE id = ?;`,
+      [delta, timestamp, input.claimId]
+    );
+
+    await database.runAsync(
+      `UPDATE tng_transactions
+        SET claimed = 1,
+            claim_item_id = ?,
+            linked_claim_id = ?,
+            link_status = 'linked',
+            sync_status = 'pending',
+            updated_at = ?
+        WHERE id = ?
+          AND deleted_at IS NULL;`,
+      [input.itemId, input.claimId, timestamp, input.transactionId]
+    );
+
+    await enqueueSyncItem(
+      {
+        entityType: "claim_item",
+        entityId: input.itemId,
+        operation: "update",
+        payload: JSON.stringify({
+          amountCents: transaction.amount_cents,
+          deviceId,
+          id: input.itemId,
+          mode: "tng_linked",
+          tngTransactionId: transaction.id,
+          updatedAt: timestamp
+        })
+      },
+      database
+    );
+    await enqueueSyncItem(
+      {
+        entityType: "tng_transaction",
+        entityId: input.transactionId,
+        operation: "update",
+        payload: JSON.stringify({
+          claimItemId: input.itemId,
+          claimed: true,
+          deviceId,
+          id: input.transactionId,
+          linkedClaimId: input.claimId,
+          linkStatus: "linked",
+          updatedAt: timestamp
+        })
+      },
+      database
+    );
+  });
+
+  return getLatestClaimItem(input.claimId);
+}
+
+export async function unlinkTngTransactionFromClaimItem(
+  itemId: string,
+  deviceId: string
+) {
+  const database = await getDatabase();
+  const timestamp = nowIso();
+  const item = await database.getFirstAsync<ClaimItemRow>(
+    `SELECT *
+      FROM claim_items
+      WHERE id = ?
+        AND deleted_at IS NULL;`,
+    [itemId]
+  );
+
+  if (!item || !item.tng_transaction_id) {
+    return null;
+  }
+  const transactionId = item.tng_transaction_id;
+
+  const claim = await getClaimDraft(item.claim_id);
+  if (!claim || claim.status !== "draft") {
+    return null;
+  }
+
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(
+      `UPDATE tng_transactions
+        SET claimed = 0,
+            claim_item_id = NULL,
+            linked_claim_id = NULL,
+            link_status = 'unlinked',
+            sync_status = 'pending',
+            updated_at = ?
+        WHERE id = ?;`,
+      [timestamp, transactionId]
+    );
+
+    await database.runAsync(
+      `UPDATE claim_items
+        SET amount_cents = 0,
+            mode = 'tng_pending',
+            tng_transaction_id = NULL,
+            sync_status = 'pending',
+            updated_at = ?
+        WHERE id = ?;`,
+      [timestamp, itemId]
+    );
+
+    await database.runAsync(
+      `UPDATE claims
+        SET total_amount_cents = total_amount_cents - ?,
+            sync_status = 'pending',
+            updated_at = ?
+        WHERE id = ?;`,
+      [item.amount_cents, timestamp, item.claim_id]
+    );
+
+    await enqueueSyncItem(
+      {
+        entityType: "claim_item",
+        entityId: itemId,
+        operation: "update",
+        payload: JSON.stringify({
+          amountCents: 0,
+          deviceId,
+          id: itemId,
+          mode: "tng_pending",
+          tngTransactionId: null,
+          updatedAt: timestamp
+        })
+      },
+      database
+    );
+    await enqueueSyncItem(
+      {
+        entityType: "tng_transaction",
+        entityId: transactionId,
+        operation: "update",
+        payload: JSON.stringify({
+          claimItemId: null,
+          claimed: false,
+          deviceId,
+          id: transactionId,
+          linkedClaimId: null,
+          linkStatus: "unlinked",
+          updatedAt: timestamp
+        })
+      },
+      database
+    );
+  });
+
+  return getLatestClaimItem(item.claim_id);
 }
 
 export async function softDeleteClaimItem(itemId: string, deviceId: string) {

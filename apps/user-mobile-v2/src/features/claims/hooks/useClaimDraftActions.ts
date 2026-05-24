@@ -11,15 +11,18 @@ import {
   attachReceiptMetadataToClaimItem,
   createClaimItemDraft,
   getLatestClaimItem,
+  linkTngTransactionToClaimItem,
   softDeleteClaimDraft,
   softDeleteClaimItem,
   submitClaimDraft,
+  unlinkTngTransactionFromClaimItem,
   updateClaimDraft,
   updateClaimDraftTitle,
   updateClaimItemAmount,
   updateClaimItemDraft
 } from "@/local-db/repositories/claimRepository";
 import { receiptUploadSummaryQueryKey } from "@/features/receipts/hooks/useReceiptUploadSummary";
+import { tngQueryKeys } from "@/features/tng/hooks/useTngLibrary";
 import { useDeviceStore } from "@/state/deviceStore";
 import { syncQueryKeys } from "@/sync/hooks/usePendingSyncItems";
 import { syncSummaryQueryKey } from "@/sync/hooks/useSyncQueueSummary";
@@ -50,6 +53,12 @@ function useInvalidateClaimData() {
     });
     void queryClient.invalidateQueries({
       queryKey: receiptUploadSummaryQueryKey
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["tng"]
+    });
+    void queryClient.invalidateQueries({
+      queryKey: tngQueryKeys.summary
     });
   };
 }
@@ -214,6 +223,31 @@ export function useSoftDeleteClaimItem() {
   return useMutation({
     mutationFn: (itemId: string) => softDeleteClaimItem(itemId, deviceId),
     onSuccess: () => invalidate()
+  });
+}
+
+export function useLinkTngTransactionToClaimItem() {
+  const deviceId = useDeviceStore((state) => state.deviceId);
+  const invalidate = useInvalidateClaimData();
+
+  return useMutation({
+    mutationFn: (input: {
+      claimId: string;
+      itemId: string;
+      transactionId: string;
+    }) => linkTngTransactionToClaimItem(input, deviceId),
+    onSuccess: (_item, input) => invalidate(input.claimId)
+  });
+}
+
+export function useUnlinkTngTransactionFromClaimItem() {
+  const deviceId = useDeviceStore((state) => state.deviceId);
+  const invalidate = useInvalidateClaimData();
+
+  return useMutation({
+    mutationFn: (input: { claimId: string; itemId: string }) =>
+      unlinkTngTransactionFromClaimItem(input.itemId, deviceId),
+    onSuccess: (_item, input) => invalidate(input.claimId)
   });
 }
 

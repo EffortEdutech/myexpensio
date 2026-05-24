@@ -24,11 +24,13 @@ import { ClaimDraftList } from "@/features/claims/components/ClaimDraftList";
 import {
   useAttachReceiptMetadataToClaimItem,
   useCreateClaimItemDraft,
+  useLinkTngTransactionToClaimItem,
   useSoftDeleteClaimDraft,
   useSoftDeleteClaimItem,
   useSubmitClaimDraft,
   useUpdateClaimDraft,
-  useUpdateClaimItemDraft
+  useUpdateClaimItemDraft,
+  useUnlinkTngTransactionFromClaimItem
 } from "@/features/claims/hooks/useClaimDraftActions";
 import {
   useClaimDraft,
@@ -58,6 +60,8 @@ import {
 } from "@/features/trips/hooks/useTripActions";
 import { useTrips } from "@/features/trips/hooks/useTrips";
 import { TngScreen } from "@/features/tng/components/TngScreen";
+import { useTngTransactions } from "@/features/tng/hooks/useTngLibrary";
+import type { TngTransaction } from "@/features/tng/types";
 import { initializeLocalDatabase } from "@/local-db/database";
 import { usePendingSyncItems } from "@/sync/hooks/usePendingSyncItems";
 import { useSyncQueueSummary } from "@/sync/hooks/useSyncQueueSummary";
@@ -180,7 +184,10 @@ function AuthenticatedHome({
   const createBlankClaim = useCreateBlankClaimDraft();
   const createClaimItem = useCreateClaimItemDraft();
   const createTrip = useCreateTrip();
+  const tngTransactions = useTngTransactions({ claimed: "all", sector: "ALL" });
   const deleteTrip = useSoftDeleteTrip();
+  const linkTngTransaction = useLinkTngTransactionToClaimItem();
+  const unlinkTngTransaction = useUnlinkTngTransactionFromClaimItem();
   const updateTrip = useUpdateTrip();
   const deleteClaim = useSoftDeleteClaimDraft();
   const deleteClaimItem = useSoftDeleteClaimItem();
@@ -196,6 +203,8 @@ function AuthenticatedHome({
     createBlankClaim.error ??
     createClaimItem.error ??
     createTrip.error ??
+    linkTngTransaction.error ??
+    unlinkTngTransaction.error ??
     deleteTrip.error ??
     updateTrip.error ??
     deleteClaim.error ??
@@ -275,12 +284,25 @@ function AuthenticatedHome({
               setSelectedClaimId(claim.id);
             }}
             onDeleteClaimItem={(item) => deleteClaimItem.mutate(item.id)}
+            onLinkTngTransaction={(item, transaction) =>
+              linkTngTransaction.mutate({
+                claimId: item.claimId,
+                itemId: item.id,
+                transactionId: transaction.id
+              })
+            }
             onRemoveReceiptFromItem={async (item) => {
               await updateClaimItem.mutateAsync({
                 itemId: item.id,
                 receiptId: null
               });
             }}
+            onUnlinkTngTransaction={(item) =>
+              unlinkTngTransaction.mutate({
+                claimId: item.claimId,
+                itemId: item.id
+              })
+            }
             onDeleteClaim={async (claim) => {
               await deleteClaim.mutateAsync(claim.id);
               setSelectedClaimId(null);
@@ -311,6 +333,7 @@ function AuthenticatedHome({
             pendingSyncCount={pendingSyncItems.data?.length ?? 0}
             showNewClaimModal={newClaimOpen}
             selectedClaimItems={selectedClaimItems.data ?? []}
+            tngTransactions={tngTransactions.data ?? []}
             syncQueueSummary={
               syncQueueSummary.data ?? {
                 failed: 0,
@@ -948,12 +971,19 @@ type WorkClaimsSliceProps = {
       itemDate: string;
       notes: string | null;
       receipt?: LocalReceiptFile | null;
+      mode?: string | null;
+      tngTransactionId?: string | null;
       title: string;
       type: ClaimItemType;
     }
   ) => Promise<void>;
   onDeleteClaimItem: (item: ClaimItemDraft) => void;
+  onLinkTngTransaction: (
+    item: ClaimItemDraft,
+    transaction: TngTransaction
+  ) => void;
   onRemoveReceiptFromItem: (item: ClaimItemDraft) => Promise<void>;
+  onUnlinkTngTransaction: (item: ClaimItemDraft) => void;
   onDeleteClaim: (claim: ClaimDraft) => Promise<void>;
   onOpenClaim: (claim: ClaimDraft) => void;
   onOpenNewClaim: () => void;
@@ -974,6 +1004,8 @@ type WorkClaimsSliceProps = {
       notes: string | null;
       receipt?: LocalReceiptFile | null;
       receiptId?: string | null;
+      mode?: string | null;
+      tngTransactionId?: string | null;
       title: string;
       type: ClaimItemType;
     }
@@ -981,6 +1013,7 @@ type WorkClaimsSliceProps = {
   pendingSyncCount: number;
   showNewClaimModal: boolean;
   selectedClaimItems: ClaimItemDraft[];
+  tngTransactions: TngTransaction[];
   syncQueueSummary: {
     failed: number;
     pending: number;
@@ -1009,7 +1042,9 @@ function WorkClaimsSlice({
   onCreateBlankClaim,
   onCreateClaimItem,
   onDeleteClaimItem,
+  onLinkTngTransaction,
   onRemoveReceiptFromItem,
+  onUnlinkTngTransaction,
   onDeleteClaim,
   onOpenClaim,
   onOpenNewClaim,
@@ -1019,6 +1054,7 @@ function WorkClaimsSlice({
   pendingSyncCount,
   showNewClaimModal,
   selectedClaimItems,
+  tngTransactions,
   syncQueueSummary,
   receiptUploadSummary
 }: WorkClaimsSliceProps) {
@@ -1039,16 +1075,19 @@ function WorkClaimsSlice({
       <ClaimDetail
         claim={activeClaim}
         isLoading={isLoadingClaimDetail}
-            items={selectedClaimItems}
-            onAddItem={(input) => onCreateClaimItem(activeClaim, input)}
-            onAttachReceipt={onAttachReceiptToItem}
-            onBack={onBackToClaims}
-            onDeleteClaim={() => onDeleteClaim(activeClaim)}
-            onDeleteItem={onDeleteClaimItem}
-            onRemoveReceipt={onRemoveReceiptFromItem}
+        items={selectedClaimItems}
+        onAddItem={(input) => onCreateClaimItem(activeClaim, input)}
+        onAttachReceipt={onAttachReceiptToItem}
+        onBack={onBackToClaims}
+        onDeleteClaim={() => onDeleteClaim(activeClaim)}
+        onDeleteItem={onDeleteClaimItem}
+        onLinkTngTransaction={onLinkTngTransaction}
+        onRemoveReceipt={onRemoveReceiptFromItem}
+        onUnlinkTngTransaction={onUnlinkTngTransaction}
         onSubmitClaim={onSubmitClaim}
         onUpdateClaim={(input) => onUpdateClaim(activeClaim, input)}
         onUpdateItem={onUpdateClaimItem}
+        tngTransactions={tngTransactions}
       />
     );
   }

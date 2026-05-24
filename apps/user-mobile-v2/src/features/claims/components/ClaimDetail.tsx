@@ -20,6 +20,8 @@ import type {
 } from "@/features/claims/types";
 import { useReceiptDraft } from "@/features/receipts/hooks/useReceiptUploadSummary";
 import type { LocalReceiptFile, ReceiptDraft } from "@/features/receipts/types";
+import { matchTngToClaimItems, scorePair } from "@/features/tng/matcher";
+import type { TngTransaction } from "@/features/tng/types";
 import { colors, spacing, typography } from "@/theme/tokens";
 
 type ClaimDetailProps = {
@@ -29,8 +31,10 @@ type ClaimDetailProps = {
   onAddItem: (input: {
     amountCents: number;
     itemDate: string;
+    mode?: string | null;
     notes: string | null;
     receipt?: LocalReceiptFile | null;
+    tngTransactionId?: string | null;
     title: string;
     type: ClaimItemType;
   }) => void;
@@ -38,8 +42,13 @@ type ClaimDetailProps = {
   onBack: () => void;
   onDeleteClaim: () => void;
   onDeleteItem: (item: ClaimItemDraft) => void;
+  onLinkTngTransaction: (
+    item: ClaimItemDraft,
+    transaction: TngTransaction
+  ) => void;
   onRemoveReceipt: (item: ClaimItemDraft) => void;
   onSubmitClaim: (claim: ClaimDraft) => void;
+  onUnlinkTngTransaction: (item: ClaimItemDraft) => void;
   onUpdateClaim: (input: {
     periodEnd: string | null;
     periodStart: string | null;
@@ -50,13 +59,16 @@ type ClaimDetailProps = {
     input: {
       amountCents: number;
       itemDate: string;
+      mode?: string | null;
       notes: string | null;
       receipt?: LocalReceiptFile | null;
       receiptId?: string | null;
+      tngTransactionId?: string | null;
       title: string;
       type: ClaimItemType;
     }
   ) => void;
+  tngTransactions: TngTransaction[];
 };
 
 const claimActions: Array<{
@@ -105,10 +117,13 @@ export function ClaimDetail({
   onBack,
   onDeleteClaim,
   onDeleteItem,
+  onLinkTngTransaction,
   onRemoveReceipt,
   onSubmitClaim,
+  onUnlinkTngTransaction,
   onUpdateClaim,
-  onUpdateItem
+  onUpdateItem,
+  tngTransactions
 }: ClaimDetailProps) {
   const [activeModal, setActiveModal] = useState<ClaimModalKind | null>(null);
   const [editingClaim, setEditingClaim] = useState(false);
@@ -242,12 +257,15 @@ export function ClaimDetail({
                 key={item.id}
                 onAttachReceipt={(receipt) => onAttachReceipt(item, receipt)}
                 onEdit={() => setEditingItem(item)}
+                onLinkTngTransaction={onLinkTngTransaction}
                 onRemoveReceipt={() => onRemoveReceipt(item)}
+                onUnlinkTngTransaction={() => onUnlinkTngTransaction(item)}
                 onDelete={() =>
                   confirmAction("Delete item?", "Remove this item from the claim.", () =>
                     onDeleteItem(item)
                   )
                 }
+                tngTransactions={tngTransactions}
               />
             ))}
           </View>
@@ -339,19 +357,36 @@ function ClaimItemRow({
   item,
   onAttachReceipt,
   onEdit,
+  onLinkTngTransaction,
   onRemoveReceipt,
+  onUnlinkTngTransaction,
+  tngTransactions,
   onDelete
 }: {
   disabled: boolean;
   item: ClaimItemDraft;
   onAttachReceipt: (receipt: LocalReceiptFile) => void;
   onEdit: () => void;
+  onLinkTngTransaction: (
+    item: ClaimItemDraft,
+    transaction: TngTransaction
+  ) => void;
   onRemoveReceipt: () => void;
+  onUnlinkTngTransaction: () => void;
+  tngTransactions: TngTransaction[];
   onDelete: () => void;
 }) {
   const meta = getItemMeta(item.type);
   const receipt = useReceiptDraft(item.receiptId);
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [tngPickerOpen, setTngPickerOpen] = useState(false);
+  const linkedTransaction = tngTransactions.find(
+    (transaction) => transaction.id === item.tngTransactionId
+  );
+  const canUseTng = ["toll", "parking", "grab", "taxi", "train", "bus"].includes(
+    item.type
+  );
+  const isTngPending = item.mode === "tng_pending" || item.mode === "tng_linked";
 
   return (
     <View style={styles.itemRow}>
@@ -362,6 +397,13 @@ function ClaimItemRow({
       <View style={styles.itemBody}>
         <Text style={styles.itemType}>{meta.label}</Text>
         <Text style={styles.itemTitle}>{item.title}</Text>
+        {isTngPending ? (
+          <Text style={item.tngTransactionId ? styles.tngLinkedText : styles.tngPendingText}>
+            {item.tngTransactionId
+              ? `TNG linked${linkedTransaction ? ` - ${locationLabel(linkedTransaction)}` : ""}`
+              : "TNG pending - link transaction"}
+          </Text>
+        ) : null}
         <Text style={item.receiptId ? styles.receiptStatusAttached : styles.receiptStatusMissing}>
           {item.receiptId
             ? receipt.data?.uploadStatus === "uploaded"
@@ -411,6 +453,26 @@ function ClaimItemRow({
             ) : null}
           </View>
         ) : null}
+        {!disabled && canUseTng ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setTngPickerOpen(true)}
+            style={item.tngTransactionId ? styles.tngLinkedButton : styles.tngLinkButton}
+          >
+            <Text style={item.tngTransactionId ? styles.tngLinkedButtonText : styles.tngLinkButtonText}>
+              {item.tngTransactionId ? "TNG" : "Link TNG"}
+            </Text>
+          </Pressable>
+        ) : null}
+        {!disabled && item.tngTransactionId ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onUnlinkTngTransaction}
+          style={styles.unlinkTngButton}
+        >
+          <Text style={styles.unlinkTngText}>Unlink</Text>
+        </Pressable>
+        ) : null}
         {!disabled ? (
         <Pressable
           accessibilityRole="button"
@@ -435,6 +497,16 @@ function ClaimItemRow({
         receipt={receipt.data ?? null}
         visible={viewerOpen}
       />
+      <TngLinkModal
+        item={item}
+        onClose={() => setTngPickerOpen(false)}
+        onLink={(transaction) => {
+          onLinkTngTransaction(item, transaction);
+          setTngPickerOpen(false);
+        }}
+        transactions={tngTransactions}
+        visible={tngPickerOpen}
+      />
     </View>
   );
 }
@@ -450,6 +522,8 @@ function AddClaimItemModal({
     itemDate: string;
     notes: string | null;
     receipt?: LocalReceiptFile | null;
+    mode?: string | null;
+    tngTransactionId?: string | null;
     title: string;
     type: ClaimItemType;
   }) => void;
@@ -471,10 +545,15 @@ function AddClaimItemModal({
 
   function handleAdd() {
     onAddItem({
-      amountCents: moneyToCents(amount),
+      amountCents: paidViaTng ? 0 : moneyToCents(amount),
       itemDate: date,
-      notes: notes.trim() || null,
+      mode: paidViaTng ? "tng_pending" : null,
+      notes:
+        [notes.trim(), paidViaTng ? "Paid via TNG - pending transaction link." : ""]
+          .filter(Boolean)
+          .join("\n") || null,
       receipt,
+      tngTransactionId: null,
       title: description.trim() || meta.defaultTitle,
       type: meta.type
     });
@@ -583,6 +662,103 @@ function AddClaimItemModal({
               <Text style={styles.modalAddText}>Add {meta.buttonLabel}</Text>
             </Pressable>
           </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function TngLinkModal({
+  item,
+  onClose,
+  onLink,
+  transactions,
+  visible
+}: {
+  item: ClaimItemDraft;
+  onClose: () => void;
+  onLink: (transaction: TngTransaction) => void;
+  transactions: TngTransaction[];
+  visible: boolean;
+}) {
+  const candidates = useMemo(() => {
+    const openTransactions = transactions.filter(
+      (transaction) =>
+        !transaction.claimed || transaction.claimItemId === item.id
+    );
+    const scored = openTransactions
+      .map((transaction) => {
+        const candidate = scorePair(transaction, item);
+        return candidate
+          ? candidate
+          : matchTngToClaimItems([transaction], [item])[0] ?? null;
+      })
+      .filter((candidate): candidate is NonNullable<typeof candidate> =>
+        Boolean(candidate)
+      );
+
+    return scored.sort((left, right) => right.score - left.score);
+  }, [item, transactions]);
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.sheet}>
+          <View style={styles.modalHeader}>
+            <View>
+              <Text style={styles.modalTitle}>Link TNG Transaction</Text>
+              <Text style={styles.modalSubtitle}>
+                {item.title} - {formatDate(item.itemDate)}
+              </Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={onClose}>
+              <Text style={styles.modalClose}>X</Text>
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={styles.modalBody}>
+            {candidates.length === 0 ? (
+              <View style={styles.tngEmptyBox}>
+                <Text style={styles.tngEmptyTitle}>No matching TNG rows</Text>
+                <Text style={styles.tngEmptyCopy}>
+                  Import a statement in the TNG tab, then return here to link it.
+                </Text>
+              </View>
+            ) : (
+              candidates.map((candidate) => (
+                <Pressable
+                  accessibilityRole="button"
+                  key={candidate.transaction.id}
+                  onPress={() => onLink(candidate.transaction)}
+                  style={[
+                    styles.tngCandidate,
+                    candidate.transaction.id === item.tngTransactionId
+                      ? styles.tngCandidateActive
+                      : null
+                  ]}
+                >
+                  <View style={styles.tngCandidateMain}>
+                    <Text style={styles.tngCandidateTitle}>
+                      {tngSectorLabel(candidate.transaction.sector)}
+                    </Text>
+                    <Text style={styles.tngCandidateMeta}>
+                      {formatDate(candidate.transaction.transactionDate)} - {locationLabel(candidate.transaction)}
+                    </Text>
+                    <Text style={styles.tngCandidateReason}>
+                      {candidate.reasons.slice(0, 2).join(", ")}
+                    </Text>
+                  </View>
+                  <View style={styles.tngCandidateRight}>
+                    <Text style={styles.tngCandidateAmount}>
+                      {formatMoney(candidate.transaction.amountCents, candidate.transaction.currency)}
+                    </Text>
+                    <Text style={styles.tngCandidateScore}>
+                      {candidate.score}%
+                    </Text>
+                  </View>
+                </Pressable>
+              ))
+            )}
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -1000,6 +1176,26 @@ function formatMoney(amountCents: number, currency: string) {
   return `${currency} ${(amountCents / 100).toFixed(2)}`;
 }
 
+function locationLabel(transaction: TngTransaction) {
+  const route = [transaction.entryLocation, transaction.exitLocation]
+    .filter(Boolean)
+    .join(" -> ");
+
+  return transaction.location ?? (route || "No location");
+}
+
+function tngSectorLabel(sector: TngTransaction["sector"]) {
+  if (sector === "TOLL") {
+    return "Toll";
+  }
+
+  if (sector === "PARKING") {
+    return "Parking";
+  }
+
+  return "Retail transport";
+}
+
 function moneyToCents(value: string) {
   const amount = Number.parseFloat(value.replace(/[^\d.-]/g, ""));
 
@@ -1235,6 +1431,18 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginTop: 3
   },
+  tngPendingText: {
+    color: "#c2410c",
+    fontSize: 10,
+    fontWeight: "900",
+    marginTop: 3
+  },
+  tngLinkedText: {
+    color: "#0f766e",
+    fontSize: 10,
+    fontWeight: "900",
+    marginTop: 3
+  },
   itemAmountCol: {
     alignItems: "flex-end",
     gap: 3
@@ -1254,6 +1462,51 @@ const styles = StyleSheet.create({
   },
   editItemText: {
     color: "#2563eb",
+    fontSize: 10,
+    fontWeight: "900"
+  },
+  tngLinkButton: {
+    alignItems: "center",
+    backgroundColor: "#fff7ed",
+    borderColor: "#fed7aa",
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 26,
+    justifyContent: "center",
+    paddingHorizontal: 8
+  },
+  tngLinkButtonText: {
+    color: "#c2410c",
+    fontSize: 10,
+    fontWeight: "900"
+  },
+  tngLinkedButton: {
+    alignItems: "center",
+    backgroundColor: "#f0fdfa",
+    borderColor: "#99f6e4",
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 26,
+    justifyContent: "center",
+    paddingHorizontal: 8
+  },
+  tngLinkedButtonText: {
+    color: "#0f766e",
+    fontSize: 10,
+    fontWeight: "900"
+  },
+  unlinkTngButton: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 26,
+    justifyContent: "center",
+    paddingHorizontal: 8
+  },
+  unlinkTngText: {
+    color: "#64748b",
     fontSize: 10,
     fontWeight: "900"
   },
@@ -1439,6 +1692,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "900"
   },
+  modalSubtitle: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginTop: 3
+  },
   modalClose: {
     color: "#94a3b8",
     fontSize: 22,
@@ -1536,6 +1796,85 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 11,
     lineHeight: 16
+  },
+  tngEmptyBox: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.xs,
+    minHeight: 140,
+    justifyContent: "center",
+    padding: spacing.lg
+  },
+  tngEmptyTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  tngEmptyCopy: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 18,
+    textAlign: "center"
+  },
+  tngCandidate: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    minHeight: 70,
+    padding: spacing.md
+  },
+  tngCandidateActive: {
+    backgroundColor: "#f0fdfa",
+    borderColor: "#0f766e"
+  },
+  tngCandidateMain: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0
+  },
+  tngCandidateTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  tngCandidateMeta: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 18
+  },
+  tngCandidateReason: {
+    color: "#94a3b8",
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 16
+  },
+  tngCandidateRight: {
+    alignItems: "flex-end",
+    gap: 4
+  },
+  tngCandidateAmount: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  tngCandidateScore: {
+    backgroundColor: "#f1f5f9",
+    borderRadius: 999,
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "900",
+    overflow: "hidden",
+    paddingHorizontal: 7,
+    paddingVertical: 3
   },
   receiptChoice: {
     alignItems: "center",
