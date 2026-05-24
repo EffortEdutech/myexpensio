@@ -18,7 +18,8 @@ import type {
   ClaimItemDraft,
   ClaimItemType
 } from "@/features/claims/types";
-import type { LocalReceiptFile } from "@/features/receipts/types";
+import { useReceiptDraft } from "@/features/receipts/hooks/useReceiptUploadSummary";
+import type { LocalReceiptFile, ReceiptDraft } from "@/features/receipts/types";
 import { colors, spacing, typography } from "@/theme/tokens";
 
 type ClaimDetailProps = {
@@ -37,6 +38,7 @@ type ClaimDetailProps = {
   onBack: () => void;
   onDeleteClaim: () => void;
   onDeleteItem: (item: ClaimItemDraft) => void;
+  onRemoveReceipt: (item: ClaimItemDraft) => void;
   onSubmitClaim: (claim: ClaimDraft) => void;
   onUpdateClaim: (input: {
     periodEnd: string | null;
@@ -103,6 +105,7 @@ export function ClaimDetail({
   onBack,
   onDeleteClaim,
   onDeleteItem,
+  onRemoveReceipt,
   onSubmitClaim,
   onUpdateClaim,
   onUpdateItem
@@ -239,6 +242,7 @@ export function ClaimDetail({
                 key={item.id}
                 onAttachReceipt={(receipt) => onAttachReceipt(item, receipt)}
                 onEdit={() => setEditingItem(item)}
+                onRemoveReceipt={() => onRemoveReceipt(item)}
                 onDelete={() =>
                   confirmAction("Delete item?", "Remove this item from the claim.", () =>
                     onDeleteItem(item)
@@ -335,15 +339,19 @@ function ClaimItemRow({
   item,
   onAttachReceipt,
   onEdit,
+  onRemoveReceipt,
   onDelete
 }: {
   disabled: boolean;
   item: ClaimItemDraft;
   onAttachReceipt: (receipt: LocalReceiptFile) => void;
   onEdit: () => void;
+  onRemoveReceipt: () => void;
   onDelete: () => void;
 }) {
   const meta = getItemMeta(item.type);
+  const receipt = useReceiptDraft(item.receiptId);
+  const [viewerOpen, setViewerOpen] = useState(false);
 
   return (
     <View style={styles.itemRow}>
@@ -355,16 +363,20 @@ function ClaimItemRow({
         <Text style={styles.itemType}>{meta.label}</Text>
         <Text style={styles.itemTitle}>{item.title}</Text>
         <Text style={item.receiptId ? styles.receiptStatusAttached : styles.receiptStatusMissing}>
-          {item.receiptId ? "Receipt attached" : "No receipt"}
+          {item.receiptId
+            ? receipt.data?.uploadStatus === "uploaded"
+              ? "Receipt uploaded"
+              : "Receipt attached"
+            : "No receipt"}
         </Text>
       </View>
       <View style={styles.itemAmountCol}>
         <Text style={styles.itemAmount}>
           {formatMoney(item.amountCents, item.currency)}
         </Text>
+        {!disabled ? (
         <Pressable
           accessibilityRole="button"
-          disabled={disabled}
           onPress={() =>
             void openLocalReceiptPicker("gallery").then((receipt) => {
               if (receipt) {
@@ -378,23 +390,51 @@ function ClaimItemRow({
             {item.receiptId ? "Replace" : "Receipt"}
           </Text>
         </Pressable>
+        ) : null}
+        {item.receiptId ? (
+          <View style={styles.itemMiniActions}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setViewerOpen(true)}
+              style={styles.viewReceiptButton}
+            >
+              <Text style={styles.viewReceiptText}>View</Text>
+            </Pressable>
+            {!disabled ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={onRemoveReceipt}
+              style={styles.removeReceiptMiniButton}
+            >
+              <Text style={styles.removeReceiptMiniText}>Remove</Text>
+            </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+        {!disabled ? (
         <Pressable
           accessibilityRole="button"
-          disabled={disabled}
           onPress={onEdit}
           style={styles.editItemButton}
         >
           <Text style={styles.editItemText}>Edit</Text>
         </Pressable>
+        ) : null}
+        {!disabled ? (
         <Pressable
           accessibilityRole="button"
-          disabled={disabled}
           onPress={onDelete}
           style={styles.deleteItemButton}
         >
           <Text style={styles.deleteItemText}>×</Text>
         </Pressable>
+        ) : null}
       </View>
+      <ReceiptViewerModal
+        onClose={() => setViewerOpen(false)}
+        receipt={receipt.data ?? null}
+        visible={viewerOpen}
+      />
     </View>
   );
 }
@@ -712,7 +752,7 @@ function ReceiptCaptureField({
   return (
     <View style={styles.receiptCapture}>
       <ReceiptChoice
-        icon="Camera"
+        icon="📷"
         onPress={() =>
           void openLocalReceiptPicker("camera").then((receipt) => {
             if (receipt) {
@@ -725,7 +765,7 @@ function ReceiptCaptureField({
         title="Scan Document"
       />
       <ReceiptChoice
-        icon="Attach"
+        icon="📎"
         onPress={() =>
           void openLocalReceiptPicker("gallery").then((receipt) => {
             if (receipt) {
@@ -754,6 +794,79 @@ function ReceiptCaptureField({
           </Pressable>
         </View>
       ) : null}
+    </View>
+  );
+}
+
+function ReceiptViewerModal({
+  onClose,
+  receipt,
+  visible
+}: {
+  onClose: () => void;
+  receipt: ReceiptDraft | null;
+  visible: boolean;
+}) {
+  if (!visible) {
+    return null;
+  }
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+      <View style={styles.modalOverlay}>
+        <View style={styles.receiptViewerSheet}>
+          <View style={styles.modalHeader}>
+            <View>
+              <Text style={styles.modalTitle}>Receipt</Text>
+              <Text style={styles.receiptViewerSub}>
+                {receipt?.uploadStatus ?? "local"} - {receipt?.syncStatus ?? "pending"}
+              </Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={onClose}>
+              <Text style={styles.modalClose}>X</Text>
+            </Pressable>
+          </View>
+          <View style={styles.receiptViewerBody}>
+            {receipt?.localUri?.startsWith("blob:") ||
+            receipt?.localUri?.startsWith("data:") ? (
+              <View style={styles.receiptImageFrame}>
+                <Text style={styles.receiptViewerIcon}>🧾</Text>
+                <Text style={styles.receiptViewerTitle}>Local receipt selected</Text>
+                <Text style={styles.receiptViewerCopy}>
+                  This file is stored locally and queued for upload.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.receiptImageFrame}>
+                <Text style={styles.receiptViewerIcon}>🧾</Text>
+                <Text style={styles.receiptViewerTitle}>
+                  {receipt ? "Receipt metadata available" : "Receipt not loaded"}
+                </Text>
+                <Text style={styles.receiptViewerCopy}>
+                  {receipt?.localUri ?? "The local receipt record is not available yet."}
+                </Text>
+              </View>
+            )}
+            {receipt ? (
+              <View style={styles.receiptViewerMeta}>
+                <MetricLine label="Type" value={receipt.mimeType ?? "image"} />
+                <MetricLine label="Size" value={formatFileSize(receipt.fileSize)} />
+                <MetricLine label="Upload" value={receipt.uploadStatus} />
+                <MetricLine label="Sync" value={receipt.syncStatus} />
+              </View>
+            ) : null}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function MetricLine({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.receiptMetricLine}>
+      <Text style={styles.receiptMetricLabel}>{label}</Text>
+      <Text style={styles.receiptMetricValue}>{value}</Text>
     </View>
   );
 }
@@ -1159,6 +1272,40 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "900"
   },
+  itemMiniActions: {
+    flexDirection: "row",
+    gap: 4
+  },
+  viewReceiptButton: {
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 26,
+    justifyContent: "center",
+    paddingHorizontal: 7
+  },
+  viewReceiptText: {
+    color: "#2563eb",
+    fontSize: 10,
+    fontWeight: "900"
+  },
+  removeReceiptMiniButton: {
+    alignItems: "center",
+    backgroundColor: "#fff7ed",
+    borderColor: "#fed7aa",
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 26,
+    justifyContent: "center",
+    paddingHorizontal: 7
+  },
+  removeReceiptMiniText: {
+    color: "#c2410c",
+    fontSize: 10,
+    fontWeight: "900"
+  },
   deleteItemButton: {
     alignItems: "center",
     borderRadius: 8,
@@ -1409,8 +1556,10 @@ const styles = StyleSheet.create({
     gap: spacing.sm
   },
   receiptIcon: {
-    fontSize: 20,
-    width: 24
+    fontSize: 22,
+    lineHeight: 26,
+    textAlign: "center",
+    width: 34
   },
   receiptBody: {
     flex: 1
@@ -1488,6 +1637,77 @@ const styles = StyleSheet.create({
   receiptRemoveText: {
     color: colors.danger,
     fontSize: 10,
+    fontWeight: "900"
+  },
+  receiptViewerSheet: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    maxHeight: "92%",
+    maxWidth: 460,
+    overflow: "hidden",
+    width: "100%"
+  },
+  receiptViewerSub: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "800",
+    marginTop: 3
+  },
+  receiptViewerBody: {
+    gap: spacing.md,
+    padding: spacing.lg
+  },
+  receiptImageFrame: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: spacing.xs,
+    minHeight: 180,
+    justifyContent: "center",
+    padding: spacing.lg
+  },
+  receiptViewerIcon: {
+    fontSize: 36
+  },
+  receiptViewerTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900",
+    textAlign: "center"
+  },
+  receiptViewerCopy: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 18,
+    textAlign: "center"
+  },
+  receiptViewerMeta: {
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: "hidden"
+  },
+  receiptMetricLine: {
+    alignItems: "center",
+    borderBottomColor: "#f1f5f9",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    padding: spacing.md
+  },
+  receiptMetricLabel: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "800"
+  },
+  receiptMetricValue: {
+    color: colors.text,
+    fontSize: typography.caption,
     fontWeight: "900"
   },
   modalFooter: {

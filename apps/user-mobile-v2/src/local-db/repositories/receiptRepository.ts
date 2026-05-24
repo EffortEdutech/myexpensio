@@ -62,6 +62,19 @@ export async function listReceiptsByUploadStatus(
   return rows.map(mapReceiptRow);
 }
 
+export async function getReceiptDraft(receiptId: string) {
+  const database = await getDatabase();
+  const row = await database.getFirstAsync<ReceiptRow>(
+    `SELECT *
+      FROM receipts
+      WHERE id = ?
+        AND deleted_at IS NULL;`,
+    [receiptId]
+  );
+
+  return row ? mapReceiptRow(row) : null;
+}
+
 export async function createReceiptDraft(
   input: CreateReceiptDraftInput,
   deviceId: string

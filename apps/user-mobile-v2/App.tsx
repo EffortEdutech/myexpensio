@@ -274,6 +274,12 @@ function AuthenticatedHome({
               setSelectedClaimId(claim.id);
             }}
             onDeleteClaimItem={(item) => deleteClaimItem.mutate(item.id)}
+            onRemoveReceiptFromItem={async (item) => {
+              await updateClaimItem.mutateAsync({
+                itemId: item.id,
+                receiptId: null
+              });
+            }}
             onDeleteClaim={async (claim) => {
               await deleteClaim.mutateAsync(claim.id);
               setSelectedClaimId(null);
@@ -944,6 +950,7 @@ type WorkClaimsSliceProps = {
     }
   ) => Promise<void>;
   onDeleteClaimItem: (item: ClaimItemDraft) => void;
+  onRemoveReceiptFromItem: (item: ClaimItemDraft) => Promise<void>;
   onDeleteClaim: (claim: ClaimDraft) => Promise<void>;
   onOpenClaim: (claim: ClaimDraft) => void;
   onOpenNewClaim: () => void;
@@ -999,6 +1006,7 @@ function WorkClaimsSlice({
   onCreateBlankClaim,
   onCreateClaimItem,
   onDeleteClaimItem,
+  onRemoveReceiptFromItem,
   onDeleteClaim,
   onOpenClaim,
   onOpenNewClaim,
@@ -1034,6 +1042,7 @@ function WorkClaimsSlice({
             onBack={onBackToClaims}
             onDeleteClaim={() => onDeleteClaim(activeClaim)}
             onDeleteItem={onDeleteClaimItem}
+            onRemoveReceipt={onRemoveReceiptFromItem}
         onSubmitClaim={onSubmitClaim}
         onUpdateClaim={(input) => onUpdateClaim(activeClaim, input)}
         onUpdateItem={onUpdateClaimItem}
