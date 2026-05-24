@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -128,6 +128,7 @@ export function ClaimDetail({
   const [activeModal, setActiveModal] = useState<ClaimModalKind | null>(null);
   const [editingClaim, setEditingClaim] = useState(false);
   const [editingItem, setEditingItem] = useState<ClaimItemDraft | null>(null);
+  const [viewingItem, setViewingItem] = useState<ClaimItemDraft | null>(null);
   const [editTitle, setEditTitle] = useState(claim?.title ?? "");
   const [editPeriodStart, setEditPeriodStart] = useState(
     claim?.periodStart ?? todayInput()
@@ -259,6 +260,7 @@ export function ClaimDetail({
                 onEdit={() => setEditingItem(item)}
                 onLinkTngTransaction={onLinkTngTransaction}
                 onRemoveReceipt={() => onRemoveReceipt(item)}
+                onOpen={() => setViewingItem(item)}
                 onUnlinkTngTransaction={() => onUnlinkTngTransaction(item)}
                 onDelete={() =>
                   confirmAction("Delete item?", "Remove this item from the claim.", () =>
@@ -348,6 +350,27 @@ export function ClaimDetail({
           setEditingItem(null);
         }}
       />
+
+      <ClaimItemDetailModal
+        disabled={!isDraft}
+        item={viewingItem}
+        onAttachReceipt={(item, receipt) => onAttachReceipt(item, receipt)}
+        onClose={() => setViewingItem(null)}
+        onDelete={(item) =>
+          confirmAction("Delete item?", "Remove this item from the claim.", () => {
+            onDeleteItem(item);
+            setViewingItem(null);
+          })
+        }
+        onEdit={(item) => {
+          setViewingItem(null);
+          setEditingItem(item);
+        }}
+        onLinkTngTransaction={onLinkTngTransaction}
+        onRemoveReceipt={(item) => onRemoveReceipt(item)}
+        onUnlinkTngTransaction={(item) => onUnlinkTngTransaction(item)}
+        tngTransactions={tngTransactions}
+      />
     </View>
   );
 }
@@ -358,6 +381,7 @@ function ClaimItemRow({
   onAttachReceipt,
   onEdit,
   onLinkTngTransaction,
+  onOpen,
   onRemoveReceipt,
   onUnlinkTngTransaction,
   tngTransactions,
@@ -371,6 +395,7 @@ function ClaimItemRow({
     item: ClaimItemDraft,
     transaction: TngTransaction
   ) => void;
+  onOpen: () => void;
   onRemoveReceipt: () => void;
   onUnlinkTngTransaction: () => void;
   tngTransactions: TngTransaction[];
@@ -389,7 +414,14 @@ function ClaimItemRow({
   const isTngPending = item.mode === "tng_pending" || item.mode === "tng_linked";
 
   return (
-    <View style={styles.itemRow}>
+    <Pressable
+      accessibilityRole="button"
+      onPress={onOpen}
+      style={({ pressed }) => [
+        styles.itemRow,
+        pressed ? styles.itemRowPressed : null
+      ]}
+    >
       <View style={styles.itemDateCol}>
         <Text style={styles.itemDate}>{formatDate(item.itemDate)}</Text>
       </View>
@@ -507,7 +539,208 @@ function ClaimItemRow({
         transactions={tngTransactions}
         visible={tngPickerOpen}
       />
-    </View>
+    </Pressable>
+  );
+}
+
+function ClaimItemDetailModal({
+  disabled,
+  item,
+  onAttachReceipt,
+  onClose,
+  onDelete,
+  onEdit,
+  onLinkTngTransaction,
+  onRemoveReceipt,
+  onUnlinkTngTransaction,
+  tngTransactions
+}: {
+  disabled: boolean;
+  item: ClaimItemDraft | null;
+  onAttachReceipt: (item: ClaimItemDraft, receipt: LocalReceiptFile) => void;
+  onClose: () => void;
+  onDelete: (item: ClaimItemDraft) => void;
+  onEdit: (item: ClaimItemDraft) => void;
+  onLinkTngTransaction: (
+    item: ClaimItemDraft,
+    transaction: TngTransaction
+  ) => void;
+  onRemoveReceipt: (item: ClaimItemDraft) => void;
+  onUnlinkTngTransaction: (item: ClaimItemDraft) => void;
+  tngTransactions: TngTransaction[];
+}) {
+  const [tngPickerOpen, setTngPickerOpen] = useState(false);
+  const [receiptViewerOpen, setReceiptViewerOpen] = useState(false);
+  const receipt = useReceiptDraft(item?.receiptId);
+
+  if (!item) {
+    return null;
+  }
+
+  const meta = getItemMeta(item.type);
+  const linkedTransaction = tngTransactions.find(
+    (transaction) => transaction.id === item.tngTransactionId
+  );
+  const canUseTng = ["toll", "parking", "grab", "taxi", "train", "bus"].includes(
+    item.type
+  );
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+      <View style={styles.modalOverlay}>
+        <View style={styles.sheet}>
+          <View style={styles.modalHeader}>
+            <View style={styles.modalHeaderCopy}>
+              <Text style={styles.modalTitle}>{meta.label}</Text>
+              <Text style={styles.modalSubtitle}>
+                {formatDate(item.itemDate)} - {formatMoney(item.amountCents, item.currency)}
+              </Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={onClose}>
+              <Text style={styles.modalClose}>X</Text>
+            </Pressable>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.modalBody}>
+            <View style={styles.itemDetailHero}>
+              <Text style={styles.itemDetailIcon}>{meta.icon}</Text>
+              <View style={styles.itemDetailHeroText}>
+                <Text style={styles.itemDetailTitle}>{item.title}</Text>
+                <Text style={styles.itemDetailSub}>
+                  {item.mode === "tng_linked"
+                    ? "Paid via linked TNG transaction"
+                    : item.mode === "tng_pending"
+                      ? "Paid via TNG - transaction link pending"
+                      : "Manual claim item"}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.detailTable}>
+              <DetailLine label="Date" value={formatDate(item.itemDate)} />
+              <DetailLine label="Type" value={meta.label} />
+              <DetailLine label="Amount" value={formatMoney(item.amountCents, item.currency)} />
+              <DetailLine
+                label="Receipt"
+                value={
+                  item.receiptId
+                    ? receipt.data?.uploadStatus === "uploaded"
+                      ? "Uploaded"
+                      : "Attached locally"
+                    : "Not attached"
+                }
+              />
+              {linkedTransaction ? (
+                <DetailLine
+                  label="TNG"
+                  value={`${locationLabel(linkedTransaction)} - ${formatMoney(
+                    linkedTransaction.amountCents,
+                    linkedTransaction.currency
+                  )}`}
+                />
+              ) : item.mode === "tng_pending" ? (
+                <DetailLine label="TNG" value="Link pending" />
+              ) : null}
+              {item.notes ? <DetailLine label="Notes" value={item.notes} /> : null}
+            </View>
+
+            {!disabled ? (
+              <View style={styles.detailActionGrid}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => onEdit(item)}
+                  style={styles.detailPrimaryAction}
+                >
+                  <Text style={styles.detailPrimaryText}>Edit Item</Text>
+                </Pressable>
+                {item.receiptId ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => setReceiptViewerOpen(true)}
+                    style={styles.detailSecondaryAction}
+                  >
+                    <Text style={styles.detailSecondaryText}>View Receipt</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() =>
+                    void openLocalReceiptPicker("gallery").then((picked) => {
+                      if (picked) {
+                        onAttachReceipt(item, picked);
+                      }
+                    })
+                  }
+                  style={styles.detailSecondaryAction}
+                >
+                  <Text style={styles.detailSecondaryText}>
+                    {item.receiptId ? "Replace Receipt" : "Attach Receipt"}
+                  </Text>
+                </Pressable>
+                {item.receiptId ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => onRemoveReceipt(item)}
+                    style={styles.detailSecondaryAction}
+                  >
+                    <Text style={styles.detailSecondaryText}>Remove Receipt</Text>
+                  </Pressable>
+                ) : null}
+                {canUseTng ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => setTngPickerOpen(true)}
+                    style={styles.detailSecondaryAction}
+                  >
+                    <Text style={styles.detailSecondaryText}>
+                      {item.tngTransactionId ? "Change TNG" : "Link TNG"}
+                    </Text>
+                  </Pressable>
+                ) : null}
+                {item.tngTransactionId ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => onUnlinkTngTransaction(item)}
+                    style={styles.detailSecondaryAction}
+                  >
+                    <Text style={styles.detailSecondaryText}>Unlink TNG</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => onDelete(item)}
+                  style={styles.detailDangerAction}
+                >
+                  <Text style={styles.detailDangerText}>Delete Item</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.lockedPanel}>
+                <Text style={styles.lockedText}>
+                  Submitted claim items are read-only.
+                </Text>
+              </View>
+            )}
+          </ScrollView>
+
+          <TngLinkModal
+            item={item}
+            onClose={() => setTngPickerOpen(false)}
+            onLink={(transaction) => {
+              onLinkTngTransaction(item, transaction);
+              setTngPickerOpen(false);
+            }}
+            transactions={tngTransactions}
+            visible={tngPickerOpen}
+          />
+          <ReceiptViewerModal
+            onClose={() => setReceiptViewerOpen(false)}
+            receipt={receipt.data ?? null}
+            visible={receiptViewerOpen}
+          />
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -536,16 +769,29 @@ function AddClaimItemModal({
   const [notes, setNotes] = useState("");
   const [paidViaTng, setPaidViaTng] = useState(false);
   const [receipt, setReceipt] = useState<LocalReceiptFile | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   if (!kind) {
     return null;
   }
 
   const meta = getModalMeta(kind, transportType);
+  const amountCents = moneyToCents(amount);
+  const canAdd = Boolean(date) && (paidViaTng || amountCents > 0);
 
   function handleAdd() {
+    if (!date) {
+      setErrorMessage("Please select a date.");
+      return;
+    }
+
+    if (!paidViaTng && amountCents <= 0) {
+      setErrorMessage("Please enter an amount greater than 0.00.");
+      return;
+    }
+
     onAddItem({
-      amountCents: paidViaTng ? 0 : moneyToCents(amount),
+      amountCents: paidViaTng ? 0 : amountCents,
       itemDate: date,
       mode: paidViaTng ? "tng_pending" : null,
       notes:
@@ -562,6 +808,7 @@ function AddClaimItemModal({
     setNotes("");
     setPaidViaTng(false);
     setReceipt(null);
+    setErrorMessage(null);
     onClose();
   }
 
@@ -577,6 +824,12 @@ function AddClaimItemModal({
           </View>
 
           <ScrollView contentContainerStyle={styles.modalBody}>
+            {errorMessage ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{errorMessage}</Text>
+              </View>
+            ) : null}
+
             {kind === "transport" ? (
               <View style={styles.field}>
                 <Text style={styles.label}>Transport Type</Text>
@@ -653,9 +906,11 @@ function AddClaimItemModal({
           <View style={styles.modalFooter}>
             <Pressable
               accessibilityRole="button"
+              disabled={!canAdd}
               onPress={handleAdd}
               style={({ pressed }) => [
                 styles.modalAddButton,
+                !canAdd ? styles.disabled : null,
                 pressed ? styles.pressed : null
               ]}
             >
@@ -791,7 +1046,7 @@ function EditClaimItemModal({
   const [notes, setNotes] = useState("");
   const [receipt, setReceipt] = useState<LocalReceiptFile | null>(null);
 
-  useMemo(() => {
+  useEffect(() => {
     if (!item) {
       return;
     }
@@ -801,7 +1056,7 @@ function EditClaimItemModal({
     setTitle(item.title);
     setNotes(item.notes ?? "");
     setReceipt(null);
-  }, [item?.id]);
+  }, [item]);
 
   if (!item) {
     return null;
@@ -1043,6 +1298,15 @@ function MetricLine({ label, value }: { label: string; value: string }) {
     <View style={styles.receiptMetricLine}>
       <Text style={styles.receiptMetricLabel}>{label}</Text>
       <Text style={styles.receiptMetricValue}>{value}</Text>
+    </View>
+  );
+}
+
+function DetailLine({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.detailLine}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailValue}>{value}</Text>
     </View>
   );
 }
@@ -1391,6 +1655,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm
   },
+  itemRowPressed: {
+    backgroundColor: "#f8fafc"
+  },
   itemDateCol: {
     width: 84
   },
@@ -1687,6 +1954,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     padding: spacing.lg
   },
+  modalHeaderCopy: {
+    flex: 1,
+    minWidth: 0
+  },
   modalTitle: {
     color: colors.text,
     fontSize: 18,
@@ -1708,8 +1979,123 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.lg
   },
+  itemDetailHero: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    padding: spacing.md
+  },
+  itemDetailIcon: {
+    fontSize: 26,
+    textAlign: "center",
+    width: 36
+  },
+  itemDetailHeroText: {
+    flex: 1,
+    gap: 3,
+    minWidth: 0
+  },
+  itemDetailTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  itemDetailSub: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 18
+  },
+  detailTable: {
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: "hidden"
+  },
+  detailLine: {
+    alignItems: "flex-start",
+    borderBottomColor: "#f1f5f9",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+    padding: spacing.md
+  },
+  detailLabel: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "800",
+    width: 82
+  },
+  detailValue: {
+    color: colors.text,
+    flex: 1,
+    fontSize: typography.caption,
+    fontWeight: "900",
+    lineHeight: 18,
+    textAlign: "right"
+  },
+  detailActionGrid: {
+    gap: spacing.sm
+  },
+  detailPrimaryAction: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    minHeight: 46,
+    justifyContent: "center"
+  },
+  detailPrimaryText: {
+    color: colors.onPrimary,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  detailSecondaryAction: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    minHeight: 44,
+    justifyContent: "center"
+  },
+  detailSecondaryText: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  detailDangerAction: {
+    alignItems: "center",
+    backgroundColor: "#fef2f2",
+    borderColor: "#fecaca",
+    borderRadius: 10,
+    borderWidth: 1,
+    minHeight: 44,
+    justifyContent: "center"
+  },
+  detailDangerText: {
+    color: colors.danger,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
   field: {
     gap: 6
+  },
+  errorBox: {
+    backgroundColor: "#fef2f2",
+    borderColor: "#fecaca",
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: spacing.md
+  },
+  errorText: {
+    color: colors.danger,
+    fontSize: typography.caption,
+    fontWeight: "800"
   },
   label: {
     color: "#374151",

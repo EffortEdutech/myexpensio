@@ -213,10 +213,13 @@ export async function createLocalExportJob(
     filterStatus: null,
     format: input.format,
     id: createId("export_job"),
-    localUri: `local://exports/${input.format.toLowerCase()}/${timestamp}`,
+    localUri:
+      input.format === "CSV"
+        ? `download://exports/csv/${timestamp}`
+        : `local://exports/${input.format.toLowerCase()}/${timestamp}`,
     previewPayload: preview.payload,
     rowCount: preview.rowCount,
-    status: "local_preview",
+    status: input.format === "CSV" ? "completed" : "local_preview",
     syncStatus: "pending",
     templateName: input.templateName ?? "Standard claim export",
     tngAppendixPayload: preview.appendices,

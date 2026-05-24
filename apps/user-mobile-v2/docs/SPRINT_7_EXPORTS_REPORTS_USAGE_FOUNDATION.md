@@ -1,12 +1,12 @@
-# Sprint 7 - Exports, Reports, and Usage Limits Foundation
+# Sprint 7 - Exports, Reports, and Usage Limits
 
 Date: 2026-05-24
 
 ## Goal
 
-Build the local-first export foundation for user mobile v2 without pretending the final backend PDF/XLSX export service is complete.
+Build the local-first export foundation for user mobile v2 and make sure supported export actions create real files, not only preview rows.
 
-## Implemented Foundation
+## Implemented
 
 - Added local `export_jobs` storage for generated preview history.
 - Added Work > Export screen instead of the deferred placeholder.
@@ -15,21 +15,25 @@ Build the local-first export foundation for user mobile v2 without pretending th
 - Added local export preview builder that reads claims, claim items, receipts, and linked TNG transaction metadata.
 - Added Appendix B preview grouping for linked TNG rows by statement batch/label.
 - Added sync queue entries for local export jobs.
+- Added real local CSV generation for the web build using the same browser Blob/download pattern used by v1.
+- Added CSV download from export history when a saved job has a preview payload.
+- Renamed the primary CSV action to `Download CSV` so users are not misled by preview-only wording.
+- Locked PDF/XLSX actions behind explicit backend-generation messaging until their real generators are wired.
 
 ## Current Boundary
 
 In scope for this pass:
 
-- Local preview and history.
-- CSV/PDF/XLSX format intent.
-- Usage counter enforcement for local previews.
+- Local preview and history for export records.
+- Real CSV file generation and download in the web build.
+- Usage counter enforcement for local CSV export creation.
 - TNG appendix metadata readiness.
+- Clear PDF/XLSX backend-required messaging.
 
 Out of scope for this pass:
 
 - Real PDF rendering.
 - Real XLSX generation.
-- File downloads.
 - Supabase storage.
 - Backend export API.
 - Admin review/export template management.
@@ -64,10 +68,18 @@ Runtime QA and polish pass completed on 2026-05-24:
 - Confirmed browser console had no errors.
 - Added a visible limit-reached notice so users understand why preview generation is disabled.
 
-## Next Sprint 7 Pass
+File generation correction completed on 2026-05-24:
 
-- Runtime QA Work > Export.
-- Save preview for selected claims.
-- Confirm history and usage counter increments.
-- Add download/share placeholder behavior if needed.
-- Polish any UI issues found in runtime.
+- Added CSV file builder with v1-style browser download behavior.
+- `corepack pnpm -C apps/user-mobile-v2 typecheck` passed.
+- `corepack pnpm -C apps/user-mobile-v2 exec expo export --platform web --clear` passed.
+- Runtime verified Export screen loads after the patch.
+- Runtime verified CSV history rows show a `Download` action.
+- Runtime verified PDF selection shows backend-required messaging instead of pretending a file can be generated.
+- Note: the Codex in-app browser cannot capture file downloads, so final CSV file-save confirmation must be done in Chrome/Edge.
+
+## Remaining Sprint 7 Work
+
+- Wire PDF generation to the backend export service or add an approved PDF generator.
+- Wire XLSX generation to the backend export service or add an approved XLSX generator.
+- Confirm CSV file creation manually in Chrome/Edge with a clean usage counter or an existing CSV history row.

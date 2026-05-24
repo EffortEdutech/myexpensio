@@ -9,6 +9,7 @@ import {
 } from "react-native";
 
 import type { ClaimDraft } from "@/features/claims/types";
+import { downloadCsvExport } from "@/features/exports/exportFiles";
 import { useCreateLocalExportJob } from "@/features/exports/hooks/useExportActions";
 import {
   useExportJobs,
@@ -26,6 +27,7 @@ type ExportScreenProps = {
 export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
   const [selectedClaimIds, setSelectedClaimIds] = useState<string[]>([]);
   const [format, setFormat] = useState<ExportFormat>("CSV");
+  const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
   const exportJobs = useExportJobs();
   const usage = useExportUsageSummary();
   const preview = useExportPreview(selectedClaimIds);
@@ -41,6 +43,12 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
   const limitReached =
     usage.data?.limit != null &&
     usage.data.exportsCreated >= usage.data.limit;
+  const selectedFormatNeedsBackend = format !== "CSV";
+  const primaryActionDisabled =
+    selectedClaimIds.length === 0 ||
+    createExport.isPending ||
+    limitReached ||
+    selectedFormatNeedsBackend;
 
   function toggleClaim(claimId: string) {
     setSelectedClaimIds((current) =>
@@ -50,12 +58,52 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
     );
   }
 
+  async function handleGenerateExport() {
+    setDownloadNotice(null);
+
+    try {
+      if (format !== "CSV") {
+        setDownloadNotice(`${format} generation needs the backend export service.`);
+        return;
+      }
+
+      const job = await createExport.mutateAsync({
+        claimIds: selectedClaimIds,
+        format,
+        templateName: "Standard claim export"
+      });
+
+      if (!job.previewPayload) {
+        throw new Error("Export payload was not created.");
+      }
+
+      downloadCsvExport(job.previewPayload);
+      setDownloadNotice("CSV file generated and downloaded.");
+    } catch (error) {
+      setDownloadNotice(error instanceof Error ? error.message : "Export failed.");
+    }
+  }
+
+  function handleDownloadHistory(job: ExportJob) {
+    try {
+      if (!job.previewPayload || job.format !== "CSV") {
+        setDownloadNotice("Only completed CSV exports can be downloaded locally.");
+        return;
+      }
+
+      downloadCsvExport(job.previewPayload);
+      setDownloadNotice("CSV file downloaded again from export history.");
+    } catch (error) {
+      setDownloadNotice(error instanceof Error ? error.message : "Download failed.");
+    }
+  }
+
   return (
     <View style={styles.page}>
       <View style={styles.header}>
         <Text style={styles.title}>Exports</Text>
         <Text style={styles.subtitle}>
-          Prepare local claim export previews now. Final PDF/XLSX generation will use the backend export service later.
+          Generate real CSV files locally. PDF and XLSX stay locked until the backend export service is wired.
         </Text>
       </View>
 
@@ -82,9 +130,9 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
 
       {limitReached ? (
         <View style={styles.limitNotice}>
-          <Text style={styles.limitNoticeTitle}>Preview limit reached</Text>
+          <Text style={styles.limitNoticeTitle}>Export limit reached</Text>
           <Text style={styles.limitNoticeCopy}>
-            This trial workspace has used its local export previews for the current month. Final paid-plan limits will sync from the backend later.
+            This trial workspace has used its local CSV exports for the current month. Final paid-plan limits will sync from the backend later.
           </Text>
         </View>
       ) : null}
@@ -108,6 +156,17 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
           </Pressable>
         ))}
       </View>
+
+      {selectedFormatNeedsBackend ? (
+        <View style={styles.backendNotice}>
+          <Text style={styles.backendNoticeTitle}>
+            {format} export needs backend generation
+          </Text>
+          <Text style={styles.backendNoticeCopy}>
+            CSV downloads now. {format} requires the production export service or a dedicated file-generation library before it can create a real file.
+          </Text>
+        </View>
+      ) : null}
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Claims</Text>
@@ -211,29 +270,29 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
 
       <Pressable
         accessibilityRole="button"
-        disabled={selectedClaimIds.length === 0 || createExport.isPending || limitReached}
-        onPress={() =>
-          createExport.mutate({
-            claimIds: selectedClaimIds,
-            format,
-            templateName: "Standard claim export"
-          })
-        }
+        disabled={primaryActionDisabled}
+        onPress={() => void handleGenerateExport()}
         style={[
           styles.generateButton,
-          selectedClaimIds.length === 0 || createExport.isPending || limitReached
-            ? styles.disabled
-            : null
+          primaryActionDisabled ? styles.disabled : null
         ]}
       >
         <Text style={styles.generateText}>
-          {limitReached
-            ? "Preview Limit Reached"
-            : createExport.isPending
-              ? "Saving Preview..."
-              : `Save ${format} Preview`}
+          {selectedFormatNeedsBackend
+            ? `${format} Backend Required`
+            : limitReached
+              ? "Export Limit Reached"
+              : createExport.isPending
+                ? "Generating CSV..."
+                : "Download CSV"}
         </Text>
       </Pressable>
+
+      {downloadNotice ? (
+        <View style={styles.successBox}>
+          <Text style={styles.successText}>{downloadNotice}</Text>
+        </View>
+      ) : null}
 
       {createExport.error instanceof Error ? (
         <View style={styles.errorBox}>
@@ -250,14 +309,18 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
         ) : exportJobs.data && exportJobs.data.length > 0 ? (
           <View style={styles.historyList}>
             {exportJobs.data.map((job) => (
-              <ExportJobRow key={job.id} job={job} />
+              <ExportJobRow
+                key={job.id}
+                job={job}
+                onDownloadCsv={handleDownloadHistory}
+              />
             ))}
           </View>
         ) : (
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>No export previews yet</Text>
             <Text style={styles.emptyCopy}>
-              Save a local preview to create the first export history entry.
+              Download a CSV export to create the first export history entry.
             </Text>
           </View>
         )}
@@ -266,16 +329,35 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
   );
 }
 
-function ExportJobRow({ job }: { job: ExportJob }) {
+function ExportJobRow({
+  job,
+  onDownloadCsv
+}: {
+  job: ExportJob;
+  onDownloadCsv: (job: ExportJob) => void;
+}) {
+  const canDownloadCsv = job.format === "CSV" && job.previewPayload !== null;
+
   return (
     <View style={styles.historyRow}>
       <View style={styles.historyMain}>
-        <Text style={styles.historyTitle}>{job.format} preview</Text>
+        <Text style={styles.historyTitle}>
+          {job.format} {canDownloadCsv ? "file" : "preview"}
+        </Text>
         <Text style={styles.historySub}>
           {formatDate(job.createdAt)} - {job.rowCount} row(s) - {job.status}
         </Text>
       </View>
       <Text style={styles.historyAmount}>{formatMoney(job.totalAmountCents)}</Text>
+      {canDownloadCsv ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onDownloadCsv(job)}
+          style={styles.historyButton}
+        >
+          <Text style={styles.historyButtonText}>Download</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -294,9 +376,9 @@ function UsageCard({
   return (
     <View style={styles.usageCard}>
       <View style={styles.usageMain}>
-        <Text style={styles.usageTitle}>Trial export previews</Text>
+        <Text style={styles.usageTitle}>Trial exports</Text>
         <Text style={styles.usageCopy}>
-          Local previews cost nothing. Final production exports stay deferred to the backend service.
+          CSV files are generated locally. PDF/XLSX production files stay deferred to the backend service.
         </Text>
       </View>
       <View style={styles.usageRight}>
@@ -442,6 +524,25 @@ const styles = StyleSheet.create({
   },
   limitNoticeCopy: {
     color: "#9a3412",
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 18
+  },
+  backendNotice: {
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 3,
+    padding: spacing.md
+  },
+  backendNoticeTitle: {
+    color: "#1e3a8a",
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  backendNoticeCopy: {
+    color: "#2563eb",
     fontSize: typography.caption,
     fontWeight: "700",
     lineHeight: 18
@@ -660,6 +761,19 @@ const styles = StyleSheet.create({
     fontSize: typography.body,
     fontWeight: "900"
   },
+  historyButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    justifyContent: "center",
+    minHeight: 34,
+    paddingHorizontal: spacing.md
+  },
+  historyButtonText: {
+    color: colors.onPrimary,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
   emptyState: {
     alignItems: "center",
     backgroundColor: colors.surface,
@@ -693,6 +807,18 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: colors.danger,
+    fontSize: typography.caption,
+    fontWeight: "800"
+  },
+  successBox: {
+    backgroundColor: "#f0fdf4",
+    borderColor: "#bbf7d0",
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: spacing.md
+  },
+  successText: {
+    color: "#15803d",
     fontSize: typography.caption,
     fontWeight: "800"
   },

@@ -870,6 +870,20 @@ export async function softDeleteClaimItem(itemId: string, deviceId: string) {
   }
 
   await database.withTransactionAsync(async () => {
+    if (existing.tng_transaction_id) {
+      await database.runAsync(
+        `UPDATE tng_transactions
+          SET claimed = 0,
+              claim_item_id = NULL,
+              linked_claim_id = NULL,
+              link_status = 'unlinked',
+              sync_status = 'pending',
+              updated_at = ?
+          WHERE id = ?;`,
+        [timestamp, existing.tng_transaction_id]
+      );
+    }
+
     await database.runAsync(
       `UPDATE claim_items
         SET sync_status = 'deleted',
@@ -902,6 +916,26 @@ export async function softDeleteClaimItem(itemId: string, deviceId: string) {
       },
       database
     );
+
+    if (existing.tng_transaction_id) {
+      await enqueueSyncItem(
+        {
+          entityType: "tng_transaction",
+          entityId: existing.tng_transaction_id,
+          operation: "update",
+          payload: JSON.stringify({
+            claimItemId: null,
+            claimed: false,
+            deviceId,
+            id: existing.tng_transaction_id,
+            linkedClaimId: null,
+            linkStatus: "unlinked",
+            updatedAt: timestamp
+          })
+        },
+        database
+      );
+    }
   });
 
   return mapClaimItemRow(existing);
