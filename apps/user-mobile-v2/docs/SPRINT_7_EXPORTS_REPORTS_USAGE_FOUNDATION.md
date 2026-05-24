@@ -52,6 +52,18 @@ Runtime smoke completed on 2026-05-24:
 - Saved a local CSV preview.
 - Confirmed usage counter incremented and export history showed the new preview.
 
+Runtime QA and polish pass completed on 2026-05-24:
+
+- Confirmed empty export state in a fresh local session.
+- Created a draft QA claim and claim item through the app UI.
+- Selected and deselected claim rows through the Export screen.
+- Saved CSV, PDF, and XLSX preview records.
+- Confirmed usage counter reached `3/3`.
+- Confirmed the fourth preview action is blocked when the limit is reached.
+- Confirmed export history displays all three preview formats.
+- Confirmed browser console had no errors.
+- Added a visible limit-reached notice so users understand why preview generation is disabled.
+
 ## Next Sprint 7 Pass
 
 - Runtime QA Work > Export.

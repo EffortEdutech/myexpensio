@@ -80,6 +80,15 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
         periodEnd={usage.data?.periodEnd ?? ""}
       />
 
+      {limitReached ? (
+        <View style={styles.limitNotice}>
+          <Text style={styles.limitNoticeTitle}>Preview limit reached</Text>
+          <Text style={styles.limitNoticeCopy}>
+            This trial workspace has used its local export previews for the current month. Final paid-plan limits will sync from the backend later.
+          </Text>
+        </View>
+      ) : null}
+
       <View style={styles.segmentGroup}>
         {(["CSV", "PDF", "XLSX"] as const).map((value) => (
           <Pressable
@@ -417,6 +426,25 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
     textAlign: "right"
+  },
+  limitNotice: {
+    backgroundColor: "#fff7ed",
+    borderColor: "#fed7aa",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 3,
+    padding: spacing.md
+  },
+  limitNoticeTitle: {
+    color: "#c2410c",
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  limitNoticeCopy: {
+    color: "#9a3412",
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 18
   },
   segmentGroup: {
     backgroundColor: "#f1f5f9",
