@@ -317,6 +317,44 @@ export const localMigrations: LocalMigration[] = [
       `ALTER TABLE trips ADD COLUMN odometer_end_evidence_uri TEXT;`,
       `ALTER TABLE trips ADD COLUMN route_option_label TEXT;`
     ]
+  },
+  {
+    id: 7,
+    name: "tng_sprint_6_import_foundation",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS tng_statement_batches (
+        id TEXT PRIMARY KEY NOT NULL,
+        statement_id TEXT,
+        label TEXT NOT NULL,
+        source_file_name TEXT,
+        source_file_uri TEXT,
+        imported_at TEXT NOT NULL,
+        transaction_count INTEGER NOT NULL DEFAULT 0,
+        total_amount_cents INTEGER NOT NULL DEFAULT 0,
+        sync_status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT,
+        device_id TEXT NOT NULL
+      );`,
+      `ALTER TABLE tng_transactions ADD COLUMN upload_batch_id TEXT;`,
+      `ALTER TABLE tng_transactions ADD COLUMN source_file_uri TEXT;`,
+      `ALTER TABLE tng_transactions ADD COLUMN source_file_path TEXT;`,
+      `ALTER TABLE tng_transactions ADD COLUMN statement_label TEXT;`,
+      `ALTER TABLE tng_transactions ADD COLUMN entry_datetime TEXT;`,
+      `ALTER TABLE tng_transactions ADD COLUMN exit_datetime TEXT;`,
+      `ALTER TABLE tng_transactions ADD COLUMN location TEXT;`,
+      `ALTER TABLE tng_transactions ADD COLUMN raw_payload TEXT;`,
+      `ALTER TABLE tng_transactions ADD COLUMN dedupe_key TEXT;`,
+      `ALTER TABLE tng_transactions ADD COLUMN linked_claim_id TEXT;`,
+      `CREATE INDEX IF NOT EXISTS idx_tng_transactions_batch
+        ON tng_transactions (upload_batch_id);`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_tng_transactions_dedupe
+        ON tng_transactions (dedupe_key)
+        WHERE dedupe_key IS NOT NULL;`,
+      `CREATE INDEX IF NOT EXISTS idx_tng_statement_batches_imported
+        ON tng_statement_batches (imported_at);`
+    ]
   }
 ];
 

@@ -4,6 +4,8 @@ export type SyncEntityType =
   | "expense"
   | "receipt"
   | "sync_state"
+  | "tng_statement_batch"
+  | "tng_transaction"
   | "trip";
 
 export type SyncOperation = "create" | "update" | "delete";

@@ -57,6 +57,7 @@ import {
   useUpdateTrip
 } from "@/features/trips/hooks/useTripActions";
 import { useTrips } from "@/features/trips/hooks/useTrips";
+import { TngScreen } from "@/features/tng/components/TngScreen";
 import { initializeLocalDatabase } from "@/local-db/database";
 import { usePendingSyncItems } from "@/sync/hooks/usePendingSyncItems";
 import { useSyncQueueSummary } from "@/sync/hooks/useSyncQueueSummary";
@@ -358,6 +359,8 @@ function AuthenticatedHome({
             rates={settingsRates}
             trips={trips.data ?? []}
           />
+        ) : activeSpace === "work" && activeWorkTab === "tng" ? (
+          <TngScreen />
         ) : activeSpace === "work" ? (
           <DeferredSpace spaceName={workTabLabel(activeWorkTab)} />
         ) : activeSpace === "business" ? (
