@@ -44,6 +44,31 @@ Runtime QA update on 2026-05-24:
 - Checked TNG sector/status filters and browser console errors.
 - Polished filtered empty-state wording so `Claimed` with no rows says `No claimed TNG rows` instead of suggesting the user has no imported statement.
 
+## Sprint 6 Sign-Off
+
+Signed off on 2026-05-24 after final cleanup and verification.
+
+Completed:
+
+- TNG import foundation is in place for local-first mobile v2.
+- TNG transaction library works with statement batches, sector/status filters, duplicate protection, and sync queue entries.
+- Claim items can be marked `Paid via TNG`, saved as pending, linked to imported TNG rows, and unlinked while the claim remains draft.
+- Linking updates claim item amount, claim total, and the TNG transaction claimed/open state.
+- Runtime QA confirmed the import, link, unlink, filter, and empty-state flows.
+- Sample TNG statement created during QA was deleted from the local browser app.
+
+Remaining deferred work:
+
+- Production PDF parsing service.
+- Supabase storage upload for TNG statement PDFs.
+- Final PDF export and Appendix B rendering.
+- Backend sync API conflict handling for TNG batches and linked transactions.
+- Submitted-claim TNG lock verification once the full submit/review flow is production-ready.
+
+Final verification:
+
+- `corepack pnpm -C apps/user-mobile-v2 typecheck`
+
 ## V1 Reference Studied
 
 - `apps/user/app/(app)/tng/page.tsx`
