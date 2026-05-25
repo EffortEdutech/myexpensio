@@ -101,6 +101,17 @@ type ClaimModalKind =
   | "per_diem"
   | "other";
 
+type ClaimItemCategoryFilter =
+  | "all"
+  | "mileage"
+  | "transport"
+  | "tng"
+  | "meal"
+  | "lodging"
+  | "per_diem"
+  | "other";
+type ClaimItemSortKey = "date_desc" | "date_asc" | "category" | "amount_desc";
+
 const transportTypes: Array<{
   icon: string;
   label: string;
@@ -120,6 +131,27 @@ const mealSessions: Array<{ label: string; type: MealSession }> = [
   { label: "Noon", type: "NOON" },
   { label: "Evening", type: "EVENING" },
   { label: "Full Day", type: "FULL_DAY" }
+];
+
+const claimItemFilters: Array<{
+  label: string;
+  value: ClaimItemCategoryFilter;
+}> = [
+  { label: "All", value: "all" },
+  { label: "Mileage", value: "mileage" },
+  { label: "Transport", value: "transport" },
+  { label: "TNG", value: "tng" },
+  { label: "Meal", value: "meal" },
+  { label: "Lodging", value: "lodging" },
+  { label: "Per Diem", value: "per_diem" },
+  { label: "Misc", value: "other" }
+];
+
+const claimItemSorts: Array<{ label: string; value: ClaimItemSortKey }> = [
+  { label: "Newest", value: "date_desc" },
+  { label: "Oldest", value: "date_asc" },
+  { label: "Category", value: "category" },
+  { label: "Amount", value: "amount_desc" }
 ];
 
 export function ClaimDetail({
@@ -142,6 +174,11 @@ export function ClaimDetail({
   trips
 }: ClaimDetailProps) {
   const [activeModal, setActiveModal] = useState<ClaimModalKind | null>(null);
+  const [itemCategoryFilter, setItemCategoryFilter] =
+    useState<ClaimItemCategoryFilter>("all");
+  const [itemFilterOpen, setItemFilterOpen] = useState(false);
+  const [itemSort, setItemSort] = useState<ClaimItemSortKey>("date_desc");
+  const [itemSortOpen, setItemSortOpen] = useState(false);
   const [editingClaim, setEditingClaim] = useState(false);
   const [editingItem, setEditingItem] = useState<ClaimItemDraft | null>(null);
   const [viewingItem, setViewingItem] = useState<ClaimItemDraft | null>(null);
@@ -166,6 +203,14 @@ export function ClaimDetail({
   );
   const canSubmitClaim =
     Boolean(isDraft) && items.length > 0 && unresolvedTngItems.length === 0;
+  const visibleItems = useMemo(
+    () =>
+      sortClaimItems(
+        items.filter((item) => filterClaimItem(item, itemCategoryFilter)),
+        itemSort
+      ),
+    [itemCategoryFilter, itemSort, items]
+  );
 
   if (isLoading) {
     return (
@@ -265,7 +310,35 @@ export function ClaimDetail({
       )}
 
       <View style={styles.itemsSection}>
-        <Text style={styles.sectionTitle}>Items ({items.length})</Text>
+        {items.length > 0 ? (
+          <View style={styles.listToolbar}>
+            <Text style={styles.sectionTitle}>
+              Items ({visibleItems.length}/{items.length})
+            </Text>
+            <View style={styles.toolbarActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setItemFilterOpen(true)}
+                style={styles.toolbarMenuButton}
+              >
+                <Text style={styles.toolbarMenuText}>
+                  {claimItemFilterLabel(itemCategoryFilter)} v
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setItemSortOpen(true)}
+                style={styles.toolbarMenuButton}
+              >
+                <Text style={styles.toolbarMenuText}>
+                  {claimItemSortLabel(itemSort)} v
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : (
+          <Text style={styles.sectionTitle}>Items ({items.length})</Text>
+        )}
         {items.length === 0 ? (
           <View style={styles.emptyItems}>
             <Text style={styles.emptyTitle}>No items yet</Text>
@@ -276,7 +349,12 @@ export function ClaimDetail({
           </View>
         ) : (
           <View style={styles.itemList}>
-            {items.map((item) => (
+            {visibleItems.length === 0 ? (
+              <View style={styles.emptyItemsInline}>
+                <Text style={styles.emptyCopy}>No items match this filter.</Text>
+              </View>
+            ) : null}
+            {visibleItems.map((item) => (
               <ClaimItemRow
                 disabled={!isDraft}
                 item={item}
@@ -413,6 +491,28 @@ export function ClaimDetail({
         onUnlinkTngTransaction={(item) => onUnlinkTngTransaction(item)}
         tngTransactions={tngTransactions}
       />
+      <OptionSheet
+        isVisible={itemFilterOpen}
+        onClose={() => setItemFilterOpen(false)}
+        onSelect={(value) => {
+          setItemCategoryFilter(value);
+          setItemFilterOpen(false);
+        }}
+        options={claimItemFilters}
+        selectedValue={itemCategoryFilter}
+        title="Filter items"
+      />
+      <OptionSheet
+        isVisible={itemSortOpen}
+        onClose={() => setItemSortOpen(false)}
+        onSelect={(value) => {
+          setItemSort(value);
+          setItemSortOpen(false);
+        }}
+        options={claimItemSorts}
+        selectedValue={itemSort}
+        title="Sort items"
+      />
     </View>
   );
 }
@@ -457,36 +557,38 @@ function ClaimItemRow({
   const isTngPending = item.mode === "tng_pending" || item.mode === "tng_linked";
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onOpen}
-      style={({ pressed }) => [
-        styles.itemRow,
-        pressed ? styles.itemRowPressed : null
-      ]}
-    >
-      <View style={styles.itemDateCol}>
-        <Text style={styles.itemDate}>{formatDate(item.itemDate)}</Text>
-      </View>
-      <Text style={styles.itemIcon}>{meta.icon}</Text>
-      <View style={styles.itemBody}>
-        <Text style={styles.itemType}>{meta.label}</Text>
-        <Text style={styles.itemTitle}>{item.title}</Text>
-        {isTngPending ? (
-          <Text style={item.tngTransactionId ? styles.tngLinkedText : styles.tngPendingText}>
-            {item.tngTransactionId
-              ? `TNG linked${linkedTransaction ? ` - ${locationLabel(linkedTransaction)}` : ""}`
-              : "TNG pending - link transaction"}
+    <View style={styles.itemRow}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onOpen}
+        style={({ pressed }) => [
+          styles.itemOpenArea,
+          pressed ? styles.itemRowPressed : null
+        ]}
+      >
+        <View style={styles.itemDateCol}>
+          <Text style={styles.itemDate}>{formatDate(item.itemDate)}</Text>
+        </View>
+        <Text style={styles.itemIcon}>{meta.icon}</Text>
+        <View style={styles.itemBody}>
+          <Text style={styles.itemType}>{meta.label}</Text>
+          <Text style={styles.itemTitle}>{item.title}</Text>
+          {isTngPending ? (
+            <Text style={item.tngTransactionId ? styles.tngLinkedText : styles.tngPendingText}>
+              {item.tngTransactionId
+                ? `TNG linked${linkedTransaction ? ` - ${locationLabel(linkedTransaction)}` : ""}`
+                : "TNG pending - link transaction"}
+            </Text>
+          ) : null}
+          <Text style={item.receiptId ? styles.receiptStatusAttached : styles.receiptStatusMissing}>
+            {item.receiptId
+              ? receipt.data?.uploadStatus === "uploaded"
+                ? "Receipt uploaded"
+                : "Receipt attached"
+              : "No receipt"}
           </Text>
-        ) : null}
-        <Text style={item.receiptId ? styles.receiptStatusAttached : styles.receiptStatusMissing}>
-          {item.receiptId
-            ? receipt.data?.uploadStatus === "uploaded"
-              ? "Receipt uploaded"
-              : "Receipt attached"
-            : "No receipt"}
-        </Text>
-      </View>
+        </View>
+      </Pressable>
       <View style={styles.itemAmountCol}>
         <Text style={styles.itemAmount}>
           {formatMoney(item.amountCents, item.currency)}
@@ -582,7 +684,7 @@ function ClaimItemRow({
         transactions={tngTransactions}
         visible={tngPickerOpen}
       />
-    </Pressable>
+    </View>
   );
 }
 
@@ -1317,6 +1419,68 @@ function AmountPreview({ label, value }: { label: string; value: string }) {
   );
 }
 
+function OptionSheet<T extends string>({
+  isVisible,
+  onClose,
+  onSelect,
+  options,
+  selectedValue,
+  title
+}: {
+  isVisible: boolean;
+  onClose: () => void;
+  onSelect: (value: T) => void;
+  options: Array<{ label: string; value: T }>;
+  selectedValue: T;
+  title: string;
+}) {
+  if (!isVisible) {
+    return null;
+  }
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+      <View style={styles.modalOverlay}>
+        <View style={styles.optionSheet}>
+          <View style={styles.optionSheetHeader}>
+            <Text style={styles.optionSheetTitle}>{title}</Text>
+            <Pressable accessibilityRole="button" onPress={onClose}>
+              <Text style={styles.modalClose}>X</Text>
+            </Pressable>
+          </View>
+          <View style={styles.optionList}>
+            {options.map((option) => {
+              const isActive = option.value === selectedValue;
+
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  key={option.value}
+                  onPress={() => onSelect(option.value)}
+                  style={[
+                    styles.optionRow,
+                    isActive ? styles.optionRowActive : null
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.optionText,
+                      isActive ? styles.optionTextActive : null
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                  {isActive ? <Text style={styles.optionCheck}>OK</Text> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function TngLinkModal({
   item,
   onClose,
@@ -1834,6 +1998,51 @@ function getItemMeta(type: ClaimItemType | ClaimModalKind) {
   return labels[type] ?? labels.other;
 }
 
+function filterClaimItem(
+  item: ClaimItemDraft,
+  filter: ClaimItemCategoryFilter
+) {
+  if (filter === "all") {
+    return true;
+  }
+
+  if (filter === "transport") {
+    return ["bus", "flight", "grab", "taxi", "train"].includes(item.type);
+  }
+
+  if (filter === "tng") {
+    return item.mode === "tng_pending" || item.mode === "tng_linked";
+  }
+
+  return item.type === filter;
+}
+
+function sortClaimItems(items: ClaimItemDraft[], sort: ClaimItemSortKey) {
+  return [...items].sort((left, right) => {
+    if (sort === "date_asc") {
+      return left.itemDate.localeCompare(right.itemDate);
+    }
+
+    if (sort === "category") {
+      return getItemMeta(left.type).label.localeCompare(getItemMeta(right.type).label);
+    }
+
+    if (sort === "amount_desc") {
+      return right.amountCents - left.amountCents;
+    }
+
+    return right.itemDate.localeCompare(left.itemDate);
+  });
+}
+
+function claimItemFilterLabel(value: ClaimItemCategoryFilter) {
+  return claimItemFilters.find((option) => option.value === value)?.label ?? "All";
+}
+
+function claimItemSortLabel(value: ClaimItemSortKey) {
+  return claimItemSorts.find((option) => option.value === value)?.label ?? "Newest";
+}
+
 function parseRate(value: string | null | undefined) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -2221,6 +2430,32 @@ const styles = StyleSheet.create({
     fontSize: typography.body,
     fontWeight: "900"
   },
+  listToolbar: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between"
+  },
+  toolbarActions: {
+    flexDirection: "row",
+    flexShrink: 0,
+    gap: 6
+  },
+  toolbarMenuButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    minHeight: 34,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md
+  },
+  toolbarMenuText: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
   itemList: {
     backgroundColor: colors.border,
     borderColor: colors.border,
@@ -2236,7 +2471,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
     minHeight: 68,
-    paddingHorizontal: spacing.md,
+    paddingRight: spacing.md
+  },
+  itemOpenArea: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 68,
+    minWidth: 0,
+    paddingLeft: spacing.md,
     paddingVertical: spacing.sm
   },
   itemRowPressed: {
@@ -2431,6 +2675,11 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     padding: spacing.lg
   },
+  emptyItemsInline: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    padding: spacing.lg
+  },
   emptyTitle: {
     color: colors.text,
     fontSize: typography.body,
@@ -2442,6 +2691,49 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     maxWidth: 280,
     textAlign: "center"
+  },
+  filterPanel: {
+    backgroundColor: "rgba(248, 250, 252, 0.86)",
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.sm
+  },
+  filterLabel: {
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0,
+    paddingHorizontal: 4,
+    textTransform: "uppercase"
+  },
+  filterChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6
+  },
+  filterChip: {
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.72)",
+    borderColor: "transparent",
+    borderRadius: 999,
+    borderWidth: 1,
+    minHeight: 32,
+    justifyContent: "center",
+    paddingHorizontal: 12
+  },
+  filterChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary
+  },
+  filterChipText: {
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  filterChipTextActive: {
+    color: colors.onPrimary
   },
   totalRow: {
     alignItems: "center",
@@ -2582,6 +2874,54 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.lg
   },
+  optionSheet: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: spacing.sm,
+    maxWidth: 420,
+    padding: spacing.md,
+    width: "100%"
+  },
+  optionSheetHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingBottom: spacing.xs
+  },
+  optionSheetTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  optionList: {
+    gap: 6
+  },
+  optionRow: {
+    alignItems: "center",
+    borderRadius: 12,
+    flexDirection: "row",
+    minHeight: 44,
+    paddingHorizontal: spacing.md
+  },
+  optionRowActive: {
+    backgroundColor: "#f1f5f9"
+  },
+  optionText: {
+    color: colors.text,
+    flex: 1,
+    fontSize: typography.body,
+    fontWeight: "800"
+  },
+  optionTextActive: {
+    color: colors.primary
+  },
+  optionCheck: {
+    color: colors.primary,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
   amountPreview: {
     alignItems: "center",
     backgroundColor: "#f8fafc",
@@ -2624,29 +2964,29 @@ const styles = StyleSheet.create({
     lineHeight: 18
   },
   segmentedRow: {
-    backgroundColor: "#f1f5f9",
-    borderRadius: 8,
+    backgroundColor: "#eef2f7",
+    borderRadius: 14,
     flexDirection: "row",
     gap: 4,
     padding: 4
   },
   segmentButton: {
     alignItems: "center",
-    borderRadius: 7,
+    borderRadius: 11,
     flex: 1,
-    minHeight: 38,
+    minHeight: 40,
     justifyContent: "center"
   },
   segmentButtonActive: {
-    backgroundColor: colors.surface
+    backgroundColor: colors.primary
   },
   segmentButtonText: {
-    color: colors.muted,
+    color: "#64748b",
     fontSize: typography.caption,
     fontWeight: "900"
   },
   segmentButtonTextActive: {
-    color: colors.text
+    color: colors.onPrimary
   },
   sessionGrid: {
     flexDirection: "row",
@@ -2655,17 +2995,17 @@ const styles = StyleSheet.create({
   },
   sessionOption: {
     alignItems: "center",
-    backgroundColor: "#f8fafc",
-    borderColor: colors.border,
-    borderRadius: 8,
+    backgroundColor: "rgba(248, 250, 252, 0.82)",
+    borderColor: "transparent",
+    borderRadius: 999,
     borderWidth: 1,
-    minHeight: 38,
+    minHeight: 36,
     paddingHorizontal: spacing.md,
     justifyContent: "center"
   },
   sessionOptionActive: {
-    backgroundColor: "#dcfce7",
-    borderColor: "#86efac"
+    backgroundColor: "#0f766e",
+    borderColor: "#0f766e"
   },
   sessionOptionText: {
     color: colors.muted,
@@ -2673,16 +3013,16 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   sessionOptionTextActive: {
-    color: "#166534"
+    color: colors.onPrimary
   },
   tripPickerList: {
     gap: spacing.sm
   },
   tripPickerItem: {
     alignItems: "center",
-    backgroundColor: "#f8fafc",
+    backgroundColor: "rgba(248, 250, 252, 0.9)",
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     flexDirection: "row",
     gap: spacing.sm,
@@ -2690,8 +3030,8 @@ const styles = StyleSheet.create({
     padding: spacing.md
   },
   tripPickerItemActive: {
-    backgroundColor: "#dcfce7",
-    borderColor: "#86efac"
+    backgroundColor: "#ecfdf5",
+    borderColor: "#0f766e"
   },
   tripPickerBody: {
     flex: 1,

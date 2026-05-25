@@ -223,7 +223,7 @@ export function AppShell({
                   <View
                     style={[
                       styles.primaryNavIcon,
-                      { backgroundColor: accent, shadowColor: accent }
+                      { backgroundColor: accent }
                     ]}
                   >
                     <Text style={styles.primaryNavIconText}>{tab.icon}</Text>

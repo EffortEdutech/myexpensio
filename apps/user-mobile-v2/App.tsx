@@ -1040,6 +1040,8 @@ type WorkClaimsSliceProps = {
   };
 };
 
+type ClaimSortKey = "updated_desc" | "period_desc" | "amount_desc" | "title_asc";
+
 function WorkClaimsSlice({
   activeClaim,
   claims,
@@ -1075,6 +1077,8 @@ function WorkClaimsSlice({
   const [claimFilter, setClaimFilter] = useState<"all" | "draft" | "submitted">(
     "all"
   );
+  const [claimSort, setClaimSort] = useState<ClaimSortKey>("updated_desc");
+  const [claimSortOpen, setClaimSortOpen] = useState(false);
   const draftClaimCount = claims.filter((claim) => claim.status === "draft").length;
   const submittedClaimCount = claims.filter(
     (claim) => claim.status === "submitted"
@@ -1083,6 +1087,7 @@ function WorkClaimsSlice({
     claimFilter === "all"
       ? claims
       : claims.filter((claim) => claim.status === claimFilter);
+  const visibleClaims = sortClaims(filteredClaims, claimSort);
 
   if (activeClaim) {
     return (
@@ -1157,6 +1162,21 @@ function WorkClaimsSlice({
         />
       </View>
 
+      <View style={styles.listToolbar}>
+        <Text style={styles.listToolbarText}>
+          {visibleClaims.length} shown
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setClaimSortOpen(true)}
+          style={styles.toolbarMenuButton}
+        >
+          <Text style={styles.toolbarMenuText}>
+            Sort: {claimSortLabel(claimSort)} v
+          </Text>
+        </Pressable>
+      </View>
+
       <View style={styles.claimMetaBar}>
         <Text style={styles.claimMetaText}>Sync queue: {pendingSyncCount}</Text>
         <Text style={styles.claimMetaDot}>|</Text>
@@ -1170,7 +1190,7 @@ function WorkClaimsSlice({
       </View>
 
       <ClaimDraftList
-        claims={filteredClaims}
+        claims={visibleClaims}
         isLoading={isLoadingClaims}
         onOpen={onOpenClaim}
       />
@@ -1180,6 +1200,17 @@ function WorkClaimsSlice({
         isVisible={showNewClaimModal}
         onClose={onCloseNewClaim}
         onCreate={onCreateBlankClaim}
+      />
+      <OptionSheet
+        isVisible={claimSortOpen}
+        onClose={() => setClaimSortOpen(false)}
+        options={claimSortOptions}
+        selectedValue={claimSort}
+        title="Sort claims"
+        onSelect={(value) => {
+          setClaimSort(value);
+          setClaimSortOpen(false);
+        }}
       />
     </View>
   );
@@ -1216,6 +1247,105 @@ function ClaimFilterTab({
         {count}
       </Text>
     </Pressable>
+  );
+}
+
+const claimSortOptions: Array<{ label: string; value: ClaimSortKey }> = [
+  { label: "Updated", value: "updated_desc" },
+  { label: "Date", value: "period_desc" },
+  { label: "Amount", value: "amount_desc" },
+  { label: "Name", value: "title_asc" }
+];
+
+function sortClaims(claims: ClaimDraft[], sort: ClaimSortKey) {
+  return [...claims].sort((left, right) => {
+    if (sort === "period_desc") {
+      return claimDateValue(right).localeCompare(claimDateValue(left));
+    }
+
+    if (sort === "amount_desc") {
+      return right.totalAmountCents - left.totalAmountCents;
+    }
+
+    if (sort === "title_asc") {
+      return (left.title ?? "").localeCompare(right.title ?? "");
+    }
+
+    return right.updatedAt.localeCompare(left.updatedAt);
+  });
+}
+
+function claimSortLabel(value: ClaimSortKey) {
+  return claimSortOptions.find((option) => option.value === value)?.label ?? "Updated";
+}
+
+function claimDateValue(claim: ClaimDraft) {
+  return claim.periodStart ?? claim.periodEnd ?? claim.createdAt;
+}
+
+function OptionSheet<T extends string>({
+  isVisible,
+  onClose,
+  onSelect,
+  options,
+  selectedValue,
+  title
+}: {
+  isVisible: boolean;
+  onClose: () => void;
+  onSelect: (value: T) => void;
+  options: Array<{ label: string; value: T }>;
+  selectedValue: T;
+  title: string;
+}) {
+  if (!isVisible) {
+    return null;
+  }
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+      <View style={styles.modalOverlay}>
+        <View style={styles.optionSheet}>
+          <View style={styles.optionSheetHeader}>
+            <Text style={styles.optionSheetTitle}>{title}</Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onClose}
+              style={styles.modalCloseButton}
+            >
+              <Text style={styles.modalCloseText}>X</Text>
+            </Pressable>
+          </View>
+          <View style={styles.optionList}>
+            {options.map((option) => {
+              const isActive = option.value === selectedValue;
+
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  key={option.value}
+                  onPress={() => onSelect(option.value)}
+                  style={[
+                    styles.optionRow,
+                    isActive ? styles.optionRowActive : null
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.optionText,
+                      isActive ? styles.optionTextActive : null
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                  {isActive ? <Text style={styles.optionCheck}>OK</Text> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1455,17 +1585,18 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   claimTabs: {
-    backgroundColor: "#f1f5f9",
-    borderRadius: 8,
+    backgroundColor: "#eef2f7",
+    borderRadius: 14,
     flexDirection: "row",
+    gap: 4,
     padding: 4
   },
   claimTab: {
     alignItems: "center",
-    borderRadius: 7,
+    borderRadius: 11,
     flex: 1,
     gap: 2,
-    minHeight: 44,
+    minHeight: 42,
     justifyContent: "center",
     paddingHorizontal: spacing.xs
   },
@@ -1481,7 +1612,7 @@ const styles = StyleSheet.create({
     color: colors.onPrimary
   },
   claimTabCount: {
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "rgba(148, 163, 184, 0.14)",
     borderRadius: 10,
     color: "#94a3b8",
     fontSize: 10,
@@ -1493,6 +1624,76 @@ const styles = StyleSheet.create({
   },
   claimTabCountActive: {
     backgroundColor: "rgba(255, 255, 255, 0.2)",
+    color: colors.onPrimary
+  },
+  listToolbar: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between"
+  },
+  listToolbarText: {
+    color: colors.muted,
+    flex: 1,
+    fontSize: typography.caption,
+    fontWeight: "800"
+  },
+  toolbarMenuButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    minHeight: 34,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md
+  },
+  toolbarMenuText: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  claimSortPanel: {
+    backgroundColor: "rgba(248, 250, 252, 0.86)",
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.sm
+  },
+  claimSortLabel: {
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0,
+    paddingHorizontal: 4,
+    textTransform: "uppercase"
+  },
+  claimSortRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6
+  },
+  claimSortChip: {
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.72)",
+    borderColor: "transparent",
+    borderRadius: 999,
+    borderWidth: 1,
+    minHeight: 32,
+    justifyContent: "center",
+    paddingHorizontal: 12
+  },
+  claimSortChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary
+  },
+  claimSortChipText: {
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  claimSortChipTextActive: {
     color: colors.onPrimary
   },
   modalOverlay: {
@@ -1530,6 +1731,54 @@ const styles = StyleSheet.create({
     fontSize: typography.caption,
     lineHeight: 18,
     marginTop: 4
+  },
+  optionSheet: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: spacing.sm,
+    maxWidth: 420,
+    padding: spacing.md,
+    width: "100%"
+  },
+  optionSheetHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingBottom: spacing.xs
+  },
+  optionSheetTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  optionList: {
+    gap: 6
+  },
+  optionRow: {
+    alignItems: "center",
+    borderRadius: 12,
+    flexDirection: "row",
+    minHeight: 44,
+    paddingHorizontal: spacing.md
+  },
+  optionRowActive: {
+    backgroundColor: "#f1f5f9"
+  },
+  optionText: {
+    color: colors.text,
+    flex: 1,
+    fontSize: typography.body,
+    fontWeight: "800"
+  },
+  optionTextActive: {
+    color: colors.primary
+  },
+  optionCheck: {
+    color: colors.primary,
+    fontSize: typography.caption,
+    fontWeight: "900"
   },
   modalCloseButton: {
     alignItems: "center",

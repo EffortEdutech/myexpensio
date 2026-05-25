@@ -52,6 +52,9 @@ type TripsScreenProps = {
 };
 
 type TripFormMode = "route" | "odometer" | "gps" | null;
+type TripStatusFilter = "all" | "final" | "draft";
+type TripCategoryFilter = "all" | TripCalculationMode;
+type TripSortKey = "date_desc" | "date_asc" | "distance_desc" | "category";
 
 type RouteAlternative = {
   distanceKm: number;
@@ -67,6 +70,26 @@ type GeocodeSuggestion = {
   label: string;
   latLng: LatLng;
 };
+
+const tripStatusFilters: Array<{ label: string; value: TripStatusFilter }> = [
+  { label: "All", value: "all" },
+  { label: "Final", value: "final" },
+  { label: "In Progress", value: "draft" }
+];
+
+const tripCategoryFilters: Array<{ label: string; value: TripCategoryFilter }> = [
+  { label: "All Types", value: "all" },
+  { label: "Route", value: "selected_route" },
+  { label: "Odometer", value: "odometer" },
+  { label: "GPS", value: "gps_tracking" }
+];
+
+const tripSortOptions: Array<{ label: string; value: TripSortKey }> = [
+  { label: "Newest", value: "date_desc" },
+  { label: "Oldest", value: "date_asc" },
+  { label: "Distance", value: "distance_desc" },
+  { label: "Type", value: "category" }
+];
 
 export function TripsScreen({
   claims,
@@ -84,9 +107,28 @@ export function TripsScreen({
   trips
 }: TripsScreenProps) {
   const [formMode, setFormMode] = useState<TripFormMode>(null);
+  const [categoryFilter, setCategoryFilter] =
+    useState<TripCategoryFilter>("all");
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<TripDraft | null>(null);
+  const [sortKey, setSortKey] = useState<TripSortKey>("date_desc");
+  const [sortSheetOpen, setSortSheetOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<TripStatusFilter>("all");
   const activeGpsTrip = trips.find(
     (trip) => trip.status === "draft" && trip.calculationMode === "gps_tracking"
+  );
+  const visibleTrips = useMemo(
+    () =>
+      sortTrips(
+        trips.filter(
+          (trip) =>
+            (statusFilter === "all" || trip.status === statusFilter) &&
+            (categoryFilter === "all" ||
+              trip.calculationMode === categoryFilter)
+        ),
+        sortKey
+      ),
+    [categoryFilter, sortKey, statusFilter, trips]
   );
 
   return (
@@ -142,6 +184,34 @@ export function TripsScreen({
         />
       </View>
 
+      {trips.length > 0 ? (
+        <View style={styles.listToolbar}>
+          <Text style={styles.listToolbarText}>
+            {visibleTrips.length}/{trips.length} shown
+          </Text>
+          <View style={styles.toolbarActions}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setFilterSheetOpen(true)}
+              style={styles.toolbarMenuButton}
+            >
+              <Text style={styles.toolbarMenuText}>
+                Filter: {tripFilterSummary(statusFilter, categoryFilter)} v
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setSortSheetOpen(true)}
+              style={styles.toolbarMenuButton}
+            >
+              <Text style={styles.toolbarMenuText}>
+                Sort: {tripSortLabel(sortKey)} v
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+
       {isLoading ? (
         <View style={styles.empty}>
           <ActivityIndicator color={colors.primary} />
@@ -157,7 +227,12 @@ export function TripsScreen({
         </View>
       ) : (
         <View style={styles.list}>
-          {trips.map((trip) => (
+          {visibleTrips.length === 0 ? (
+            <View style={styles.emptyCompact}>
+              <Text style={styles.emptyCopy}>No trips match this filter.</Text>
+            </View>
+          ) : null}
+          {visibleTrips.map((trip) => (
             <TripCard key={trip.id} onPress={() => setSelectedTrip(trip)} trip={trip} />
           ))}
         </View>
@@ -193,6 +268,25 @@ export function TripsScreen({
         }}
         rates={rates}
         trip={selectedTrip}
+      />
+      <TripFilterSheet
+        categoryFilter={categoryFilter}
+        isVisible={filterSheetOpen}
+        onCategoryChange={setCategoryFilter}
+        onClose={() => setFilterSheetOpen(false)}
+        onStatusChange={setStatusFilter}
+        statusFilter={statusFilter}
+      />
+      <OptionSheet
+        isVisible={sortSheetOpen}
+        onClose={() => setSortSheetOpen(false)}
+        onSelect={(value) => {
+          setSortKey(value);
+          setSortSheetOpen(false);
+        }}
+        options={tripSortOptions}
+        selectedValue={sortKey}
+        title="Sort trips"
       />
     </View>
   );
@@ -270,6 +364,130 @@ function TripActionButton({
       <Text style={styles.tripActionIcon}>{icon}</Text>
       <Text style={styles.tripActionText}>{label}</Text>
     </Pressable>
+  );
+}
+
+function TripFilterSheet({
+  categoryFilter,
+  isVisible,
+  onCategoryChange,
+  onClose,
+  onStatusChange,
+  statusFilter
+}: {
+  categoryFilter: TripCategoryFilter;
+  isVisible: boolean;
+  onCategoryChange: (value: TripCategoryFilter) => void;
+  onClose: () => void;
+  onStatusChange: (value: TripStatusFilter) => void;
+  statusFilter: TripStatusFilter;
+}) {
+  if (!isVisible) {
+    return null;
+  }
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+      <View style={styles.modalOverlay}>
+        <View style={styles.optionSheet}>
+          <View style={styles.optionSheetHeader}>
+            <Text style={styles.optionSheetTitle}>Filter trips</Text>
+            <Pressable accessibilityRole="button" onPress={onClose}>
+              <Text style={styles.modalClose}>X</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.optionGroupLabel}>Status</Text>
+          <OptionList
+            onSelect={onStatusChange}
+            options={tripStatusFilters}
+            selectedValue={statusFilter}
+          />
+          <Text style={styles.optionGroupLabel}>Type</Text>
+          <OptionList
+            onSelect={onCategoryChange}
+            options={tripCategoryFilters}
+            selectedValue={categoryFilter}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function OptionSheet<T extends string>({
+  isVisible,
+  onClose,
+  onSelect,
+  options,
+  selectedValue,
+  title
+}: {
+  isVisible: boolean;
+  onClose: () => void;
+  onSelect: (value: T) => void;
+  options: Array<{ label: string; value: T }>;
+  selectedValue: T;
+  title: string;
+}) {
+  if (!isVisible) {
+    return null;
+  }
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+      <View style={styles.modalOverlay}>
+        <View style={styles.optionSheet}>
+          <View style={styles.optionSheetHeader}>
+            <Text style={styles.optionSheetTitle}>{title}</Text>
+            <Pressable accessibilityRole="button" onPress={onClose}>
+              <Text style={styles.modalClose}>X</Text>
+            </Pressable>
+          </View>
+          <OptionList
+            onSelect={onSelect}
+            options={options}
+            selectedValue={selectedValue}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function OptionList<T extends string>({
+  onSelect,
+  options,
+  selectedValue
+}: {
+  onSelect: (value: T) => void;
+  options: Array<{ label: string; value: T }>;
+  selectedValue: T;
+}) {
+  return (
+    <View style={styles.optionList}>
+      {options.map((option) => {
+        const isActive = option.value === selectedValue;
+
+        return (
+          <Pressable
+            accessibilityRole="button"
+            key={option.value}
+            onPress={() => onSelect(option.value)}
+            style={[styles.optionRow, isActive ? styles.optionRowActive : null]}
+          >
+            <Text
+              style={[
+                styles.optionText,
+                isActive ? styles.optionTextActive : null
+              ]}
+            >
+              {option.label}
+            </Text>
+            {isActive ? <Text style={styles.optionCheck}>OK</Text> : null}
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
@@ -1464,6 +1682,50 @@ function sourceLabel(trip: TripDraft) {
   return getSourceBadge(trip).label;
 }
 
+function sortTrips(trips: TripDraft[], sort: TripSortKey) {
+  return [...trips].sort((left, right) => {
+    if (sort === "date_asc") {
+      return left.startedAt.localeCompare(right.startedAt);
+    }
+
+    if (sort === "distance_desc") {
+      return (right.finalDistanceM ?? 0) - (left.finalDistanceM ?? 0);
+    }
+
+    if (sort === "category") {
+      return sourceLabel(left).localeCompare(sourceLabel(right));
+    }
+
+    return right.startedAt.localeCompare(left.startedAt);
+  });
+}
+
+function tripSortLabel(value: TripSortKey) {
+  return tripSortOptions.find((option) => option.value === value)?.label ?? "Newest";
+}
+
+function tripFilterSummary(
+  statusFilter: TripStatusFilter,
+  categoryFilter: TripCategoryFilter
+) {
+  const status = tripStatusFilters.find((option) => option.value === statusFilter)?.label ?? "All";
+  const category = tripCategoryFilters.find((option) => option.value === categoryFilter)?.label ?? "All Types";
+
+  if (statusFilter === "all" && categoryFilter === "all") {
+    return "All";
+  }
+
+  if (statusFilter === "all") {
+    return category;
+  }
+
+  if (categoryFilter === "all") {
+    return status;
+  }
+
+  return `${status}, ${category}`;
+}
+
 function formatKm(meters: number) {
   return `${(meters / 1000).toFixed(2)} km`;
 }
@@ -1753,6 +2015,38 @@ const styles = StyleSheet.create({
     alignItems: "stretch",
     gap: spacing.sm
   },
+  listToolbar: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between"
+  },
+  listToolbarText: {
+    color: colors.muted,
+    flex: 1,
+    fontSize: typography.caption,
+    fontWeight: "800"
+  },
+  toolbarActions: {
+    flexDirection: "row",
+    flexShrink: 0,
+    gap: 6
+  },
+  toolbarMenuButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    minHeight: 34,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md
+  },
+  toolbarMenuText: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
   tripAction: {
     alignItems: "center",
     borderRadius: 24,
@@ -1787,6 +2081,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: spacing.lg
   },
+  emptyCompact: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: spacing.lg
+  },
   emptyIcon: {
     fontSize: 34
   },
@@ -1804,6 +2106,49 @@ const styles = StyleSheet.create({
   },
   list: {
     gap: spacing.sm
+  },
+  filterPanel: {
+    backgroundColor: "rgba(248, 250, 252, 0.86)",
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.sm
+  },
+  filterLabel: {
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0,
+    paddingHorizontal: 4,
+    textTransform: "uppercase"
+  },
+  filterChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6
+  },
+  filterChip: {
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.72)",
+    borderColor: "transparent",
+    borderRadius: 999,
+    borderWidth: 1,
+    minHeight: 32,
+    justifyContent: "center",
+    paddingHorizontal: 12
+  },
+  filterChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary
+  },
+  filterChipText: {
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  filterChipTextActive: {
+    color: colors.onPrimary
   },
   card: {
     alignItems: "center",
@@ -1946,6 +2291,62 @@ const styles = StyleSheet.create({
   modalBody: {
     gap: spacing.md,
     padding: spacing.lg
+  },
+  optionSheet: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: spacing.sm,
+    maxWidth: 420,
+    padding: spacing.md,
+    width: "100%"
+  },
+  optionSheetHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingBottom: spacing.xs
+  },
+  optionSheetTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  optionGroupLabel: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "900",
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
+    textTransform: "uppercase"
+  },
+  optionList: {
+    gap: 6
+  },
+  optionRow: {
+    alignItems: "center",
+    borderRadius: 12,
+    flexDirection: "row",
+    minHeight: 44,
+    paddingHorizontal: spacing.md
+  },
+  optionRowActive: {
+    backgroundColor: "#f1f5f9"
+  },
+  optionText: {
+    color: colors.text,
+    flex: 1,
+    fontSize: typography.body,
+    fontWeight: "800"
+  },
+  optionTextActive: {
+    color: colors.primary
+  },
+  optionCheck: {
+    color: colors.primary,
+    fontSize: typography.caption,
+    fontWeight: "900"
   },
   modalFooter: {
     borderTopColor: "#f1f5f9",
