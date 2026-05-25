@@ -836,7 +836,7 @@ function AddClaimItemModal({
   );
   const [mealSession, setMealSession] = useState<MealSession>("NOON");
   const [checkInDate, setCheckInDate] = useState(todayInput());
-  const [checkOutDate, setCheckOutDate] = useState(todayInput());
+  const [checkOutDate, setCheckOutDate] = useState(tomorrowInput());
   const [perDiemDays, setPerDiemDays] = useState("1");
   const [perDiemRate, setPerDiemRate] = useState(rates.perDiemRate);
 
@@ -873,6 +873,7 @@ function AddClaimItemModal({
   const mileageAmountCents = centsFromNumber(selectedTripKm * selectedTripRate);
   const mealRateCents = getMealRateCents(rates, mealSession);
   const lodgingNights = calculateNights(checkInDate, checkOutDate);
+  const lodgingDatesValid = isAfterDate(checkOutDate, checkInDate);
   const lodgingAmountCents =
     claimMode === "fixed_rate"
       ? centsFromNumber(lodgingNights * parseRate(rates.lodgingRate))
@@ -898,6 +899,8 @@ function AddClaimItemModal({
       ? Boolean(selectedTrip) && effectiveAmountCents > 0
       : kind === "per_diem"
         ? perDiemDayCount > 0 && effectiveAmountCents > 0
+        : kind === "lodging"
+          ? lodgingDatesValid && effectiveAmountCents > 0
         : paidViaTng || effectiveAmountCents > 0) &&
     (!requiresDescription || description.trim().length > 0);
 
@@ -914,6 +917,11 @@ function AddClaimItemModal({
 
     if (kind === "per_diem" && (perDiemDayCount <= 0 || effectiveAmountCents <= 0)) {
       setErrorMessage("Please enter valid per diem days and rate.");
+      return;
+    }
+
+    if (kind === "lodging" && !lodgingDatesValid) {
+      setErrorMessage("Check-out date must be after check-in date.");
       return;
     }
 
@@ -978,7 +986,7 @@ function AddClaimItemModal({
     setClaimMode("fixed_rate");
     setMealSession("NOON");
     setCheckInDate(todayInput());
-    setCheckOutDate(todayInput());
+    setCheckOutDate(tomorrowInput());
     setPerDiemDays("1");
     setPerDiemRate(rates.perDiemRate);
     onClose();
@@ -1261,8 +1269,8 @@ function AddClaimItemModal({
               <Text style={styles.modalAddText}>
                 {paidViaTng
                   ? `Add ${meta.buttonLabel} - TNG`
-                  : amountCents > 0
-                    ? `Add ${meta.buttonLabel} - ${formatMoney(amountCents, "MYR")}`
+                  : effectiveAmountCents > 0
+                    ? `Add ${meta.buttonLabel} - ${formatMoney(effectiveAmountCents, "MYR")}`
                     : `Add ${meta.buttonLabel}`}
               </Text>
             </Pressable>
@@ -2112,6 +2120,17 @@ function todayInput() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function tomorrowInput() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  return tomorrow.toISOString().slice(0, 10);
+}
+
+function isAfterDate(value: string, compareTo: string) {
+  return new Date(value).getTime() > new Date(compareTo).getTime();
+}
+
 const styles = StyleSheet.create({
   page: {
     gap: spacing.md
@@ -2187,6 +2206,7 @@ const styles = StyleSheet.create({
   },
   fieldRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm
   },
   editActionRow: {
@@ -2817,7 +2837,9 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   field: {
-    gap: 6
+    flex: 1,
+    gap: 6,
+    minWidth: 0
   },
   errorBox: {
     backgroundColor: "#fef2f2",
