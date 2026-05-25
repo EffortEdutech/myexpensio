@@ -141,6 +141,15 @@ export function ClaimDetail({
     () => items.reduce((sum, item) => sum + item.amountCents, 0),
     [items]
   );
+  const unresolvedTngItems = useMemo(
+    () =>
+      items.filter(
+        (item) => item.mode === "tng_pending" && !item.tngTransactionId
+      ),
+    [items]
+  );
+  const canSubmitClaim =
+    Boolean(isDraft) && items.length > 0 && unresolvedTngItems.length === 0;
 
   if (isLoading) {
     return (
@@ -298,19 +307,33 @@ export function ClaimDetail({
         </View>
       ) : null}
 
+      {unresolvedTngItems.length > 0 ? (
+        <View style={styles.submitNotice}>
+          <Text style={styles.submitNoticeTitle}>TNG link pending</Text>
+          <Text style={styles.submitNoticeCopy}>
+            Link {unresolvedTngItems.length} TNG item(s) before submitting this
+            claim.
+          </Text>
+        </View>
+      ) : null}
+
       <Pressable
         accessibilityRole="button"
-        disabled={!isDraft || items.length === 0}
-        onPress={() =>
+        disabled={!canSubmitClaim}
+        onPress={() => {
+          if (!canSubmitClaim) {
+            return;
+          }
+
           confirmAction(
             "Submit claim?",
-            "Submitted claims cannot be edited locally.",
+            "Submitted claims cannot be edited locally. Please confirm all items and receipts are correct.",
             () => onSubmitClaim(claim)
-          )
-        }
+          );
+        }}
         style={({ pressed }) => [
           styles.submitButton,
-          !isDraft || items.length === 0 ? styles.disabled : null,
+          !canSubmitClaim ? styles.disabled : null,
           pressed ? styles.pressed : null
         ]}
       >
@@ -777,7 +800,11 @@ function AddClaimItemModal({
 
   const meta = getModalMeta(kind, transportType);
   const amountCents = moneyToCents(amount);
-  const canAdd = Boolean(date) && (paidViaTng || amountCents > 0);
+  const requiresDescription = kind === "other";
+  const canAdd =
+    Boolean(date) &&
+    (paidViaTng || amountCents > 0) &&
+    (!requiresDescription || description.trim().length > 0);
 
   function handleAdd() {
     if (!date) {
@@ -787,6 +814,11 @@ function AddClaimItemModal({
 
     if (!paidViaTng && amountCents <= 0) {
       setErrorMessage("Please enter an amount greater than 0.00.");
+      return;
+    }
+
+    if (requiresDescription && !description.trim()) {
+      setErrorMessage("Please enter a description.");
       return;
     }
 
@@ -817,7 +849,12 @@ function AddClaimItemModal({
       <View style={styles.modalOverlay}>
         <View style={styles.sheet}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Add {meta.title}</Text>
+            <View style={styles.modalHeaderCopy}>
+              <Text style={styles.modalTitle}>Add {meta.title}</Text>
+              <Text style={styles.modalSubtitle}>
+                {paidViaTng ? meta.tngSubtitle : meta.subtitle}
+              </Text>
+            </View>
             <Pressable accessibilityRole="button" onPress={onClose}>
               <Text style={styles.modalClose}>×</Text>
             </Pressable>
@@ -874,12 +911,24 @@ function AddClaimItemModal({
             ) : null}
 
             <DatePickerField label="Date *" value={date} onChange={setDate} />
-            <Field
-              label="Amount (MYR) *"
-              keyboardType="decimal-pad"
-              value={amount}
-              onChangeText={setAmount}
-            />
+            {paidViaTng ? (
+              <View style={styles.tngPendingNotice}>
+                <Text style={styles.tngPendingNoticeTitle}>
+                  Amount from TNG import
+                </Text>
+                <Text style={styles.tngPendingNoticeCopy}>
+                  This item will stay at MYR 0.00 until you link the imported
+                  Touch 'n Go transaction.
+                </Text>
+              </View>
+            ) : (
+              <Field
+                label={meta.amountLabel}
+                keyboardType="decimal-pad"
+                value={amount}
+                onChangeText={setAmount}
+              />
+            )}
             <Field
               label={meta.descriptionLabel}
               value={description}
@@ -914,7 +963,13 @@ function AddClaimItemModal({
                 pressed ? styles.pressed : null
               ]}
             >
-              <Text style={styles.modalAddText}>Add {meta.buttonLabel}</Text>
+              <Text style={styles.modalAddText}>
+                {paidViaTng
+                  ? `Add ${meta.buttonLabel} - TNG`
+                  : amountCents > 0
+                    ? `Add ${meta.buttonLabel} - ${formatMoney(amountCents, "MYR")}`
+                    : `Add ${meta.buttonLabel}`}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -1348,24 +1403,75 @@ function getModalMeta(kind: ClaimModalKind, transportType: ClaimItemType) {
   if (kind === "transport") {
     const transport = transportTypes.find((item) => item.type === transportType);
     return {
+      amountLabel: "Amount (MYR) *",
       buttonLabel: transport?.label ?? "Transport",
       defaultTitle: transport?.label ?? "Transport",
       descriptionLabel: "Route / Description (optional)",
+      subtitle: "Choose transport type, date, amount, route, notes, and receipt.",
       title: "Transport",
+      tngSubtitle: "Add the transport item now, then link the imported TNG row before submit.",
       type: transportType
     };
   }
 
   const meta = getItemMeta(kind);
+  const modalCopy: Record<
+    Exclude<ClaimModalKind, "transport">,
+    { amountLabel: string; descriptionLabel: string; subtitle: string; tngSubtitle: string }
+  > = {
+    lodging: {
+      amountLabel: "Amount (MYR) *",
+      descriptionLabel: "Hotel / Stay description (optional)",
+      subtitle: "Add lodging cost with date, amount, notes, and receipt.",
+      tngSubtitle: "TNG is not used for lodging in this modal."
+    },
+    meal: {
+      amountLabel: "Amount (MYR) *",
+      descriptionLabel: "Merchant / Meal description (optional)",
+      subtitle: "Add meal cost with date, amount, notes, and receipt.",
+      tngSubtitle: "TNG is not used for meals in this modal."
+    },
+    mileage: {
+      amountLabel: "Amount (MYR) *",
+      descriptionLabel: "Route / Description (optional)",
+      subtitle: "Add mileage date, amount, route, notes, and receipt.",
+      tngSubtitle: "TNG is not used for mileage in this modal."
+    },
+    other: {
+      amountLabel: "Amount (MYR) *",
+      descriptionLabel: "Description *",
+      subtitle: "Describe the misc claim clearly, then add amount and receipt.",
+      tngSubtitle: "TNG is not used for misc claims in this modal."
+    },
+    parking: {
+      amountLabel: "Amount (MYR) *",
+      descriptionLabel: "Parking location (optional)",
+      subtitle: "Add parking manually or mark as TNG pending.",
+      tngSubtitle: "Add the parking item now, then link the imported TNG row before submit."
+    },
+    per_diem: {
+      amountLabel: "Amount (MYR) *",
+      descriptionLabel: "Destination / Description (optional)",
+      subtitle: "Add per diem date, amount, destination, notes, and receipt.",
+      tngSubtitle: "TNG is not used for per diem in this modal."
+    },
+    toll: {
+      amountLabel: "Amount (MYR) *",
+      descriptionLabel: "Entry / Exit / Description (optional)",
+      subtitle: "Add toll manually or mark as TNG pending.",
+      tngSubtitle: "Add the toll item now, then link the imported TNG row before submit."
+    }
+  };
+  const copy = modalCopy[kind];
 
   return {
+    amountLabel: copy.amountLabel,
     buttonLabel: meta.label,
     defaultTitle: meta.label,
-    descriptionLabel:
-      kind === "mileage"
-        ? "Route / Description (optional)"
-        : "Description (optional)",
+    descriptionLabel: copy.descriptionLabel,
+    subtitle: copy.subtitle,
     title: meta.label,
+    tngSubtitle: copy.tngSubtitle,
     type: kind as ClaimItemType
   };
 }
@@ -1877,6 +1983,25 @@ const styles = StyleSheet.create({
     fontSize: typography.body,
     fontWeight: "900"
   },
+  submitNotice: {
+    backgroundColor: "#fff7ed",
+    borderColor: "#fed7aa",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 3,
+    padding: spacing.md
+  },
+  submitNoticeTitle: {
+    color: "#9a3412",
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  submitNoticeCopy: {
+    color: "#c2410c",
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 18
+  },
   actionGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1978,6 +2103,25 @@ const styles = StyleSheet.create({
   modalBody: {
     gap: spacing.md,
     padding: spacing.lg
+  },
+  tngPendingNotice: {
+    backgroundColor: "#fff7ed",
+    borderColor: "#fed7aa",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 4,
+    padding: spacing.md
+  },
+  tngPendingNoticeTitle: {
+    color: "#9a3412",
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  tngPendingNoticeCopy: {
+    color: "#c2410c",
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 18
   },
   itemDetailHero: {
     alignItems: "center",
