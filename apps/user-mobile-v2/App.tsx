@@ -53,6 +53,7 @@ import type { AppSpace } from "@/features/shell/types";
 import { FeatureGate } from "@/features/subscription/components/FeatureGate";
 import type { SubscriptionTier } from "@/features/subscription/types";
 import { TripsScreen } from "@/features/trips/components/TripsScreen";
+import type { TripDraft } from "@/features/trips/types";
 import {
   useCreateTrip,
   useSoftDeleteTrip,
@@ -68,6 +69,7 @@ import { usePendingSyncItems } from "@/sync/hooks/usePendingSyncItems";
 import { useSyncQueueSummary } from "@/sync/hooks/useSyncQueueSummary";
 import { useAuthStore } from "@/state/authStore";
 import {
+  type ClaimRates,
   defaultRates,
   useUserSettingsStore
 } from "@/state/settingsStore";
@@ -332,9 +334,11 @@ function AuthenticatedHome({
               }
             }}
             pendingSyncCount={pendingSyncItems.data?.length ?? 0}
+            rates={settingsRates}
             showNewClaimModal={newClaimOpen}
             selectedClaimItems={selectedClaimItems.data ?? []}
             tngTransactions={tngTransactions.data ?? []}
+            trips={trips.data ?? []}
             syncQueueSummary={
               syncQueueSummary.data ?? {
                 failed: 0,
@@ -1017,9 +1021,11 @@ type WorkClaimsSliceProps = {
     }
   ) => Promise<void>;
   pendingSyncCount: number;
+  rates: ClaimRates;
   showNewClaimModal: boolean;
   selectedClaimItems: ClaimItemDraft[];
   tngTransactions: TngTransaction[];
+  trips: TripDraft[];
   syncQueueSummary: {
     failed: number;
     pending: number;
@@ -1058,9 +1064,11 @@ function WorkClaimsSlice({
   onUpdateClaim,
   onUpdateClaimItem,
   pendingSyncCount,
+  rates,
   showNewClaimModal,
   selectedClaimItems,
   tngTransactions,
+  trips,
   syncQueueSummary,
   receiptUploadSummary
 }: WorkClaimsSliceProps) {
@@ -1093,7 +1101,9 @@ function WorkClaimsSlice({
         onSubmitClaim={onSubmitClaim}
         onUpdateClaim={(input) => onUpdateClaim(activeClaim, input)}
         onUpdateItem={onUpdateClaimItem}
+        rates={rates}
         tngTransactions={tngTransactions}
+        trips={trips}
       />
     );
   }

@@ -22,6 +22,8 @@ import { useReceiptDraft } from "@/features/receipts/hooks/useReceiptUploadSumma
 import type { LocalReceiptFile, ReceiptDraft } from "@/features/receipts/types";
 import { matchTngToClaimItems, scorePair } from "@/features/tng/matcher";
 import type { TngTransaction } from "@/features/tng/types";
+import type { TripDraft } from "@/features/trips/types";
+import type { ClaimRates } from "@/state/settingsStore";
 import { colors, spacing, typography } from "@/theme/tokens";
 
 type ClaimDetailProps = {
@@ -35,9 +37,11 @@ type ClaimDetailProps = {
     notes: string | null;
     receipt?: LocalReceiptFile | null;
     tngTransactionId?: string | null;
+    tripId?: string | null;
     title: string;
     type: ClaimItemType;
   }) => void;
+  rates: ClaimRates;
   onAttachReceipt: (item: ClaimItemDraft, receipt: LocalReceiptFile) => void;
   onBack: () => void;
   onDeleteClaim: () => void;
@@ -69,6 +73,7 @@ type ClaimDetailProps = {
     }
   ) => void;
   tngTransactions: TngTransaction[];
+  trips: TripDraft[];
 };
 
 const claimActions: Array<{
@@ -108,6 +113,15 @@ const transportTypes: Array<{
   { icon: "✈️", label: "Flight", type: "flight" }
 ];
 
+type MealSession = "MORNING" | "NOON" | "EVENING" | "FULL_DAY";
+
+const mealSessions: Array<{ label: string; type: MealSession }> = [
+  { label: "Morning", type: "MORNING" },
+  { label: "Noon", type: "NOON" },
+  { label: "Evening", type: "EVENING" },
+  { label: "Full Day", type: "FULL_DAY" }
+];
+
 export function ClaimDetail({
   claim,
   isLoading,
@@ -123,7 +137,9 @@ export function ClaimDetail({
   onUnlinkTngTransaction,
   onUpdateClaim,
   onUpdateItem,
-  tngTransactions
+  rates,
+  tngTransactions,
+  trips
 }: ClaimDetailProps) {
   const [activeModal, setActiveModal] = useState<ClaimModalKind | null>(null);
   const [editingClaim, setEditingClaim] = useState(false);
@@ -360,9 +376,12 @@ export function ClaimDetail({
       ) : null}
 
       <AddClaimItemModal
+        existingItems={items}
         kind={activeModal}
         onAddItem={onAddItem}
         onClose={() => setActiveModal(null)}
+        rates={rates}
+        trips={trips}
       />
 
       <EditClaimItemModal
@@ -434,6 +453,7 @@ function ClaimItemRow({
   const canUseTng = ["toll", "parking", "grab", "taxi", "train", "bus"].includes(
     item.type
   );
+  const canEditItem = item.type !== "mileage";
   const isTngPending = item.mode === "tng_pending" || item.mode === "tng_linked";
 
   return (
@@ -607,6 +627,7 @@ function ClaimItemDetailModal({
   const canUseTng = ["toll", "parking", "grab", "taxi", "train", "bus"].includes(
     item.type
   );
+  const canEditItem = item.type !== "mileage";
 
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible>
@@ -669,13 +690,22 @@ function ClaimItemDetailModal({
 
             {!disabled ? (
               <View style={styles.detailActionGrid}>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => onEdit(item)}
-                  style={styles.detailPrimaryAction}
-                >
-                  <Text style={styles.detailPrimaryText}>Edit Item</Text>
-                </Pressable>
+                {canEditItem ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => onEdit(item)}
+                    style={styles.detailPrimaryAction}
+                  >
+                    <Text style={styles.detailPrimaryText}>Edit Item</Text>
+                  </Pressable>
+                ) : (
+                  <View style={styles.lockedPanel}>
+                    <Text style={styles.lockedText}>
+                      Mileage amount is calculated from the saved trip. Delete
+                      and add the trip again to recalculate.
+                    </Text>
+                  </View>
+                )}
                 {item.receiptId ? (
                   <Pressable
                     accessibilityRole="button"
@@ -768,10 +798,14 @@ function ClaimItemDetailModal({
 }
 
 function AddClaimItemModal({
+  existingItems,
   kind,
   onAddItem,
-  onClose
+  onClose,
+  rates,
+  trips
 }: {
+  existingItems: ClaimItemDraft[];
   kind: ClaimModalKind | null;
   onAddItem: (input: {
     amountCents: number;
@@ -780,10 +814,13 @@ function AddClaimItemModal({
     receipt?: LocalReceiptFile | null;
     mode?: string | null;
     tngTransactionId?: string | null;
+    tripId?: string | null;
     title: string;
     type: ClaimItemType;
   }) => void;
   onClose: () => void;
+  rates: ClaimRates;
+  trips: TripDraft[];
 }) {
   const [transportType, setTransportType] = useState<ClaimItemType>("grab");
   const [date, setDate] = useState(todayInput());
@@ -793,6 +830,15 @@ function AddClaimItemModal({
   const [paidViaTng, setPaidViaTng] = useState(false);
   const [receipt, setReceipt] = useState<LocalReceiptFile | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+  const [claimMode, setClaimMode] = useState<"fixed_rate" | "receipt">(
+    "fixed_rate"
+  );
+  const [mealSession, setMealSession] = useState<MealSession>("NOON");
+  const [checkInDate, setCheckInDate] = useState(todayInput());
+  const [checkOutDate, setCheckOutDate] = useState(todayInput());
+  const [perDiemDays, setPerDiemDays] = useState("1");
+  const [perDiemRate, setPerDiemRate] = useState(rates.perDiemRate);
 
   if (!kind) {
     return null;
@@ -800,10 +846,59 @@ function AddClaimItemModal({
 
   const meta = getModalMeta(kind, transportType);
   const amountCents = moneyToCents(amount);
+  const usedTripIds = new Set(
+    existingItems
+      .filter((item) => item.type === "mileage" && item.tripId)
+      .map((item) => item.tripId)
+  );
+  const eligibleTrips = trips.filter(
+    (trip) =>
+      trip.status === "final" &&
+      trip.finalDistanceM != null &&
+      trip.finalDistanceM > 0 &&
+      !usedTripIds.has(trip.id)
+  );
+  const selectedTrip =
+    eligibleTrips.find((trip) => trip.id === selectedTripId) ?? eligibleTrips[0] ?? null;
+  const selectedTripRate = selectedTrip
+    ? parseRate(
+        selectedTrip.vehicleType === "motorcycle"
+          ? rates.mileageMotorcycleRate
+          : rates.mileageCarRate
+      )
+    : 0;
+  const selectedTripKm = selectedTrip?.finalDistanceM
+    ? selectedTrip.finalDistanceM / 1000
+    : 0;
+  const mileageAmountCents = centsFromNumber(selectedTripKm * selectedTripRate);
+  const mealRateCents = getMealRateCents(rates, mealSession);
+  const lodgingNights = calculateNights(checkInDate, checkOutDate);
+  const lodgingAmountCents =
+    claimMode === "fixed_rate"
+      ? centsFromNumber(lodgingNights * parseRate(rates.lodgingRate))
+      : amountCents;
+  const perDiemDayCount = Math.max(0, Number(perDiemDays) || 0);
+  const perDiemAmountCents = centsFromNumber(
+    perDiemDayCount * parseRate(perDiemRate)
+  );
+  const effectiveAmountCents =
+    kind === "mileage"
+      ? mileageAmountCents
+      : kind === "meal" && claimMode === "fixed_rate"
+        ? mealRateCents
+        : kind === "lodging"
+          ? lodgingAmountCents
+          : kind === "per_diem"
+            ? perDiemAmountCents
+            : amountCents;
   const requiresDescription = kind === "other";
   const canAdd =
     Boolean(date) &&
-    (paidViaTng || amountCents > 0) &&
+    (kind === "mileage"
+      ? Boolean(selectedTrip) && effectiveAmountCents > 0
+      : kind === "per_diem"
+        ? perDiemDayCount > 0 && effectiveAmountCents > 0
+        : paidViaTng || effectiveAmountCents > 0) &&
     (!requiresDescription || description.trim().length > 0);
 
   function handleAdd() {
@@ -812,7 +907,17 @@ function AddClaimItemModal({
       return;
     }
 
-    if (!paidViaTng && amountCents <= 0) {
+    if (kind === "mileage" && !selectedTrip) {
+      setErrorMessage("Please select a saved trip.");
+      return;
+    }
+
+    if (kind === "per_diem" && (perDiemDayCount <= 0 || effectiveAmountCents <= 0)) {
+      setErrorMessage("Please enter valid per diem days and rate.");
+      return;
+    }
+
+    if (!paidViaTng && effectiveAmountCents <= 0) {
       setErrorMessage("Please enter an amount greater than 0.00.");
       return;
     }
@@ -822,17 +927,45 @@ function AddClaimItemModal({
       return;
     }
 
+    const itemDate =
+      kind === "mileage" && selectedTrip
+        ? selectedTrip.startedAt.slice(0, 10)
+        : kind === "lodging"
+          ? checkInDate
+          : date;
+    const generatedNotes = buildCalculatedNotes({
+      checkOutDate,
+      claimMode,
+      kind: kind as ClaimModalKind,
+      lodgingNights,
+      mealSession,
+      notes,
+      paidViaTng,
+      perDiemDayCount,
+      perDiemRate,
+      rates,
+      selectedTrip,
+      selectedTripKm,
+      selectedTripRate
+    });
+
     onAddItem({
-      amountCents: paidViaTng ? 0 : amountCents,
-      itemDate: date,
+      amountCents: paidViaTng ? 0 : effectiveAmountCents,
+      itemDate,
       mode: paidViaTng ? "tng_pending" : null,
-      notes:
-        [notes.trim(), paidViaTng ? "Paid via TNG - pending transaction link." : ""]
-          .filter(Boolean)
-          .join("\n") || null,
+      notes: generatedNotes,
       receipt,
       tngTransactionId: null,
-      title: description.trim() || meta.defaultTitle,
+      title:
+        description.trim() ||
+        (kind === "mileage" && selectedTrip
+          ? tripTitle(selectedTrip)
+          : kind === "meal" && claimMode === "fixed_rate"
+            ? `${meta.defaultTitle} - ${mealSessionLabel(mealSession)}`
+            : kind === "lodging"
+              ? `${meta.defaultTitle} - ${lodgingNights} night${lodgingNights === 1 ? "" : "s"}`
+              : meta.defaultTitle),
+      tripId: kind === "mileage" ? selectedTrip?.id ?? null : null,
       type: meta.type
     });
     setAmount("0.00");
@@ -841,6 +974,13 @@ function AddClaimItemModal({
     setPaidViaTng(false);
     setReceipt(null);
     setErrorMessage(null);
+    setSelectedTripId(null);
+    setClaimMode("fixed_rate");
+    setMealSession("NOON");
+    setCheckInDate(todayInput());
+    setCheckOutDate(todayInput());
+    setPerDiemDays("1");
+    setPerDiemRate(rates.perDiemRate);
     onClose();
   }
 
@@ -910,7 +1050,155 @@ function AddClaimItemModal({
               </Pressable>
             ) : null}
 
-            <DatePickerField label="Date *" value={date} onChange={setDate} />
+            {kind === "mileage" ? (
+              <View style={styles.field}>
+                <Text style={styles.label}>Saved Trip *</Text>
+                {eligibleTrips.length === 0 ? (
+                  <View style={styles.emptyTripPicker}>
+                    <Text style={styles.emptyTripTitle}>No unclaimed final trips</Text>
+                    <Text style={styles.emptyTripCopy}>
+                      Finalize a trip in Trips first, then return here to add it
+                      as mileage.
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.tripPickerList}>
+                    {eligibleTrips.map((trip) => {
+                      const isSelected = (selectedTrip?.id ?? null) === trip.id;
+                      const tripRate = parseRate(
+                        trip.vehicleType === "motorcycle"
+                          ? rates.mileageMotorcycleRate
+                          : rates.mileageCarRate
+                      );
+                      const tripAmount = centsFromNumber(
+                        ((trip.finalDistanceM ?? 0) / 1000) * tripRate
+                      );
+
+                      return (
+                        <Pressable
+                          accessibilityRole="button"
+                          key={trip.id}
+                          onPress={() => setSelectedTripId(trip.id)}
+                          style={[
+                            styles.tripPickerItem,
+                            isSelected ? styles.tripPickerItemActive : null
+                          ]}
+                        >
+                          <View style={styles.tripPickerBody}>
+                            <Text style={styles.tripPickerTitle}>
+                              {tripTitle(trip)}
+                            </Text>
+                            <Text style={styles.tripPickerSub}>
+                              {formatDate(trip.startedAt)} - {formatKm(trip.finalDistanceM ?? 0)} - {trip.vehicleType}
+                            </Text>
+                          </View>
+                          <Text style={styles.tripPickerAmount}>
+                            {formatMoney(tripAmount, "MYR")}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+            ) : null}
+
+            {kind === "meal" || kind === "lodging" ? (
+              <View style={styles.segmentedRow}>
+                <SegmentButton
+                  active={claimMode === "fixed_rate"}
+                  label="Fixed Rate"
+                  onPress={() => setClaimMode("fixed_rate")}
+                />
+                <SegmentButton
+                  active={claimMode === "receipt"}
+                  label="Receipt"
+                  onPress={() => setClaimMode("receipt")}
+                />
+              </View>
+            ) : null}
+
+            {kind === "lodging" ? (
+              <View style={styles.fieldRow}>
+                <DatePickerField
+                  label="Check-in *"
+                  value={checkInDate}
+                  onChange={setCheckInDate}
+                />
+                <DatePickerField
+                  label="Check-out *"
+                  value={checkOutDate}
+                  onChange={setCheckOutDate}
+                />
+              </View>
+            ) : kind === "mileage" ? null : (
+              <DatePickerField label="Date *" value={date} onChange={setDate} />
+            )}
+
+            {kind === "meal" && claimMode === "fixed_rate" ? (
+              <View style={styles.field}>
+                <Text style={styles.label}>Meal Session</Text>
+                <View style={styles.sessionGrid}>
+                  {mealSessions.map((session) => (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={session.type}
+                      onPress={() => setMealSession(session.type)}
+                      style={[
+                        styles.sessionOption,
+                        mealSession === session.type ? styles.sessionOptionActive : null
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.sessionOptionText,
+                          mealSession === session.type
+                            ? styles.sessionOptionTextActive
+                            : null
+                        ]}
+                      >
+                        {session.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <AmountPreview
+                  label="Fixed Rate"
+                  value={formatMoney(mealRateCents, "MYR")}
+                />
+              </View>
+            ) : null}
+
+            {kind === "lodging" && claimMode === "fixed_rate" ? (
+              <AmountPreview
+                label={`${lodgingNights} night${lodgingNights === 1 ? "" : "s"} x MYR ${parseRate(rates.lodgingRate).toFixed(2)}`}
+                value={formatMoney(lodgingAmountCents, "MYR")}
+              />
+            ) : null}
+
+            {kind === "per_diem" ? (
+              <>
+                <View style={styles.fieldRow}>
+                  <Field
+                    label="Days *"
+                    keyboardType="decimal-pad"
+                    value={perDiemDays}
+                    onChangeText={setPerDiemDays}
+                  />
+                  <Field
+                    label="Rate (MYR) *"
+                    keyboardType="decimal-pad"
+                    value={perDiemRate}
+                    onChangeText={setPerDiemRate}
+                  />
+                </View>
+                <AmountPreview
+                  label={`${perDiemDayCount || 0} day${perDiemDayCount === 1 ? "" : "s"}`}
+                  value={formatMoney(perDiemAmountCents, "MYR")}
+                />
+              </>
+            ) : null}
+
             {paidViaTng ? (
               <View style={styles.tngPendingNotice}>
                 <Text style={styles.tngPendingNoticeTitle}>
@@ -921,7 +1209,14 @@ function AddClaimItemModal({
                   Touch 'n Go transaction.
                 </Text>
               </View>
-            ) : (
+            ) : kind === "mileage" ? (
+              selectedTrip ? (
+                <AmountPreview
+                  label={`${formatKm(selectedTrip.finalDistanceM ?? 0)} x MYR ${selectedTripRate.toFixed(2)}/km`}
+                  value={formatMoney(mileageAmountCents, "MYR")}
+                />
+              ) : null
+            ) : kind === "meal" && claimMode === "fixed_rate" ? null : kind === "lodging" && claimMode === "fixed_rate" ? null : kind === "per_diem" ? null : (
               <Field
                 label={meta.amountLabel}
                 keyboardType="decimal-pad"
@@ -975,6 +1270,42 @@ function AddClaimItemModal({
         </View>
       </View>
     </Modal>
+  );
+}
+
+function SegmentButton({
+  active,
+  label,
+  onPress
+}: {
+  active: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={[styles.segmentButton, active ? styles.segmentButtonActive : null]}
+    >
+      <Text
+        style={[
+          styles.segmentButtonText,
+          active ? styles.segmentButtonTextActive : null
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function AmountPreview({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.amountPreview}>
+      <Text style={styles.amountPreviewLabel}>{label}</Text>
+      <Text style={styles.amountPreviewValue}>{value}</Text>
+    </View>
   );
 }
 
@@ -1493,6 +1824,133 @@ function getItemMeta(type: ClaimItemType | ClaimModalKind) {
   };
 
   return labels[type] ?? labels.other;
+}
+
+function parseRate(value: string | null | undefined) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function centsFromNumber(value: number) {
+  return Math.max(0, Math.round(value * 100));
+}
+
+function getMealRateCents(rates: ClaimRates, session: MealSession) {
+  if (session === "FULL_DAY") {
+    return centsFromNumber(parseRate(rates.fullDayMealRate));
+  }
+
+  if (session === "MORNING") {
+    return centsFromNumber(parseRate(rates.mealMorningRate));
+  }
+
+  if (session === "EVENING") {
+    return centsFromNumber(parseRate(rates.mealEveningRate));
+  }
+
+  return centsFromNumber(parseRate(rates.mealNoonRate));
+}
+
+function mealSessionLabel(session: MealSession) {
+  return mealSessions.find((item) => item.type === session)?.label ?? "Meal";
+}
+
+function calculateNights(checkIn: string, checkOut: string) {
+  const start = new Date(checkIn).getTime();
+  const end = new Date(checkOut).getTime();
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return 1;
+  }
+
+  return Math.max(1, Math.round((end - start) / 86_400_000));
+}
+
+function tripTitle(trip: TripDraft) {
+  if (trip.originText && trip.destinationText) {
+    return `${trip.originText} -> ${trip.destinationText}`;
+  }
+
+  if (trip.originText) {
+    return trip.originText;
+  }
+
+  if (trip.destinationText) {
+    return trip.destinationText;
+  }
+
+  return `Trip ${formatDate(trip.startedAt)}`;
+}
+
+function formatKm(distanceM: number) {
+  return `${(distanceM / 1000).toFixed(2)} km`;
+}
+
+function buildCalculatedNotes({
+  checkOutDate,
+  claimMode,
+  kind,
+  lodgingNights,
+  mealSession,
+  notes,
+  paidViaTng,
+  perDiemDayCount,
+  perDiemRate,
+  selectedTrip,
+  selectedTripKm,
+  selectedTripRate
+}: {
+  checkOutDate: string;
+  claimMode: "fixed_rate" | "receipt";
+  kind: ClaimModalKind;
+  lodgingNights: number;
+  mealSession: MealSession;
+  notes: string;
+  paidViaTng: boolean;
+  perDiemDayCount: number;
+  perDiemRate: string;
+  rates: ClaimRates;
+  selectedTrip: TripDraft | null;
+  selectedTripKm: number;
+  selectedTripRate: number;
+}) {
+  const generated: string[] = [];
+
+  if (kind === "mileage" && selectedTrip) {
+    generated.push(
+      `Trip ${selectedTrip.id}`,
+      `${selectedTripKm.toFixed(2)} km x MYR ${selectedTripRate.toFixed(2)}/km`
+    );
+  }
+
+  if (kind === "meal") {
+    generated.push(
+      claimMode === "fixed_rate"
+        ? `Fixed rate meal - ${mealSessionLabel(mealSession)}`
+        : "Receipt meal"
+    );
+  }
+
+  if (kind === "lodging") {
+    generated.push(
+      claimMode === "fixed_rate"
+        ? `Fixed rate lodging - ${lodgingNights} night${lodgingNights === 1 ? "" : "s"}`
+        : `Receipt lodging - ${lodgingNights} night${lodgingNights === 1 ? "" : "s"}`,
+      `Check-out: ${checkOutDate}`
+    );
+  }
+
+  if (kind === "per_diem") {
+    generated.push(
+      `${perDiemDayCount} day${perDiemDayCount === 1 ? "" : "s"} x MYR ${parseRate(perDiemRate).toFixed(2)}`
+    );
+  }
+
+  if (paidViaTng) {
+    generated.push("Paid via TNG - pending transaction link.");
+  }
+
+  return [notes.trim(), ...generated].filter(Boolean).join("\n") || null;
 }
 
 function confirmAction(title: string, message: string, onConfirm: () => void) {
@@ -2103,6 +2561,138 @@ const styles = StyleSheet.create({
   modalBody: {
     gap: spacing.md,
     padding: spacing.lg
+  },
+  amountPreview: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    padding: spacing.md
+  },
+  amountPreviewLabel: {
+    color: colors.muted,
+    flex: 1,
+    fontSize: typography.caption,
+    fontWeight: "800",
+    lineHeight: 18
+  },
+  amountPreviewValue: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  emptyTripPicker: {
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 4,
+    padding: spacing.md
+  },
+  emptyTripTitle: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  emptyTripCopy: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 18
+  },
+  segmentedRow: {
+    backgroundColor: "#f1f5f9",
+    borderRadius: 8,
+    flexDirection: "row",
+    gap: 4,
+    padding: 4
+  },
+  segmentButton: {
+    alignItems: "center",
+    borderRadius: 7,
+    flex: 1,
+    minHeight: 38,
+    justifyContent: "center"
+  },
+  segmentButtonActive: {
+    backgroundColor: colors.surface
+  },
+  segmentButtonText: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  segmentButtonTextActive: {
+    color: colors.text
+  },
+  sessionGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm
+  },
+  sessionOption: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 38,
+    paddingHorizontal: spacing.md,
+    justifyContent: "center"
+  },
+  sessionOptionActive: {
+    backgroundColor: "#dcfce7",
+    borderColor: "#86efac"
+  },
+  sessionOptionText: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  sessionOptionTextActive: {
+    color: "#166534"
+  },
+  tripPickerList: {
+    gap: spacing.sm
+  },
+  tripPickerItem: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 62,
+    padding: spacing.md
+  },
+  tripPickerItemActive: {
+    backgroundColor: "#dcfce7",
+    borderColor: "#86efac"
+  },
+  tripPickerBody: {
+    flex: 1,
+    minWidth: 0
+  },
+  tripPickerTitle: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  tripPickerSub: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 16,
+    marginTop: 3
+  },
+  tripPickerAmount: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "900"
   },
   tngPendingNotice: {
     backgroundColor: "#fff7ed",
