@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.2.33](https://github.com/EffortEdutech/myexpensio/compare/v4.2.32...v4.2.33) (2026-06-04)
+
+
+### Bug Fixes
+
+* accept Bearer token auth in tng/parse for mobile ([4a14a0e](https://github.com/EffortEdutech/myexpensio/commit/4a14a0e5ab7736e971858dda6d29c62b30892099))
+
 ### [4.2.32](https://github.com/EffortEdutech/myexpensio/compare/v4.2.31...v4.2.32) (2026-05-25)
 
 ### [4.2.31](https://github.com/EffortEdutech/myexpensio/compare/v4.2.29...v4.2.31) (2026-05-25)
