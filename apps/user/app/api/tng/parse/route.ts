@@ -23,8 +23,19 @@ function err(code: string, message: string, status: number) {
 }
 
 export async function POST(request: NextRequest) {
+  // Support both cookie-based auth (web) and Bearer token auth (mobile)
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  let user = (await supabase.auth.getUser()).data.user
+
+  if (!user) {
+    const authHeader = request.headers.get('Authorization')
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.slice(7)
+      const { data } = await supabase.auth.getUser(token)
+      user = data.user ?? null
+    }
+  }
+
   if (!user) return err('UNAUTHENTICATED', 'Login required.', 401)
 
   // ── Parse multipart ───────────────────────────────────────────────────────
