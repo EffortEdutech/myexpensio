@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.3.0](https://github.com/EffortEdutech/myexpensio/compare/v4.2.33...v4.3.0) (2026-06-06)
+
+
+### Features
+
+* support Bearer token auth in exports endpoint for mobile ([9492c0c](https://github.com/EffortEdutech/myexpensio/commit/9492c0c916c93d05898a52d27a81d2bb03ee5858))
+
+
+### Bug Fixes
+
+* support Bearer token auth in all mobile-facing API routes ([a6d349c](https://github.com/EffortEdutech/myexpensio/commit/a6d349c771bf980968c3bc24fd9500a6af34c1d1))
+
 ### [4.2.33](https://github.com/EffortEdutech/myexpensio/compare/v4.2.32...v4.2.33) (2026-06-04)
 
 
