@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClientForRequest } from '@/lib/supabase/api-client'
 import { buildExport } from '@/lib/export-builder'
 import { buildPdfData, generatePDF } from '@/lib/pdf-builder'
 import { PRESET_COLUMNS, resolveColumns, type ExportColumnKey } from '@/lib/export-columns'
@@ -39,7 +39,7 @@ function err(code: string, message: string, status: number, details?: object) {
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = await createClient()
+  const supabase = await createClientForRequest(request)
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return err('UNAUTHORIZED', 'Not authenticated', 401)
 
