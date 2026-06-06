@@ -1,8 +1,9 @@
 {
-  "version": "4.3.3",
+  "version": "4.4.0",
   "changelog": [
-    "support Bearer token auth in exports endpoint for mobile ()",
-    "support Bearer token auth in all mobile-facing API routes ()",
-    "accept Bearer token auth in tng/parse for mobile ()"
+    "mobile PDF includes TNG statements with highlight via scan service ()",
+    "remove duplicate DEFAULT_PDF_LAYOUT and PdfLayoutConfig in exports route ()",
+    "mobile PDF fast path — use local payload, skip Supabase claims query ()",
+    "replace createClient type ref with SupabaseClient in push route ()"
   ]
 }
