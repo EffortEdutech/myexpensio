@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.4.2](https://github.com/EffortEdutech/myexpensio/compare/v4.4.1...v4.4.2) (2026-06-06)
+
+
+### Bug Fixes
+
+* use any type for TNG buffer to resolve ArrayBuffer generic mismatch ([28a3cbd](https://github.com/EffortEdutech/myexpensio/commit/28a3cbd23dd625904d05d071ef77e7c44911ce2e))
+
 ### [4.4.1](https://github.com/EffortEdutech/myexpensio/compare/v4.4.0...v4.4.1) (2026-06-06)
 
 
