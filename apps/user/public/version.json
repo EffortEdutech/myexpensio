@@ -1,7 +1,8 @@
 {
-  "version": "4.2.33",
+  "version": "4.3.0",
   "changelog": [
-    "polish 3 tier UX ()",
-    "add PREMIUM to entitlements tier type — resolves TS build error ()"
+    "support Bearer token auth in exports endpoint for mobile ()",
+    "support Bearer token auth in all mobile-facing API routes ()",
+    "accept Bearer token auth in tng/parse for mobile ()"
   ]
 }
