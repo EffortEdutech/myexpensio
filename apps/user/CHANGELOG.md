@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.3.2](https://github.com/EffortEdutech/myexpensio/compare/v4.3.1...v4.3.2) (2026-06-06)
+
+
+### Bug Fixes
+
+* mobile PDF fast path — use local payload, skip Supabase claims query ([f6a44a6](https://github.com/EffortEdutech/myexpensio/commit/f6a44a612c030f52d2e164318a9b9d6352237e5e))
+
 ### [4.3.1](https://github.com/EffortEdutech/myexpensio/compare/v4.3.0...v4.3.1) (2026-06-06)
 
 
