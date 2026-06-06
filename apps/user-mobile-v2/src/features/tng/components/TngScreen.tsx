@@ -392,6 +392,7 @@ function TngImportModal({
 }) {
   const [label, setLabel] = useState(monthLabel());
   const [fileName, setFileName] = useState<string | null>(null);
+  const [pdfSavedLocally, setPdfSavedLocally] = useState(false); // true when PDF bytes saved to documentDirectory
   const [rows, setRows] = useState<PreviewRow[]>([]);
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -409,6 +410,7 @@ function TngImportModal({
   function reset() {
     setLabel(monthLabel());
     setFileName(null);
+    setPdfSavedLocally(false);
     setRows([]);
     setIsParsing(false);
     setParseError(null);
@@ -428,6 +430,7 @@ function TngImportModal({
         statement_label?: string;
         meta?: { account_name?: string; period?: string };
         error?: { message?: string };
+        pdf_base64?: string;
       };
 
       if (Platform.OS === "web") {
@@ -506,6 +509,29 @@ function TngImportModal({
             : json.statement_label
         );
       }
+
+      // Save the PDF bytes returned by the backend to permanent local storage.
+      // documentDirectory is always accessible — no sandbox issues.
+      // This is the only reliable way to persist the PDF on Android Expo Go.
+      if (json.pdf_base64 && name && Platform.OS !== "web") {
+        try {
+          const dir = `${FileSystem.documentDirectory}tng-statements/`;
+          const dirInfo = await FileSystem.getInfoAsync(dir);
+          if (!dirInfo.exists) {
+            await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+          }
+          await FileSystem.writeAsStringAsync(
+            `${dir}${name}`,
+            json.pdf_base64,
+            { encoding: FileSystem.EncodingType.Base64 }
+          );
+          setPdfSavedLocally(true);
+          console.log("[TNG import] PDF saved to documentDirectory/tng-statements/", name);
+        } catch (e) {
+          console.warn("[TNG import] could not save PDF locally:", e);
+          setPdfSavedLocally(false);
+        }
+      }
     } catch (e) {
       // Show full error detail on screen so it can be read from the device
       const msg = e instanceof Error
@@ -556,15 +582,20 @@ function TngImportModal({
   }
 
   async function handleSave() {
-    if (selectedRows.length === 0) {
-      return;
-    }
+    if (selectedRows.length === 0) return;
+
+    // sourceFileUri is set only when the PDF was successfully saved to
+    // documentDirectory/tng-statements/ during parsePdf() above.
+    // This path is used by PDF export to attach + highlight the statement.
+    const sourceFileUri = (pdfSavedLocally && fileName)
+      ? `local://tng/${fileName}`
+      : null;
 
     await onSave({
       label,
       rows: selectedRows.map(({ id: _id, selected: _selected, ...row }) => row),
       sourceFileName: fileName,
-      sourceFileUri: fileName ? `local://tng/${fileName}` : null
+      sourceFileUri,
     });
     reset();
   }

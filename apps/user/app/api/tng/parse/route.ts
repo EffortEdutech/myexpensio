@@ -170,5 +170,6 @@ export async function POST(request: NextRequest) {
     source_file_path,   // ← frontend must forward to /api/tng/transactions
     statement_label,    // ← frontend must forward to /api/tng/transactions
     meta: pythonJson.meta ?? null,
+    pdf_base64: pdfBase64, // ← mobile saves this locally for PDF export attachment
   }, { status: 200 })
 }
