@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.3.3](https://github.com/EffortEdutech/myexpensio/compare/v4.3.2...v4.3.3) (2026-06-06)
+
+
+### Bug Fixes
+
+* remove duplicate DEFAULT_PDF_LAYOUT and PdfLayoutConfig in exports route ([b70ae8a](https://github.com/EffortEdutech/myexpensio/commit/b70ae8aeff9d1815f8a92e44d8bad98df60ff095))
+
 ### [4.3.2](https://github.com/EffortEdutech/myexpensio/compare/v4.3.1...v4.3.2) (2026-06-06)
 
 
