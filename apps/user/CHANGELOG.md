@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.4.0](https://github.com/EffortEdutech/myexpensio/compare/v4.3.3...v4.4.0) (2026-06-06)
+
+
+### Features
+
+* mobile PDF includes TNG statements with highlight via scan service ([cec897d](https://github.com/EffortEdutech/myexpensio/commit/cec897daa1b072fbf442058ea796e6158f85ed39))
+
 ### [4.3.3](https://github.com/EffortEdutech/myexpensio/compare/v4.3.2...v4.3.3) (2026-06-06)
 
 
