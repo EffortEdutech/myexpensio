@@ -1,5 +1,5 @@
 {
-  "version": "4.4.0",
+  "version": "4.4.1",
   "changelog": [
     "mobile PDF includes TNG statements with highlight via scan service ()",
     "remove duplicate DEFAULT_PDF_LAYOUT and PdfLayoutConfig in exports route ()",
