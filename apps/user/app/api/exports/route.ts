@@ -1,7 +1,8 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createClientForRequest } from '@/lib/supabase/api-client'
 import { buildExport } from '@/lib/export-builder'
-import { buildPdfData, generatePDF } from '@/lib/pdf-builder'
+import { buildPdfData, generatePDF, DEFAULT_PDF_LAYOUT } from '@/lib/pdf-builder'
+import type { PdfData, PdfClaim, PdfItem } from '@/lib/pdf-builder'
 import { PRESET_COLUMNS, resolveColumns, type ExportColumnKey } from '@/lib/export-columns'
 import type { ClaimForExport, ItemForExport, TripForExport } from '@/lib/export-builder'
 import {
@@ -13,6 +14,83 @@ import {
 } from '@/lib/usage-limits'
 
 export const runtime = 'nodejs'
+
+// ── Mobile payload → PdfData mapper ──────────────────────────────────────────
+
+type MobileExportPreviewClaim = {
+  id: string; title: string | null; periodStart: string | null; periodEnd: string | null
+  totalAmountCents: number; status: string
+}
+type MobileExportPreviewRow = {
+  claimId: string; claimTitle: string; itemId: string; itemType: string; title: string
+  amountCents: number; currency: string; itemDate: string; notes: string | null
+  paidViaTng: boolean; receiptPresent: boolean; tngTransNo: string | null
+}
+type MobilePayload = { claims: MobileExportPreviewClaim[]; rows: MobileExportPreviewRow[]; generatedAt: string }
+
+function buildPdfDataFromMobilePayload(
+  payload: MobilePayload,
+  profile: { display_name?: string | null; email?: string | null; department?: string | null; location?: string | null; company_name?: string | null } | null,
+  orgName: string,
+): PdfData {
+  const rowsByClaimId = new Map<string, MobileExportPreviewRow[]>()
+  for (const row of payload.rows) {
+    const arr = rowsByClaimId.get(row.claimId) ?? []
+    arr.push(row)
+    rowsByClaimId.set(row.claimId, arr)
+  }
+
+  const claims: PdfClaim[] = payload.claims.map((claim) => {
+    const items = rowsByClaimId.get(claim.id) ?? []
+    return {
+      id: claim.id,
+      title: claim.title || mobilePeriodLabel(claim.periodStart, claim.periodEnd),
+      period: mobilePeriodLabel(claim.periodStart, claim.periodEnd),
+      status: claim.status?.toUpperCase() ?? 'DRAFT',
+      submitted_at: '',
+      total_myr: claim.totalAmountCents / 100,
+      items: items.map((row): PdfItem => ({
+        id: row.itemId,
+        type: row.itemType?.toUpperCase() ?? 'MISC',
+        claim_title: claim.title ?? '',
+        date: row.itemDate ? new Date(row.itemDate).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
+        date_iso: row.itemDate ?? '',
+        description: row.title || row.itemType,
+        qty: '—',
+        rate: '—',
+        amount_myr: row.amountCents / 100,
+        receipt_path: null,
+        tng_trans_no: row.tngTransNo ?? null,
+      })),
+    }
+  })
+
+  return {
+    org_name: orgName,
+    claimer_name: profile?.display_name ?? 'Claimant',
+    claimer_email: profile?.email ?? '',
+    claimer_department: profile?.department ?? '',
+    claimer_location: profile?.location ?? '',
+    claimer_company_name: profile?.company_name ?? '',
+    generated_at: new Date(payload.generatedAt).toLocaleString('en-MY', {
+      timeZone: 'Asia/Kuala_Lumpur', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    }),
+    layout: DEFAULT_PDF_LAYOUT,
+    claims,
+    tng_statements: [],
+  }
+}
+
+function mobilePeriodLabel(start: string | null | undefined, end: string | null | undefined): string {
+  if (!start) return 'Untitled'
+  const s = new Date(start)
+  if (!end) return s.toLocaleDateString('en-MY', { month: 'short', year: 'numeric' })
+  const e = new Date(end)
+  if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) {
+    return s.toLocaleDateString('en-MY', { month: 'long', year: 'numeric' })
+  }
+  return `${s.toLocaleDateString('en-MY', { month: 'short' })} – ${e.toLocaleDateString('en-MY', { month: 'short', year: 'numeric' })}`
+}
 
 type PdfLayoutConfig = {
   orientation: 'portrait' | 'landscape'
@@ -86,9 +164,37 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null)
   if (!body) return err('VALIDATION_ERROR', 'Request body required', 400)
 
-  const { claim_ids, format, template_id, pdf_layout, signature_data_url } = body
+  const { claim_ids, format, template_id, pdf_layout, signature_data_url, mobile_payload } = body
   if (!claim_ids?.length) return err('VALIDATION_ERROR', 'claim_ids is required', 400)
   if (!['CSV', 'XLSX', 'PDF'].includes(format)) return err('VALIDATION_ERROR', 'format must be CSV | XLSX | PDF', 400)
+
+  // ── Mobile PDF fast path ──────────────────────────────────────────────────
+  // V2 mobile sends its local SQLite data as mobile_payload so we never need
+  // to re-query Supabase for claims that may not be synced yet.
+  if (format === 'PDF' && mobile_payload) {
+    const [{ data: mobileProfile }, { data: mobileOrg }] = await Promise.all([
+      supabase.from('profiles').select('display_name, email, department, location, company_name').eq('id', user.id).maybeSingle(),
+      supabase.from('organizations').select('name').eq('id', membership.org_id).maybeSingle(),
+    ])
+
+    const pdfData = buildPdfDataFromMobilePayload(
+      mobile_payload,
+      mobileProfile,
+      mobileOrg?.name ?? 'My Organisation',
+    )
+
+    const pdfBuffer = await generatePDF(supabase, pdfData, null)
+    const filename = `myexpensio-claim-${new Date().toISOString().slice(0, 10)}.pdf`
+    return new NextResponse(new Uint8Array(pdfBuffer), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length': String(pdfBuffer.length),
+        'Cache-Control': 'no-store',
+      },
+    })
+  }
 
   let columns: ExportColumnKey[] = PRESET_COLUMNS.STANDARD
   let templatePdfLayout: Partial<PdfLayoutConfig> = {}

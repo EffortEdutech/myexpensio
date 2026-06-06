@@ -49,7 +49,7 @@ const C = {
 type PageDimensions = { PW: number; PH: number; CW: number }
 type ColDef = { key: string; header: string; w: number; align: string }
 
-type PdfItem = {
+export type PdfItem = {
   id: string
   type: string
   claim_title: string
@@ -63,7 +63,7 @@ type PdfItem = {
   tng_trans_no: string | null
 }
 
-type PdfClaim = {
+export type PdfClaim = {
   id: string
   title: string
   period: string

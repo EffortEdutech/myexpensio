@@ -56,13 +56,15 @@ export async function buildLocalPdf(
   console.log("[buildLocalPdf] calling backend for", claimIds.length, "claim(s)...");
 
   // ── Step 1: Call backend PDF endpoint ────────────────────────────────────
+  // mobile_payload sends the local SQLite data so the backend doesn't need
+  // to re-query Supabase (V2 mobile claims may not be synced to Supabase yet).
   const response = await fetch(`${API_BASE_URL}/api/exports`, {
     method: "POST",
     headers: {
       "Content-Type":  "application/json",
       "Authorization": `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({ claim_ids: claimIds, format: "PDF" }),
+    body: JSON.stringify({ claim_ids: claimIds, format: "PDF", mobile_payload: payload }),
   });
 
   if (!response.ok) {
