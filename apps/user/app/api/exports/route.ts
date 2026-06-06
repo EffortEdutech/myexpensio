@@ -37,7 +37,7 @@ async function mergeMobileTngStatements(mainBuf: Buffer, statements: MobileTngSt
 
   for (const stmt of statements) {
     try {
-      let stmtBuf = Buffer.from(stmt.pdfBase64, 'base64')
+      let stmtBuf = Buffer.from(stmt.pdfBase64, 'base64') as Buffer<ArrayBuffer>
 
       // Highlight claimed rows via scan service (same as V1)
       if (stmt.items.length > 0) {
