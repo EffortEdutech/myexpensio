@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.4.3](https://github.com/EffortEdutech/myexpensio/compare/v4.4.2...v4.4.3) (2026-06-06)
+
+
+### Bug Fixes
+
+* save TNG PDF bytes from parse response — reliable local storage for export attachment ([2d4e50e](https://github.com/EffortEdutech/myexpensio/commit/2d4e50e426f04569f91aa1cc0fb64b897a39c5da))
+
 ### [4.4.2](https://github.com/EffortEdutech/myexpensio/compare/v4.4.1...v4.4.2) (2026-06-06)
 
 
