@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.3.1](https://github.com/EffortEdutech/myexpensio/compare/v4.3.0...v4.3.1) (2026-06-06)
+
+
+### Bug Fixes
+
+* replace createClient type ref with SupabaseClient in push route ([f844058](https://github.com/EffortEdutech/myexpensio/commit/f844058001353e63ed8e68a50507355abc930400))
+
 ## [4.3.0](https://github.com/EffortEdutech/myexpensio/compare/v4.2.33...v4.3.0) (2026-06-06)
 
 
