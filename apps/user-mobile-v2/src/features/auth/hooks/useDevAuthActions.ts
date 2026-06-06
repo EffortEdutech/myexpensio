@@ -5,6 +5,7 @@ import {
   clearAuthSession,
   saveAuthSession
 } from "@/features/auth/sessionStorage";
+import { wipeLocalDatabase } from "@/local-db/database";
 import { bootstrapLocalUserShell } from "@/local-db/repositories/userShellBootstrapRepository";
 import { useAuthStore } from "@/state/authStore";
 import { useDeviceStore } from "@/state/deviceStore";
@@ -39,7 +40,13 @@ export function useSignOut() {
   const setSession = useAuthStore((state) => state.setSession);
 
   return useMutation({
-    mutationFn: clearAuthSession,
+    mutationFn: async () => {
+      // Wipe local financial data first, then clear the auth token.
+      // Order matters: if wipe fails we don't want a logged-out state
+      // with stale data that can't be cleaned up on next login.
+      await wipeLocalDatabase();
+      await clearAuthSession();
+    },
     onSuccess: () => {
       setSession(null);
     }

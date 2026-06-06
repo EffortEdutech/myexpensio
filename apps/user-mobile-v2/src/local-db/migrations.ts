@@ -382,6 +382,115 @@ export const localMigrations: LocalMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_export_jobs_created_at
         ON export_jobs (created_at);`
     ]
+  },
+  {
+    id: 9,
+    name: "ledger_entries_sprint_8",
+    statements: [
+      `DROP TABLE IF EXISTS ledger_entries;`,
+      `CREATE TABLE IF NOT EXISTS ledger_entries (
+        id TEXT PRIMARY KEY NOT NULL,
+        space_type TEXT NOT NULL,
+        entry_type TEXT NOT NULL,
+        amount_cents INTEGER NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'MYR',
+        entry_date TEXT NOT NULL,
+        category TEXT NOT NULL,
+        description TEXT,
+        is_tax_deductible INTEGER NOT NULL DEFAULT 0,
+        tax_category TEXT,
+        payment_method TEXT,
+        income_source TEXT,
+        receipt_path TEXT,
+        sync_status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT,
+        device_id TEXT NOT NULL
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_ledger_entries_space_date
+        ON ledger_entries (space_type, entry_date);`,
+      `CREATE INDEX IF NOT EXISTS idx_ledger_entries_type
+        ON ledger_entries (space_type, entry_type, entry_date);`
+    ]
+  },
+  {
+    id: 10,
+    name: "commitments_sprint_8",
+    statements: [
+      `DROP TABLE IF EXISTS commitments;`,
+      `CREATE TABLE IF NOT EXISTS commitments (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        amount_cents INTEGER NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'MYR',
+        category TEXT NOT NULL,
+        due_day INTEGER NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        notes TEXT,
+        is_tax_relief INTEGER NOT NULL DEFAULT 0,
+        tax_category TEXT,
+        sync_status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT,
+        device_id TEXT NOT NULL
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_commitments_active
+        ON commitments (is_active, start_date);`
+    ]
+  },
+  {
+    id: 11,
+    name: "commitment_payments_sprint_8",
+    statements: [
+      `DROP TABLE IF EXISTS commitment_payments;`,
+      `CREATE TABLE IF NOT EXISTS commitment_payments (
+        id TEXT PRIMARY KEY NOT NULL,
+        commitment_id TEXT NOT NULL,
+        year INTEGER NOT NULL,
+        month INTEGER NOT NULL,
+        due_date TEXT NOT NULL,
+        expected_amount_cents INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'PENDING',
+        paid_date TEXT,
+        paid_amount_cents INTEGER,
+        notes TEXT,
+        sync_status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        FOREIGN KEY (commitment_id) REFERENCES commitments(id)
+      );`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_commitment_payments_unique
+        ON commitment_payments (commitment_id, year, month);`,
+      `CREATE INDEX IF NOT EXISTS idx_commitment_payments_commitment
+        ON commitment_payments (commitment_id);`
+    ]
+  },
+  {
+    id: 12,
+    name: "sprint14_performance_indexes",
+    statements: [
+      `CREATE INDEX IF NOT EXISTS idx_claims_updated_desc
+        ON claims (updated_at DESC) WHERE deleted_at IS NULL;`,
+      `CREATE INDEX IF NOT EXISTS idx_claim_items_updated_at
+        ON claim_items (updated_at DESC) WHERE deleted_at IS NULL;`,
+      `CREATE INDEX IF NOT EXISTS idx_trips_updated_desc
+        ON trips (updated_at DESC) WHERE deleted_at IS NULL;`,
+      `CREATE INDEX IF NOT EXISTS idx_tng_txn_date_desc
+        ON tng_transactions (transaction_date DESC) WHERE deleted_at IS NULL;`,
+      `CREATE INDEX IF NOT EXISTS idx_tng_txn_sector_claimed
+        ON tng_transactions (sector, claimed) WHERE deleted_at IS NULL;`,
+      `CREATE INDEX IF NOT EXISTS idx_ledger_date_desc
+        ON ledger_entries (entry_date DESC) WHERE deleted_at IS NULL;`,
+      `CREATE INDEX IF NOT EXISTS idx_commitments_name
+        ON commitments (name) WHERE deleted_at IS NULL;`,
+      `CREATE INDEX IF NOT EXISTS idx_receipts_entity_updated
+        ON receipts (owner_entity_type, owner_entity_id, updated_at DESC)
+        WHERE deleted_at IS NULL;`
+    ]
   }
 ];
-

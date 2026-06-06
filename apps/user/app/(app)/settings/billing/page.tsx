@@ -49,11 +49,11 @@ const PLANS: PlanOption[] = [
     price:       18,
     description: 'For solo professionals and freelancers.',
     features: [
-      'Unlimited route calculations',
-      'Unlimited trips & exports',
-      'Full claims management',
+      'Claim exports (PDF / Excel)',
+      'Claims management',
       'TNG statement import',
       'Receipt scanning',
+      'Personal Expense tracking',
       'PDF exports',
     ],
   },
@@ -76,12 +76,13 @@ const PLANS: PlanOption[] = [
 ]
 
 const FREE_FEATURES = [
-  '2 route calculations / month',
-  'Unlimited trips',
-  'Exports not included',
+  'Route calculations',
+  'Trips tracking',
   'Claims management',
   'TNG statement import',
   'Receipt scanning',
+  'Personal Expense tracking',
+  'Exports not included',
 ]
 
 // ---------------------------------------------------------------------------
@@ -282,7 +283,9 @@ export default function BillingPage() {
                 Current plan
               </div>
               <div style={{ fontSize: 20, fontWeight: 800, color: '#0f172a' }}>🆓 Free</div>
-              <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>Limited to 2 route calculations per month.</div>
+              <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>
+                Free trial includes core tracking. Upgrade to Pro or Premium to export claims.
+              </div>
             </div>
             {subStatus && (
               <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 999, background: statusClr.bg, color: statusClr.text }}>

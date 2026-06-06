@@ -32,5 +32,12 @@
   "devDependencies": {
     "@types/pdfkit": "^0.17.5",
     "supabase": "^2.77.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "expo-location": "18.0.7",
+      "react-native-webview": "13.12.5"
+    },
+    "patchedDependencies": {}
   }
 }

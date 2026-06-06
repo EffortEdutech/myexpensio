@@ -1,6 +1,6 @@
 export const MEMBERSHIP_LIMITS = {
   FREE: {
-    routes_per_month: 2 as number | null,
+    routes_per_month: null as number | null,
     trips_per_month: null as number | null,
     exports_per_month: 0 as number | null,
     label: 'Free',

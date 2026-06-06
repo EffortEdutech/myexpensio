@@ -28,7 +28,7 @@ export type ResolvedEntitlements = {
 // Used when platform_config row is missing or columns are null.
 // PRO is always unlimited — not read from DB.
 const FALLBACK_FREE = {
-  routes_per_month:  2 as LimitValue,
+  routes_per_month:  null as LimitValue,
   trips_per_month:   null as LimitValue,
   exports_per_month: 0 as LimitValue,
   label: 'Free',
@@ -135,15 +135,11 @@ export async function loadOrgEntitlements(params: {
       .maybeSingle(),
   ])
 
-  // Build effective FREE baseline from platform_config (admin-editable).
-  // Falls back to hardcoded FALLBACK_FREE if the row/column is null.
+  // Free trial now allows core route/trip tracking. Exports remain the paid gate.
+  // Keep exports admin-configurable, but do not revive old route/trip limits from platform_config.
   const base = {
-    routes_per_month: platformRes.data?.free_routes_per_month !== undefined
-      ? platformRes.data.free_routes_per_month   // null is valid (unlimited)
-      : FALLBACK_FREE.routes_per_month,
-    trips_per_month: platformRes.data?.free_trips_per_month !== undefined
-      ? platformRes.data.free_trips_per_month
-      : FALLBACK_FREE.trips_per_month,
+    routes_per_month: FALLBACK_FREE.routes_per_month,
+    trips_per_month: FALLBACK_FREE.trips_per_month,
     exports_per_month: platformRes.data?.free_exports_per_month != null
       ? platformRes.data.free_exports_per_month
       : FALLBACK_FREE.exports_per_month,

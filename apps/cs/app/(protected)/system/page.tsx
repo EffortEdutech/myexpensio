@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react'
 
 type Config = {
-  free_routes_per_month:    number
+  free_routes_per_month:    number | null
   free_trips_per_month:     number | null
   free_exports_per_month:   number | null
   auto_approve_invitations: boolean
@@ -65,7 +65,7 @@ function SettingRow({
 export default function SystemConfigPage() {
   const [config, setConfig]   = useState<Config | null>(null)
   const [form, setForm]       = useState({
-    free_routes_per_month:    2,
+    free_routes_per_month:    '',
     free_trips_per_month:     '',
     free_exports_per_month:   '0',
     auto_approve_invitations: false,
@@ -84,7 +84,7 @@ export default function SystemConfigPage() {
         const cfg: Config = json.config
         setConfig(cfg)
         setForm({
-          free_routes_per_month:    cfg.free_routes_per_month,
+          free_routes_per_month:    cfg.free_routes_per_month !== null ? String(cfg.free_routes_per_month) : '',
           free_trips_per_month:     cfg.free_trips_per_month !== null ? String(cfg.free_trips_per_month) : '',
           free_exports_per_month:   cfg.free_exports_per_month !== null ? String(cfg.free_exports_per_month) : '0',
           auto_approve_invitations: cfg.auto_approve_invitations ?? false,
@@ -98,11 +98,10 @@ export default function SystemConfigPage() {
     setSaving(true); setError(null)
     try {
       const payload: Record<string, unknown> = {
-        free_routes_per_month:    Number(form.free_routes_per_month),
         auto_approve_invitations: form.auto_approve_invitations,
       }
-      if (String(form.free_trips_per_month).trim() !== '')
-        payload.free_trips_per_month = Number(form.free_trips_per_month)
+      payload.free_routes_per_month = null
+      payload.free_trips_per_month = null
       payload.free_exports_per_month = String(form.free_exports_per_month).trim() !== ''
         ? Number(form.free_exports_per_month)
         : 0
@@ -180,36 +179,25 @@ export default function SystemConfigPage() {
         )}
       </div>
 
-      {/* Free tier limits */}
+      {/* Free tier policy */}
       <div className="bg-white border border-gray-200 rounded-xl px-5">
         <div className="py-3 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">Free Tier Limits</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Applies to all FREE workspaces immediately. Use 0 to block a feature.</p>
+          <h2 className="text-sm font-semibold text-gray-900">Free Trial Policy</h2>
+          <p className="text-xs text-gray-400 mt-0.5">Route calculations and trips are available on Free. Exports stay locked unless set otherwise.</p>
         </div>
 
         <SettingRow
-          label="Route calculations / month"
-          description="Phase 1 lock: 2. Each call costs a Google Maps API request. Increase carefully."
+          label="Route calculations"
+          description="Available on Free. This is no longer managed as a monthly limit."
         >
-          <input
-            type="number" min={0} step={1}
-            value={form.free_routes_per_month}
-            onChange={(e) => setForm((f) => ({ ...f, free_routes_per_month: Number(e.target.value) }))}
-            className={INPUT}
-          />
+          <span className="text-xs font-medium text-green-700 bg-green-50 border border-green-100 rounded-full px-3 py-1">Available</span>
         </SettingRow>
 
         <SettingRow
-          label="Trips / month"
-          description="Leave blank for unlimited trips on the Free plan."
+          label="Trips"
+          description="Available on Free. This is no longer managed as a monthly limit."
         >
-          <input
-            type="number" min={0} step={1}
-            value={form.free_trips_per_month}
-            onChange={(e) => setForm((f) => ({ ...f, free_trips_per_month: e.target.value }))}
-            placeholder="Unlimited"
-            className={INPUT}
-          />
+          <span className="text-xs font-medium text-green-700 bg-green-50 border border-green-100 rounded-full px-3 py-1">Available</span>
         </SettingRow>
 
         <SettingRow

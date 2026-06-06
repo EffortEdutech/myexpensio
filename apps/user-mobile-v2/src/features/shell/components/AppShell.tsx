@@ -1,16 +1,21 @@
 import type { PropsWithChildren } from "react";
 import { useMemo, useState } from "react";
-import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { appSpaces } from "@/features/shell/spaceConfig";
 import type { AppSpace } from "@/features/shell/types";
 import { colors, spacing, typography } from "@/theme/tokens";
 
 export type WorkTab = "claims" | "export" | "home" | "tng" | "trips";
+export type PersonalView = "home" | "expenses" | "bills" | "tax" | "add";
+export type BusinessView = "dashboard" | "income" | "expenses" | "reports" | "add";
 
 type AppShellProps = PropsWithChildren<{
   activeSpace: AppSpace;
   activeWorkTab: WorkTab;
+  personalView?: PersonalView;
+  businessView?: BusinessView;
   displayName: string;
   email: string;
   isSigningOut: boolean;
@@ -18,31 +23,39 @@ type AppShellProps = PropsWithChildren<{
   onSignOut: () => void;
   onSpaceChange: (space: AppSpace) => void;
   onWorkTabChange: (tab: WorkTab) => void;
+  onPersonalViewChange?: (view: PersonalView) => void;
+  onBusinessViewChange?: (view: BusinessView) => void;
   pendingSyncCount: number;
   subscriptionLabel: string;
+  syncStatus?: "idle" | "syncing" | "error" | "offline" | "free_tier";
 }>;
 
 export function AppShell({
   activeSpace,
   activeWorkTab,
+  personalView,
+  businessView,
   children,
   displayName,
   email,
   isSigningOut,
   onOpenSettings,
+  onPersonalViewChange,
+  onBusinessViewChange,
   onSignOut,
   onSpaceChange,
   onWorkTabChange,
   pendingSyncCount,
-  subscriptionLabel
+  subscriptionLabel,
+  syncStatus = "idle",
 }: AppShellProps) {
   const [spaceMenuOpen, setSpaceMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const activeSpaceMeta =
     appSpaces.find((space) => space.id === activeSpace) ?? appSpaces[0];
   const footerTabs = useMemo(
-    () => getFooterTabs(activeSpace, activeWorkTab),
-    [activeSpace, activeWorkTab]
+    () => getFooterTabs(activeSpace, activeWorkTab, personalView, businessView),
+    [activeSpace, activeWorkTab, personalView, businessView]
   );
   const accent = getSpaceAccent(activeSpace);
   const avatarLabel = (displayName || email || "U").slice(0, 1).toUpperCase();
@@ -63,7 +76,7 @@ export function AppShell({
           >
             <Text style={styles.spaceIcon}>{activeSpaceMeta.icon}</Text>
             <Text style={styles.spaceLabel}>{activeSpaceMeta.label}</Text>
-            <Text style={styles.chevron}>{spaceMenuOpen ? "^" : "v"}</Text>
+            <Text style={styles.chevron}>{spaceMenuOpen ? "▴" : "▾"}</Text>
           </Pressable>
           {spaceMenuOpen ? (
             <View style={styles.spaceMenu}>
@@ -176,18 +189,31 @@ export function AppShell({
           <Text style={styles.subscriptionText}>{subscriptionLabel}</Text>
         </View>
         <View
+          accessibilityLabel={syncBadgeLabel(syncStatus, pendingSyncCount)}
           style={[
             styles.syncBadge,
-            pendingSyncCount > 0 ? styles.syncBadgePending : null
+            syncStatus === "free_tier" ? styles.syncBadgeFreeTier :
+            syncStatus === "offline"   ? styles.syncBadgeOffline :
+            syncStatus === "error"     ? styles.syncBadgeError :
+            syncStatus === "syncing"   ? styles.syncBadgeSyncing :
+            pendingSyncCount > 0       ? styles.syncBadgePending : null
           ]}
         >
           <Text
             style={[
               styles.syncText,
-              pendingSyncCount > 0 ? styles.syncTextPending : null
+              syncStatus === "free_tier" ? styles.syncTextFreeTier :
+              syncStatus === "offline"   ? styles.syncTextOffline :
+              syncStatus === "error"     ? styles.syncTextError :
+              syncStatus === "syncing"   ? styles.syncTextSyncing :
+              pendingSyncCount > 0       ? styles.syncTextPending : null
             ]}
           >
-            {pendingSyncCount > 0 ? `${pendingSyncCount} pending` : "Synced"}
+            {syncStatus === "free_tier" ? "Local only" :
+             syncStatus === "offline"   ? "Offline" :
+             syncStatus === "error"     ? "Sync error" :
+             syncStatus === "syncing"   ? "Syncing…" :
+             pendingSyncCount > 0       ? `${pendingSyncCount} pending` : "Synced"}
           </Text>
         </View>
       </View>
@@ -205,17 +231,16 @@ export function AppShell({
 
             return (
               <Pressable
+                accessibilityLabel={tab.label}
                 accessibilityRole="tab"
                 accessibilityState={{ selected: active }}
                 disabled={tab.disabled}
                 key={tab.key}
                 onPress={() => {
-                  if (tab.space) {
-                    onSpaceChange(tab.space);
-                  }
-                  if (tab.workTab) {
-                    onWorkTabChange(tab.workTab);
-                  }
+                  if (tab.space) onSpaceChange(tab.space);
+                  if (tab.workTab) onWorkTabChange(tab.workTab);
+                  if (tab.personalView) onPersonalViewChange?.(tab.personalView);
+                  if (tab.businessView) onBusinessViewChange?.(tab.businessView);
                 }}
                 style={styles.navTab}
               >
@@ -277,26 +302,44 @@ type FooterTab = {
   primary?: boolean;
   space?: AppSpace;
   workTab?: WorkTab;
+  personalView?: PersonalView;
+  businessView?: BusinessView;
 };
 
-function getFooterTabs(activeSpace: AppSpace, activeWorkTab: WorkTab): FooterTab[] {
+function syncBadgeLabel(status: string, pending: number): string {
+  if (status === "free_tier") return "Local only — upgrade to PRO for cloud backup";
+  if (status === "offline")   return "Offline — changes saved locally";
+  if (status === "error")     return "Sync error — tap to retry";
+  if (status === "syncing")   return "Syncing changes";
+  if (pending > 0)            return `${pending} change${pending === 1 ? "" : "s"} pending sync`;
+  return "All changes synced";
+}
+
+function getFooterTabs(
+  activeSpace: AppSpace,
+  activeWorkTab: WorkTab,
+  personalView?: PersonalView,
+  businessView?: BusinessView
+): FooterTab[] {
   if (activeSpace === "personal") {
+    const pv = personalView ?? "home";
     return [
-      { active: true, icon: "⌂", key: "personal-home", label: "Home", space: "personal" },
-      { active: false, icon: "$", key: "personal-expenses", label: "Expenses" },
-      { active: false, icon: "+", key: "personal-add", label: "Add", primary: true },
-      { active: false, icon: "□", key: "personal-bills", label: "Bills" },
-      { active: false, icon: "%", key: "personal-tax", label: "Tax" }
+      { active: pv === "home",     icon: "⌂",  key: "personal-home",     label: "Home",     personalView: "home" },
+      { active: pv === "expenses", icon: "💳", key: "personal-expenses", label: "Expenses", personalView: "expenses" },
+      { active: false,             icon: "+",  key: "personal-add",      label: "Add",      primary: true, personalView: "add" },
+      { active: pv === "bills",    icon: "📋", key: "personal-bills",    label: "Bills",    personalView: "bills" },
+      { active: pv === "tax",      icon: "🧾", key: "personal-tax",      label: "Tax",      personalView: "tax" }
     ];
   }
 
   if (activeSpace === "business") {
+    const bv = businessView ?? "dashboard";
     return [
-      { active: true, icon: "▦", key: "business-dashboard", label: "Dashboard", space: "business" },
-      { active: false, icon: "$", key: "business-income", label: "Income" },
-      { active: false, icon: "+", key: "business-add", label: "Add", primary: true },
-      { active: false, icon: "□", key: "business-expenses", label: "Expenses" },
-      { active: false, icon: "↗", key: "business-reports", label: "Reports" }
+      { active: bv === "dashboard", icon: "▦",  key: "business-dashboard", label: "Dashboard", businessView: "dashboard" },
+      { active: bv === "income",    icon: "📈", key: "business-income",    label: "Income",    businessView: "income" },
+      { active: false,              icon: "+",  key: "business-add",       label: "Add",       primary: true, businessView: "add" },
+      { active: bv === "expenses",  icon: "💳", key: "business-expenses",  label: "Expenses",  businessView: "expenses" },
+      { active: bv === "reports",   icon: "↗",  key: "business-reports",   label: "Reports",   businessView: "reports" }
     ];
   }
 
@@ -577,6 +620,18 @@ const styles = StyleSheet.create({
   syncBadgePending: {
     backgroundColor: "#fef3c7"
   },
+  syncBadgeSyncing: {
+    backgroundColor: "#dbeafe"
+  },
+  syncBadgeError: {
+    backgroundColor: "#fee2e2"
+  },
+  syncBadgeFreeTier: {
+    backgroundColor: "#f1f5f9"
+  },
+  syncBadgeOffline: {
+    backgroundColor: "#f1f5f9"
+  },
   syncText: {
     color: "#166534",
     fontSize: typography.caption,
@@ -584,6 +639,18 @@ const styles = StyleSheet.create({
   },
   syncTextPending: {
     color: "#92400e"
+  },
+  syncTextSyncing: {
+    color: "#1d4ed8"
+  },
+  syncTextError: {
+    color: "#991b1b"
+  },
+  syncTextFreeTier: {
+    color: "#94a3b8"
+  },
+  syncTextOffline: {
+    color: "#64748b"
   },
   content: {
     flex: 1,

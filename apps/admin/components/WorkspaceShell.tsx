@@ -22,11 +22,6 @@ function getWorkspaceBadge(ctx: WorkspaceAuthContext) {
   return WORKSPACE_BADGE[ctx.workspaceType ?? 'TEAM'] ?? WORKSPACE_BADGE.TEAM
 }
 
-function getOrgLabel(ctx: WorkspaceAuthContext): string {
-  if (ctx.isInternalStaff) return 'All Workspaces'
-  return ctx.orgName ?? 'Workspace'
-}
-
 export default function WorkspaceShell({
   ctx,
   children,
@@ -57,7 +52,6 @@ export default function WorkspaceShell({
           >
             {badge.label}
           </span>
-          <span className="text-xs text-gray-500 truncate">{getOrgLabel(ctx)}</span>
         </div>
       </div>
 

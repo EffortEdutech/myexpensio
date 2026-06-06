@@ -1,7 +1,7 @@
 'use client'
 // apps/admin/app/(protected)/templates/page.tsx
 //
-// Export Templates — workspace-scoped read-only view.
+// Export Templates — workspace-scoped assigned-template view.
 // Internal staff see a workspace picker first, then the templates.
 
 import { useEffect, useState } from 'react'
@@ -107,10 +107,14 @@ function TemplatesView({
   templates,
   orgName,
   onChangeWorkspace,
+  onSetDefault,
+  busyTemplate,
 }: {
   templates:         Template[]
   orgName:           string | null
   onChangeWorkspace?: () => void
+  onSetDefault:      (templateId: string) => void
+  busyTemplate:      string | null
 }) {
   const activeTemplates   = templates.filter(t => t.is_active)
   const inactiveTemplates = templates.filter(t => !t.is_active)
@@ -142,8 +146,8 @@ function TemplatesView({
 
       {/* Info banner */}
       <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-700">
-        <strong>Read-only view.</strong> Export templates are assigned by the platform team.
-        The <strong>default template</strong> is used automatically when exporting without selecting a template.
+        Export templates are assigned by the platform team. Workspace owners, admins, and managers can choose the
+        <strong> default template</strong> used first when users export claims.
       </div>
 
       {templates.length === 0 ? (
@@ -170,7 +174,22 @@ function TemplatesView({
           {/* Active */}
           {activeTemplates.length > 0 && (
             <div className="space-y-3">
-              {activeTemplates.map(t => <TemplateCard key={t.id} template={t} />)}
+              {activeTemplates.map(t => (
+                <div key={t.id} className="space-y-2">
+                  <TemplateCard template={t} />
+                  {!t.is_default && (
+                    <div className="flex justify-end">
+                      <button
+                        onClick={() => onSetDefault(t.id)}
+                        disabled={busyTemplate === t.id}
+                        className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-40"
+                      >
+                        {busyTemplate === t.id ? 'Saving...' : 'Set as default'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
 
@@ -200,6 +219,7 @@ export default function TemplatesPage() {
   const [isInternal, setIsInternal] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
   const [selectedOrg, setSelectedOrg] = useState<{ id: string; name: string } | null>(null)
+  const [busyTemplate, setBusyTemplate] = useState<string | null>(null)
 
   function loadTemplates(orgId: string | null) {
     setLoading(true); setError(null)
@@ -229,6 +249,28 @@ export default function TemplatesPage() {
   function handleOrgSelect(orgId: string, orgName: string) {
     setSelectedOrg({ id: orgId, name: orgName })
     loadTemplates(orgId)
+  }
+
+  async function handleSetDefault(templateId: string) {
+    setBusyTemplate(templateId)
+    setError(null)
+    try {
+      const res = await fetch('/api/workspace/templates', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          template_id: templateId,
+          org_id: selectedOrg?.id,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error?.message ?? 'Failed to set default template')
+      setTemplates(prev => prev.map(t => ({ ...t, is_default: t.id === templateId })))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to set default template')
+    } finally {
+      setBusyTemplate(null)
+    }
   }
 
   if (showPicker || (isInternal && !templates.length && !error)) {
@@ -261,6 +303,8 @@ export default function TemplatesPage() {
       templates={templates}
       orgName={selectedOrg?.name ?? null}
       onChangeWorkspace={isInternal ? () => { setTemplates([]); setShowPicker(true) } : undefined}
+      onSetDefault={handleSetDefault}
+      busyTemplate={busyTemplate}
     />
   )
 }

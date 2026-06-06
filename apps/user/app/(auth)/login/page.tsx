@@ -144,6 +144,11 @@ function LoginContent() {
         <p style={S.footer}>
           Have an invite? <a href="/accept-invite" style={S.inlineLink}>Accept your invitation</a>
         </p>
+        <div style={S.legalLinks}>
+          <a href="/terms" style={S.legalLink}>Terms</a>
+          <span>·</span>
+          <a href="/privacy" style={S.legalLink}>Privacy</a>
+        </div>
       </div>
     </div>
   )
@@ -306,6 +311,19 @@ const S: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     textDecoration: 'none',
   },
+  legalLinks: {
+    marginTop: 14,
+    display: 'flex',
+    justifyContent: 'center',
+    gap: 8,
+    fontSize: 12,
+    color: '#cbd5e1',
+  },
+  legalLink: {
+    color: '#64748b',
+    textDecoration: 'none',
+    fontWeight: 600,
+  },
 }
 
 export default function LoginPage() {
@@ -315,4 +333,3 @@ export default function LoginPage() {
     </Suspense>
   )
 }
-

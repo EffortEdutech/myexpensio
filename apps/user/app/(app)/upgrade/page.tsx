@@ -241,7 +241,7 @@ export default function UpgradePage() {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const S = {
-  page:      { display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 40 } as React.CSSProperties,
+  page:      { display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 40, maxWidth: 1040, margin: '0 auto', width: '100%' } as React.CSSProperties,
   titleRow:  { display: 'flex', alignItems: 'center', gap: 10 } as React.CSSProperties,
   back:      { fontSize: 24, background: 'none', border: 'none', cursor: 'pointer', color: '#475569', padding: 0, lineHeight: 1 } as React.CSSProperties,
   title:     { fontSize: 20, fontWeight: 800, color: '#0f172a', margin: 0 } as React.CSSProperties,
@@ -258,13 +258,18 @@ const S = {
   } as React.CSSProperties,
 
   cards: {
-    display: 'flex', flexDirection: 'column' as const, gap: 14,
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, minmax(220px, 1fr))',
+    gap: 14,
+    overflowX: 'auto',
+    paddingBottom: 4,
   } as React.CSSProperties,
 
   card: {
     borderRadius: 18, padding: '20px 18px',
     display: 'flex', flexDirection: 'column' as const, gap: 12,
     transition: 'box-shadow 0.15s',
+    minWidth: 220,
   } as React.CSSProperties,
 
   badgeRow: { display: 'flex' } as React.CSSProperties,

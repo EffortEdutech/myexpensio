@@ -148,8 +148,8 @@ function OverrideModal({ sub, onClose, onSaved }: { sub: Sub; onClose: () => voi
             <label className="block text-xs font-medium text-gray-600 mb-1">Tier</label>
             <select value={tier} onChange={(e) => setTier(e.target.value as 'FREE' | 'PRO')}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="FREE">Free — 2 routes/month</option>
-              <option value="PRO">Pro — unlimited</option>
+              <option value="FREE">Free — trial access, exports locked</option>
+              <option value="PRO">Pro — claims export</option>
             </select>
           </div>
           <div>
@@ -351,7 +351,7 @@ export default function SubscriptionsPage() {
                       <td className="px-4 py-3">
                         <UsageBar
                           used={s.routes_used}
-                          limit={s.tier === 'PRO' ? null : s.routes_limit ?? 2}
+                          limit={null}
                         />
                       </td>
                       <td className="px-4 py-3 text-sm">

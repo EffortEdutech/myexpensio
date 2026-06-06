@@ -201,8 +201,13 @@ function UsageWidget({ usage, loading, isUnlimited, isAtLimit, isNearLimit }: {
     </div>
   )
   if (!usage) return null
+  if (isUnlimited) return (
+    <div style={{ ...S.usageBadge, backgroundColor: '#f8fafc', borderColor: '#e2e8f0', color: '#334155' }}>
+      Route calculations available
+    </div>
+  )
 
-  const used = usage.routes_used, lim = usage.routes_limit ?? 2
+  const used = usage.routes_used, lim = usage.routes_limit ?? 1
   const pct      = Math.min(100, Math.round((used / lim) * 100))
   const barColor = isAtLimit ? '#dc2626' : isNearLimit ? '#d97706' : '#0f172a'
   const bgColor  = isAtLimit ? '#fef2f2' : isNearLimit ? '#fffbeb' : '#f8fafc'
@@ -287,7 +292,7 @@ export default function MileageCalculatorPage() {
   }, [])
 
   const isUnlimited = !usage || usage.is_admin || usage.tier === 'PRO' || usage.tier === 'PREMIUM' || usage.routes_limit === null
-  const limit       = usage?.routes_limit ?? 2
+  const limit       = usage?.routes_limit ?? 1
   const isAtLimit   = !isUnlimited && (usage?.routes_used ?? 0) >= limit
   const isNearLimit = !isUnlimited && !isAtLimit && (usage?.routes_used ?? 0) >= limit - 1
 

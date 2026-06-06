@@ -24,6 +24,7 @@ export type CachedSubscription = {
 export type FeatureKey =
   | "business_space"
   | "exports"
+  | "exports_pdf"
   | "personal_tax"
   | "receipt_scan";
 

@@ -11,13 +11,26 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.effortedutech.myexpensio.mobile.v2"
+      "bundleIdentifier": "com.effortedutech.myexpensio.mobile.v2",
+      "infoPlist": {
+        "NSCameraUsageDescription": "MyExpensio needs camera access to snap receipt photos.",
+        "NSPhotoLibraryUsageDescription": "MyExpensio needs photo library access to attach receipt images.",
+        "NSLocationWhenInUseUsageDescription": "MyExpensio needs location access to track your trips."
+      }
     },
     "android": {
       "package": "com.effortedutech.myexpensio.mobile.v2",
       "adaptiveIcon": {
         "backgroundColor": "#0f766e"
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -25,8 +38,21 @@
     },
     "plugins": [
       "expo-sqlite",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "MyExpensio needs photo library access to attach receipt images.",
+          "cameraPermission": "MyExpensio needs camera access to snap receipt photos."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "MyExpensio needs location access to track your trips.",
+          "locationWhenInUsePermission": "MyExpensio needs location access to track your trips."
+        }
+      ]
     ]
   }
 }
-

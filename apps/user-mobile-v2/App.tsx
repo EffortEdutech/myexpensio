@@ -1,12 +1,18 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
   ActivityIndicator,
+  AppState,
+  KeyboardAvoidingView,
+  Linking,
   Modal,
+  Alert,
+  Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Switch,
@@ -14,10 +20,12 @@ import {
   TextInput,
   View
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { DatePickerField } from "@/components/DatePickerField";
 import { LoginScreen } from "@/features/auth/components/LoginScreen";
-import { useSignOut } from "@/features/auth/hooks/useDevAuthActions";
+import { nativeBiometricAuthAdapter } from "@/features/auth/biometricAuth";
+import { useSignOut } from "@/features/auth/hooks/useAuthActions";
 import { useSessionRestore } from "@/features/auth/hooks/useSessionRestore";
 import { ClaimDetail } from "@/features/claims/components/ClaimDetail";
 import { ClaimDraftList } from "@/features/claims/components/ClaimDraftList";
@@ -48,10 +56,12 @@ import { useCreateBlankClaimDraft } from "@/features/claims/hooks/useCreateClaim
 import { useReceiptUploadSummary } from "@/features/receipts/hooks/useReceiptUploadSummary";
 import type { LocalReceiptFile } from "@/features/receipts/types";
 import { AppShell } from "@/features/shell/components/AppShell";
-import type { WorkTab } from "@/features/shell/components/AppShell";
+import type { WorkTab, PersonalView, BusinessView } from "@/features/shell/components/AppShell";
 import type { AppSpace } from "@/features/shell/types";
 import { FeatureGate } from "@/features/subscription/components/FeatureGate";
+import { useSubscription } from "@/features/subscription/hooks/useSubscription";
 import type { SubscriptionTier } from "@/features/subscription/types";
+import { useProfileSave } from "@/features/profile/hooks/useProfileSave";
 import { TripsScreen } from "@/features/trips/components/TripsScreen";
 import type { TripDraft } from "@/features/trips/types";
 import {
@@ -62,11 +72,16 @@ import {
 } from "@/features/trips/hooks/useTripActions";
 import { useTrips } from "@/features/trips/hooks/useTrips";
 import { TngScreen } from "@/features/tng/components/TngScreen";
+import { WorkHomeScreen } from "@/features/shell/components/WorkHomeScreen";
 import { useTngTransactions } from "@/features/tng/hooks/useTngLibrary";
 import type { TngTransaction } from "@/features/tng/types";
+import { PersonalSpace } from "@/features/personal/components/PersonalSpace";
+import { BusinessSpace } from "@/features/business/components/BusinessSpace";
 import { initializeLocalDatabase } from "@/local-db/database";
 import { usePendingSyncItems } from "@/sync/hooks/usePendingSyncItems";
 import { useSyncQueueSummary } from "@/sync/hooks/useSyncQueueSummary";
+import { useSyncEngine } from "@/sync/hooks/useSyncEngine";
+import { getSyncBaseUrl } from "@/sync/syncConfig";
 import { useAuthStore } from "@/state/authStore";
 import {
   type ClaimRates,
@@ -92,29 +107,25 @@ export default function App() {
       });
   }, []);
 
-  if (error) {
-    return (
-      <SafeAreaView style={styles.centered}>
-        <Text style={styles.title}>MyExpensio Mobile v2</Text>
-        <Text style={styles.errorText}>{error}</Text>
-      </SafeAreaView>
-    );
-  }
-
-  if (!isReady) {
-    return (
-      <SafeAreaView style={styles.centered}>
-        <ActivityIndicator color={colors.primary} />
-        <Text style={styles.loadingText}>Preparing local workspace...</Text>
-      </SafeAreaView>
-    );
-  }
-
   return (
-    <QueryClientProvider client={queryClient}>
-      <MobileV2Home />
-      <StatusBar style="dark" />
-    </QueryClientProvider>
+    <SafeAreaProvider>
+      <QueryClientProvider client={queryClient}>
+        {error ? (
+          <SafeAreaView style={styles.centered}>
+            <Text style={styles.title}>MyExpensio Mobile v2</Text>
+            <Text style={styles.errorText}>{error}</Text>
+          </SafeAreaView>
+        ) : !isReady ? (
+          <SafeAreaView style={styles.centered}>
+            <ActivityIndicator color={colors.primary} />
+            <Text style={styles.loadingText}>Preparing local workspace...</Text>
+          </SafeAreaView>
+        ) : (
+          <MobileV2Home />
+        )}
+        <StatusBar style="dark" />
+      </QueryClientProvider>
+    </SafeAreaProvider>
   );
 }
 
@@ -122,8 +133,12 @@ function MobileV2Home() {
   const authStatus = useSessionRestore();
   const [activeSpace, setActiveSpace] = useState<AppSpace>("work");
   const [activeWorkTab, setActiveWorkTab] = useState<WorkTab>("claims");
+  const [personalView, setPersonalView] = useState<PersonalView>("home");
+  const [businessView, setBusinessView] = useState<BusinessView>("dashboard");
+  const [personalAddOpen, setPersonalAddOpen] = useState(false);
+  const [businessAddOpen, setBusinessAddOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const subscriptionTier: SubscriptionTier = "FREE";
+  const { tier: subscriptionTier } = useSubscription();
 
   if (authStatus === "unknown") {
     return (
@@ -142,10 +157,29 @@ function MobileV2Home() {
     <AuthenticatedHome
       activeSpace={activeSpace}
       activeWorkTab={activeWorkTab}
+      personalView={personalView}
+      businessView={businessView}
+      personalAddOpen={personalAddOpen}
+      businessAddOpen={businessAddOpen}
       onSpaceChange={(space) => {
         setActiveSpace(space);
         setSettingsOpen(false);
+        // Reset sub-views when switching space
+        if (space === "personal") setPersonalView("home");
+        if (space === "business") setBusinessView("dashboard");
       }}
+      onPersonalViewChange={(view) => {
+        if (view === "add") { setPersonalAddOpen(true); return; }
+        setPersonalView(view);
+        setSettingsOpen(false);
+      }}
+      onBusinessViewChange={(view) => {
+        if (view === "add") { setBusinessAddOpen(true); return; }
+        setBusinessView(view);
+        setSettingsOpen(false);
+      }}
+      onPersonalAddClose={() => setPersonalAddOpen(false)}
+      onBusinessAddClose={() => setBusinessAddOpen(false)}
       settingsOpen={settingsOpen}
       onWorkTabChange={(tab) => {
         setActiveWorkTab(tab);
@@ -160,16 +194,32 @@ function MobileV2Home() {
 function AuthenticatedHome({
   activeSpace,
   activeWorkTab,
+  personalView,
+  businessView,
+  personalAddOpen,
+  businessAddOpen,
   onOpenSettings,
   onSpaceChange,
+  onPersonalViewChange,
+  onBusinessViewChange,
+  onPersonalAddClose,
+  onBusinessAddClose,
   onWorkTabChange,
   settingsOpen,
   subscriptionTier
 }: {
   activeSpace: AppSpace;
   activeWorkTab: WorkTab;
+  personalView: PersonalView;
+  businessView: BusinessView;
+  personalAddOpen: boolean;
+  businessAddOpen: boolean;
   onOpenSettings: () => void;
   onSpaceChange: (space: AppSpace) => void;
+  onPersonalViewChange: (view: PersonalView | "add") => void;
+  onBusinessViewChange: (view: BusinessView | "add") => void;
+  onPersonalAddClose: () => void;
+  onBusinessAddClose: () => void;
   onWorkTabChange: (tab: WorkTab) => void;
   settingsOpen: boolean;
   subscriptionTier: SubscriptionTier;
@@ -179,9 +229,55 @@ function AuthenticatedHome({
   const settingsRates = useUserSettingsStore((state) => state.rates);
   const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null);
   const [newClaimOpen, setNewClaimOpen] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
+  const [lockError, setLockError] = useState<string | null>(null);
   const signOut = useSignOut();
+
+  // ── Biometric lock on app resume ─────────────────────────────────────────────
+  useEffect(() => {
+    let appWasBackground = false; // only lock after coming back from background
+
+    const sub = AppState.addEventListener("change", async (nextState) => {
+      if (nextState === "background" || nextState === "inactive") {
+        appWasBackground = true;
+        return;
+      }
+      if (nextState === "active" && appWasBackground) {
+        appWasBackground = false;
+        const enabled = await AsyncStorage.getItem("myexpensio-biometric-enabled");
+        if (enabled !== "true") return;
+        const { available } = await nativeBiometricAuthAdapter.getAvailability();
+        if (!available) return;
+        setIsLocked(true);
+        setLockError(null);
+      }
+    });
+
+    return () => sub.remove();
+  }, []);
+
+  async function handleBiometricUnlock() {
+    setLockError(null);
+    const success = await nativeBiometricAuthAdapter.authenticate();
+    if (success) {
+      setIsLocked(false);
+    } else {
+      setLockError("Authentication failed. Try again.");
+    }
+  }
+
   const claims = useClaimDrafts();
   const trips = useTrips();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  async function handleRefresh() {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([claims.refetch(), trips.refetch()]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
   const selectedClaim = useClaimDraft(selectedClaimId);
   const selectedClaimItems = useClaimItems(selectedClaimId);
   const createBlankClaim = useCreateBlankClaimDraft();
@@ -202,6 +298,7 @@ function AuthenticatedHome({
   const receiptUploadSummary = useReceiptUploadSummary();
   const pendingSyncItems = usePendingSyncItems();
   const syncQueueSummary = useSyncQueueSummary();
+  const syncEngine = useSyncEngine();
   const localActionError =
     createBlankClaim.error ??
     createClaimItem.error ??
@@ -219,9 +316,12 @@ function AuthenticatedHome({
     attachReceiptMetadata.error;
 
   return (
+    <>
     <AppShell
       activeSpace={activeSpace}
       activeWorkTab={activeWorkTab}
+      personalView={personalView}
+      businessView={businessView}
       displayName={profile.displayName || session?.email?.split("@")[0] || ""}
       email={profile.email || session?.email || ""}
       isSigningOut={signOut.isPending}
@@ -229,10 +329,30 @@ function AuthenticatedHome({
       onOpenSettings={onOpenSettings}
       onSignOut={() => signOut.mutate()}
       onWorkTabChange={onWorkTabChange}
+      onPersonalViewChange={onPersonalViewChange}
+      onBusinessViewChange={onBusinessViewChange}
       pendingSyncCount={pendingSyncItems.data?.length ?? 0}
       subscriptionLabel={subscriptionTier}
+      syncStatus={syncEngine.status}
     >
-      <ScrollView contentContainerStyle={styles.content}>
+      {!settingsOpen && activeSpace === "personal" ? (
+        <PersonalSpace
+          view={personalView}
+          addOpen={personalAddOpen}
+          onViewChange={onPersonalViewChange}
+          onAddClose={onPersonalAddClose}
+        />
+      ) : !settingsOpen && activeSpace === "business" ? (
+        <FeatureGate feature="business_space" tier={subscriptionTier}>
+          <BusinessSpace
+            view={businessView}
+            addOpen={businessAddOpen}
+            onViewChange={onBusinessViewChange}
+            onAddClose={onBusinessAddClose}
+          />
+        </FeatureGate>
+      ) : (
+      <View style={styles.contentFill}>
         {settingsOpen ? (
           <SettingsPanel
             email={session?.email ?? null}
@@ -251,10 +371,13 @@ function AuthenticatedHome({
               localActionError instanceof Error ? localActionError.message : null
             }
             isCreatingBlankClaim={createBlankClaim.isPending}
+            isError={claims.isError}
             isLoadingClaimDetail={
               selectedClaim.isLoading || selectedClaimItems.isLoading
             }
             isLoadingClaims={claims.isLoading}
+            isRefreshing={isRefreshing}
+            onRefresh={handleRefresh}
             onAttachReceiptToItem={(item, receipt) =>
               attachReceiptMetadata.mutate({
                 fileSize: receipt.fileSize,
@@ -287,25 +410,53 @@ function AuthenticatedHome({
               setSelectedClaimId(claim.id);
             }}
             onDeleteClaimItem={(item) => deleteClaimItem.mutate(item.id)}
-            onLinkTngTransaction={(item, transaction) =>
-              linkTngTransaction.mutate({
+            onLinkTngTransaction={async (item, transaction) => {
+              // Link first — await so SQLite transactions don't overlap
+              await linkTngTransaction.mutateAsync({
                 claimId: item.claimId,
                 itemId: item.id,
                 transactionId: transaction.id
-              })
-            }
+              });
+              // Then stamp transNo into notes (sequential, not concurrent)
+              if (transaction.transNo) {
+                const existingNotes = item.notes ?? "";
+                const tngTag = `TNG #${transaction.transNo}`;
+                if (!existingNotes.includes(tngTag)) {
+                  await updateClaimItem.mutateAsync({
+                    itemId: item.id,
+                    notes: existingNotes ? `${existingNotes}\n${tngTag}` : tngTag
+                  });
+                }
+              }
+            }}
             onRemoveReceiptFromItem={async (item) => {
               await updateClaimItem.mutateAsync({
                 itemId: item.id,
                 receiptId: null
               });
             }}
-            onUnlinkTngTransaction={(item) =>
-              unlinkTngTransaction.mutate({
+            onUnlinkTngTransaction={async (item) => {
+              await unlinkTngTransaction.mutateAsync({
                 claimId: item.claimId,
                 itemId: item.id
-              })
-            }
+              });
+              // Strip TNG tag from notes
+              if (item.notes?.includes("TNG #")) {
+                const cleaned = item.notes
+                  .split("\n")
+                  .filter((line) => !line.startsWith("TNG #"))
+                  .join("\n")
+                  .trim();
+                await updateClaimItem.mutateAsync({
+                  itemId: item.id,
+                  notes: cleaned || null
+                });
+              }
+              Alert.alert(
+                "TNG Unlinked",
+                "The TNG transaction has been unlinked. It is now open and available to link again."
+              );
+            }}
             onDeleteClaim={async (claim) => {
               await deleteClaim.mutateAsync(claim.id);
               setSelectedClaimId(null);
@@ -362,8 +513,11 @@ function AuthenticatedHome({
             isCreatingTrip={createTrip.isPending}
             isDeletingTrip={deleteTrip.isPending}
             isUpdatingTrip={updateTrip.isPending}
+            isError={trips.isError}
             isLoading={trips.isLoading}
+            isRefreshing={isRefreshing}
             isStoppingTrip={stopGpsTrip.isPending}
+            onRefresh={handleRefresh}
             onAddMileageToClaim={({ amountCents, claim, itemDate, title, trip }) =>
               createClaimItem.mutate({
                 amountCents,
@@ -388,25 +542,83 @@ function AuthenticatedHome({
             trips={trips.data ?? []}
           />
         ) : activeSpace === "work" && activeWorkTab === "tng" ? (
-          <TngScreen />
+          <TngScreen
+            claims={claims.data ?? []}
+            onAddToClaim={async ({ claim, transaction }) => {
+              const type =
+                transaction.sector === "TOLL" ? "toll" as const
+                : transaction.sector === "PARKING" ? "parking" as const
+                : "transport" as const;
+              const title =
+                transaction.sector === "TOLL"
+                  ? [transaction.entryLocation, transaction.exitLocation]
+                      .filter(Boolean).join(" → ") || "Toll"
+                  : transaction.location ?? transaction.entryLocation ?? transaction.sector;
+              const item = await createClaimItem.mutateAsync({
+                claimId: claim.id,
+                currency: claim.currency,
+                type,
+                title,
+                amountCents: transaction.amountCents,
+                itemDate: transaction.transactionDate,
+                tngTransactionId: transaction.id,
+                notes: transaction.transNo ? `TNG #${transaction.transNo}` : null
+              });
+              linkTngTransaction.mutate({
+                claimId: claim.id,
+                itemId: item.id,
+                transactionId: transaction.id
+              });
+            }}
+          />
         ) : activeSpace === "work" && activeWorkTab === "export" ? (
           <ExportScreen
             claims={claims.data ?? []}
             isLoadingClaims={claims.isLoading}
           />
+        ) : activeSpace === "work" && activeWorkTab === "home" ? (
+          <WorkHomeScreen
+            claims={claims.data ?? []}
+            displayName={profile.displayName || session?.email?.split("@")[0] || ""}
+            onWorkTabChange={onWorkTabChange}
+            trips={trips.data ?? []}
+          />
         ) : activeSpace === "work" ? (
           <DeferredSpace spaceName={workTabLabel(activeWorkTab)} />
-        ) : activeSpace === "business" ? (
-          <FeatureGate feature="business_space" tier={subscriptionTier}>
-            <DeferredSpace spaceName="Business Space" />
-          </FeatureGate>
-        ) : (
-          <DeferredSpace
-            spaceName="Personal Expense"
-          />
-        )}
-      </ScrollView>
+        ) : null}
+      </View>
+      )}
     </AppShell>
+
+    {/* Biometric lock overlay — rendered as Modal so hooks are never skipped */}
+    <Modal visible={isLocked} animationType="fade" transparent={false}>
+      <SafeAreaView style={styles.centered}>
+        <Text style={[styles.title, { marginBottom: 8 }]}>myexpensio</Text>
+        <Text style={{ color: "#64748b", fontSize: 14, marginBottom: spacing.xl, textAlign: "center", lineHeight: 22 }}>
+          Your session is locked.{"\n"}Authenticate to continue.
+        </Text>
+        <Pressable
+          onPress={handleBiometricUnlock}
+          style={{
+            backgroundColor: "#0f766e",
+            borderRadius: 14,
+            paddingHorizontal: 32,
+            paddingVertical: 16,
+            alignItems: "center",
+            minWidth: 200
+          }}
+        >
+          <Text style={{ color: "#fff", fontWeight: "800", fontSize: 16 }}>🔐 Unlock</Text>
+        </Pressable>
+        {lockError ? (
+          <Text style={{ color: "#dc2626", fontSize: 13, marginTop: 16 }}>{lockError}</Text>
+        ) : null}
+        <Pressable onPress={() => signOut.mutate()} style={{ marginTop: 32 }}>
+          <Text style={{ color: "#94a3b8", fontSize: 13 }}>Sign out instead</Text>
+        </Pressable>
+      </SafeAreaView>
+    </Modal>
+    </>
   );
 }
 
@@ -425,6 +637,7 @@ function SettingsPanel({
   const rates = useUserSettingsStore((state) => state.rates);
   const updateProfile = useUserSettingsStore((state) => state.updateProfile);
   const updateRates = useUserSettingsStore((state) => state.updateRates);
+  const profileSave = useProfileSave();
   const [openSections, setOpenSections] = useState({
     billing: false,
     profile: true,
@@ -432,7 +645,19 @@ function SettingsPanel({
     system: false
   });
   const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [biometricAvailable, setBiometricAvailable] = useState<boolean | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+
+  // Check biometric hardware availability on mount
+  useEffect(() => {
+    nativeBiometricAuthAdapter.getAvailability().then(({ available }) => {
+      setBiometricAvailable(available);
+    });
+    // Load persisted preference
+    AsyncStorage.getItem("myexpensio-biometric-enabled").then((val) => {
+      if (val === "true") setBiometricEnabled(true);
+    });
+  }, []);
 
   const mealAverage = averageRate([
     rates.mealMorningRate,
@@ -440,6 +665,52 @@ function SettingsPanel({
     rates.mealEveningRate
   ]);
   const isFree = subscriptionTier === "FREE";
+
+  async function handleBillingPress() {
+    const session = useAuthStore.getState().session;
+    if (!session?.accessToken) {
+      showSaved("Sign in required.");
+      return;
+    }
+    const baseUrl = getSyncBaseUrl();
+    try {
+      if (isFree) {
+        // Upgrade — open Stripe checkout for PRO
+        const res = await fetch(`${baseUrl}/api/billing/checkout`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ tier: "PRO", entity_type: "USER" }),
+        });
+        const data = await res.json() as { checkout_url?: string; error?: { message?: string } };
+        if (data.checkout_url) {
+          Linking.openURL(data.checkout_url);
+        } else {
+          showSaved(data.error?.message ?? "Could not open billing.");
+        }
+      } else {
+        // Manage — open Stripe customer portal
+        const res = await fetch(`${baseUrl}/api/billing/portal`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ return_url: "https://myexpensio.com/settings" }),
+        });
+        const data = await res.json() as { url?: string; error?: { message?: string } };
+        if (data.url) {
+          Linking.openURL(data.url);
+        } else {
+          showSaved(data.error?.message ?? "Could not open billing portal.");
+        }
+      }
+    } catch {
+      showSaved("Billing unavailable — check connection.");
+    }
+  }
 
   function toggleSection(key: keyof typeof openSections) {
     setOpenSections((current) => ({
@@ -454,7 +725,14 @@ function SettingsPanel({
   }
 
   return (
-    <View style={styles.settingsPage}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={styles.settingsPage}
+    >
+      <ScrollView
+        contentContainerStyle={styles.settingsPageContent}
+        keyboardShouldPersistTaps="handled"
+      >
       <View style={styles.settingsHeader}>
         <Text style={styles.settingsPageTitle}>Settings</Text>
         <Text style={styles.settingsPageSub}>
@@ -513,8 +791,20 @@ function SettingsPanel({
             value={profile.companyName}
           />
           <PrimarySettingsButton
-            label="Save Profile"
-            onPress={() => showSaved("Profile saved locally.")}
+            label={profileSave.isPending ? "Saving..." : "Save Profile"}
+            onPress={async () => {
+              try {
+                await profileSave.mutateAsync({
+                  displayName: profile.displayName,
+                  department: profile.department,
+                  location: profile.location,
+                  companyName: profile.companyName,
+                });
+                showSaved("Profile saved.");
+              } catch {
+                showSaved("Save failed — check connection.");
+              }
+            }}
           />
         </SettingsCard>
       </SettingsAccordion>
@@ -693,7 +983,7 @@ function SettingsPanel({
           </View>
           <PrimarySettingsButton
             label={isFree ? "See pricing" : "Manage billing"}
-            onPress={() => showSaved("Billing screen will connect to the sync API.")}
+            onPress={handleBillingPress}
           />
         </SettingsCard>
       </SettingsAccordion>
@@ -722,19 +1012,29 @@ function SettingsPanel({
 
         <SettingsCard
           icon="🔐"
-          sub="Fast local unlock after a secure session is restored."
+          sub={
+            biometricAvailable === false
+              ? "Biometrics not available on this device. Set up Face ID or fingerprint in device settings first."
+              : "Fast local unlock after a secure session is restored."
+          }
           title="Biometric Login"
         >
           <View style={styles.switchRow}>
             <View style={styles.switchCopy}>
               <Text style={styles.switchTitle}>Enable biometric login</Text>
               <Text style={styles.switchSub}>
-                Use Face ID, Touch ID, or device biometrics when supported.
+                {biometricAvailable
+                  ? "Use Face ID, Touch ID, or device biometrics."
+                  : "Not available on this device."}
               </Text>
             </View>
             <Switch
-              onValueChange={setBiometricEnabled}
-              value={biometricEnabled}
+              disabled={biometricAvailable === false}
+              onValueChange={(val) => {
+                setBiometricEnabled(val);
+                AsyncStorage.setItem("myexpensio-biometric-enabled", val ? "true" : "false");
+              }}
+              value={biometricEnabled && biometricAvailable === true}
             />
           </View>
         </SettingsCard>
@@ -757,7 +1057,15 @@ function SettingsPanel({
         >
           <Text style={styles.aboutName}>myexpensio</Text>
           <Text style={styles.aboutText}>Version 0.1.0 mobile v2</Text>
-          <Text style={styles.aboutText}>Terms of Service · Privacy Policy</Text>
+          <View style={styles.legalLinks}>
+            <Pressable onPress={() => Linking.openURL("https://myexpensio.com/terms")}>
+              <Text style={styles.legalLinkText}>Terms of Service</Text>
+            </Pressable>
+            <Text style={styles.aboutMuted}> · </Text>
+            <Pressable onPress={() => Linking.openURL("https://myexpensio.com/privacy")}>
+              <Text style={styles.legalLinkText}>Privacy Policy</Text>
+            </Pressable>
+          </View>
           <Text style={styles.aboutMuted}>
             Copyright © EffortEdutech 2026. All rights reserved.
           </Text>
@@ -777,7 +1085,8 @@ function SettingsPanel({
           {isSigningOut ? "Signing out..." : "Sign out"}
         </Text>
       </Pressable>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -968,8 +1277,11 @@ type WorkClaimsSliceProps = {
   createBlankClaimLabel: string;
   errorMessage: string | null;
   isCreatingBlankClaim: boolean;
+  isError?: boolean;
   isLoadingClaimDetail: boolean;
   isLoadingClaims: boolean;
+  isRefreshing?: boolean;
+  onRefresh?: () => void;
   onAttachReceiptToItem: (item: ClaimItemDraft, receipt: LocalReceiptFile) => void;
   onBackToClaims: () => void;
   onCloseNewClaim: () => void;
@@ -1048,8 +1360,11 @@ function WorkClaimsSlice({
   createBlankClaimLabel,
   errorMessage,
   isCreatingBlankClaim,
+  isError = false,
   isLoadingClaimDetail,
   isLoadingClaims,
+  isRefreshing = false,
+  onRefresh,
   onAttachReceiptToItem,
   onBackToClaims,
   onCloseNewClaim,
@@ -1079,6 +1394,7 @@ function WorkClaimsSlice({
   );
   const [claimSort, setClaimSort] = useState<ClaimSortKey>("updated_desc");
   const [claimSortOpen, setClaimSortOpen] = useState(false);
+  const [claimFilterOpen, setClaimFilterOpen] = useState(false);
   const draftClaimCount = claims.filter((claim) => claim.status === "draft").length;
   const submittedClaimCount = claims.filter(
     (claim) => claim.status === "submitted"
@@ -1122,12 +1438,7 @@ function WorkClaimsSlice({
       ) : null}
 
       <View style={styles.claimsHeader}>
-        <View>
-          <Text style={styles.claimsTitle}>Claims</Text>
-          <Text style={styles.claimsSubtitle}>
-            Work reimbursements ready for draft, review, and submission.
-          </Text>
-        </View>
+        <Text style={styles.claimsTitle}>Claims</Text>
         <Pressable
           accessibilityRole="button"
           disabled={isCreatingBlankClaim}
@@ -1141,58 +1452,39 @@ function WorkClaimsSlice({
         </Pressable>
       </View>
 
-      <View style={styles.claimTabs}>
-        <ClaimFilterTab
-          count={claims.length}
-          isActive={claimFilter === "all"}
-          label="All"
-          onPress={() => setClaimFilter("all")}
-        />
-        <ClaimFilterTab
-          count={draftClaimCount}
-          isActive={claimFilter === "draft"}
-          label="Draft"
-          onPress={() => setClaimFilter("draft")}
-        />
-        <ClaimFilterTab
-          count={submittedClaimCount}
-          isActive={claimFilter === "submitted"}
-          label="Submitted"
-          onPress={() => setClaimFilter("submitted")}
-        />
-      </View>
-
       <View style={styles.listToolbar}>
         <Text style={styles.listToolbarText}>
-          {visibleClaims.length} shown
+          {visibleClaims.length} shown · {pendingSyncCount} pending sync
         </Text>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setClaimSortOpen(true)}
-          style={styles.toolbarMenuButton}
-        >
-          <Text style={styles.toolbarMenuText}>
-            Sort: {claimSortLabel(claimSort)} v
-          </Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.claimMetaBar}>
-        <Text style={styles.claimMetaText}>Sync queue: {pendingSyncCount}</Text>
-        <Text style={styles.claimMetaDot}>|</Text>
-        <Text style={styles.claimMetaText}>
-          Pending {syncQueueSummary.pending}
-        </Text>
-        <Text style={styles.claimMetaDot}>|</Text>
-        <Text style={styles.claimMetaText}>
-          Receipts local {receiptUploadSummary.local}
-        </Text>
+        <View style={styles.toolbarActions}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setClaimFilterOpen(true)}
+            style={styles.toolbarMenuButton}
+          >
+            <Text style={styles.toolbarMenuText}>
+              {claimFilter === "all" ? "All" : claimFilter === "draft" ? "Draft" : "Submitted"} ▾
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setClaimSortOpen(true)}
+            style={styles.toolbarMenuButton}
+          >
+            <Text style={styles.toolbarMenuText}>
+              Sort: {claimSortLabel(claimSort)} ▾
+            </Text>
+          </Pressable>
+        </View>
       </View>
 
       <ClaimDraftList
         claims={visibleClaims}
+        isError={isError}
         isLoading={isLoadingClaims}
+        isRefreshing={isRefreshing}
         onOpen={onOpenClaim}
+        onRefresh={onRefresh}
       />
 
       <NewClaimModal
@@ -1200,6 +1492,21 @@ function WorkClaimsSlice({
         isVisible={showNewClaimModal}
         onClose={onCloseNewClaim}
         onCreate={onCreateBlankClaim}
+      />
+      <OptionSheet
+        isVisible={claimFilterOpen}
+        onClose={() => setClaimFilterOpen(false)}
+        title="Filter claims"
+        options={[
+          { label: `All (${claims.length})`, value: "all" },
+          { label: `Draft (${draftClaimCount})`, value: "draft" },
+          { label: `Submitted (${submittedClaimCount})`, value: "submitted" },
+        ]}
+        selectedValue={claimFilter}
+        onSelect={(value) => {
+          setClaimFilter(value as "all" | "draft" | "submitted");
+          setClaimFilterOpen(false);
+        }}
       />
       <OptionSheet
         isVisible={claimSortOpen}
@@ -1548,11 +1855,17 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
     padding: spacing.lg
   },
+  contentFill: {
+    flex: 1
+  },
   claimsPage: {
-    gap: spacing.md
+    flex: 1,
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md
   },
   claimsHeader: {
-    alignItems: "flex-start",
+    alignItems: "center",
     flexDirection: "row",
     gap: spacing.md,
     justifyContent: "space-between"
@@ -1561,14 +1874,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: typography.title,
     fontWeight: "900"
-  },
-  claimsSubtitle: {
-    color: colors.muted,
-    fontSize: typography.caption,
-    fontWeight: "600",
-    lineHeight: 18,
-    marginTop: 2,
-    maxWidth: 260
   },
   newClaimButton: {
     alignItems: "center",
@@ -1631,6 +1936,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
     justifyContent: "space-between"
+  },
+  toolbarActions: {
+    flexDirection: "row",
+    gap: 6
   },
   listToolbarText: {
     color: colors.muted,
@@ -1797,7 +2106,6 @@ const styles = StyleSheet.create({
     padding: spacing.lg
   },
   field: {
-    flex: 1,
     gap: 6
   },
   fieldRow: {
@@ -2086,6 +2394,9 @@ const styles = StyleSheet.create({
     lineHeight: 22
   },
   settingsPage: {
+    flex: 1,
+  },
+  settingsPageContent: {
     gap: spacing.md,
     paddingBottom: spacing.xl
   },
@@ -2363,6 +2674,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16
   },
+  legalLinks: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 2,
+    marginTop: 2
+  },
+  legalLinkText: {
+    color: "#3b82f6",
+    fontSize: 11,
+    textDecorationLine: "underline"
+  },
   signOutButton: {
     alignItems: "center",
     alignSelf: "flex-start",
@@ -2380,4 +2702,3 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   }
 });
-

@@ -1,7 +1,10 @@
+import * as FileSystem from "expo-file-system/legacy";
+import * as ImagePicker from "expo-image-picker";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Modal,
   Platform,
   Pressable,
@@ -11,6 +14,7 @@ import {
   TextInput,
   View
 } from "react-native";
+// KeyboardSafeScrollView replaced with plain ScrollView in modals (sheet now has flex:1)
 
 import { DatePickerField } from "@/components/DatePickerField";
 import type {
@@ -133,6 +137,13 @@ const mealSessions: Array<{ label: string; type: MealSession }> = [
   { label: "Full Day", type: "FULL_DAY" }
 ];
 
+// Used in the multi-select meal session UI (excludes Full Day which is handled separately)
+const mealSessions_CONST = [
+  { type: "MORNING" as MealSession, icon: "🌅", label: "Morning", sub: "Breakfast" },
+  { type: "NOON" as MealSession, icon: "🌤", label: "Noon", sub: "Lunch" },
+  { type: "EVENING" as MealSession, icon: "🌙", label: "Evening", sub: "Dinner" },
+];
+
 const claimItemFilters: Array<{
   label: string;
   value: ClaimItemCategoryFilter;
@@ -181,7 +192,11 @@ export function ClaimDetail({
   const [itemSortOpen, setItemSortOpen] = useState(false);
   const [editingClaim, setEditingClaim] = useState(false);
   const [editingItem, setEditingItem] = useState<ClaimItemDraft | null>(null);
-  const [viewingItem, setViewingItem] = useState<ClaimItemDraft | null>(null);
+  const [viewingItemId, setViewingItemId] = useState<string | null>(null);
+  // Always derive from the live items array so receipt/TNG button labels stay current
+  const viewingItem = viewingItemId
+    ? (items.find((i) => i.id === viewingItemId) ?? null)
+    : null;
   const [editTitle, setEditTitle] = useState(claim?.title ?? "");
   const [editPeriodStart, setEditPeriodStart] = useState(
     claim?.periodStart ?? todayInput()
@@ -230,7 +245,11 @@ export function ClaimDetail({
   }
 
   return (
-    <View style={styles.page}>
+    <ScrollView
+      contentContainerStyle={styles.page}
+      keyboardShouldPersistTaps="handled"
+      style={styles.pageScroll}
+    >
       <View style={styles.topRow}>
         <Pressable accessibilityRole="button" onPress={onBack}>
           <Text style={styles.backText}>← Claims</Text>
@@ -322,7 +341,7 @@ export function ClaimDetail({
                 style={styles.toolbarMenuButton}
               >
                 <Text style={styles.toolbarMenuText}>
-                  {claimItemFilterLabel(itemCategoryFilter)} v
+                  {claimItemFilterLabel(itemCategoryFilter)} ▾
                 </Text>
               </Pressable>
               <Pressable
@@ -331,7 +350,7 @@ export function ClaimDetail({
                 style={styles.toolbarMenuButton}
               >
                 <Text style={styles.toolbarMenuText}>
-                  {claimItemSortLabel(itemSort)} v
+                  {claimItemSortLabel(itemSort)} ▾
                 </Text>
               </Pressable>
             </View>
@@ -356,20 +375,9 @@ export function ClaimDetail({
             ) : null}
             {visibleItems.map((item) => (
               <ClaimItemRow
-                disabled={!isDraft}
                 item={item}
                 key={item.id}
-                onAttachReceipt={(receipt) => onAttachReceipt(item, receipt)}
-                onEdit={() => setEditingItem(item)}
-                onLinkTngTransaction={onLinkTngTransaction}
-                onRemoveReceipt={() => onRemoveReceipt(item)}
-                onOpen={() => setViewingItem(item)}
-                onUnlinkTngTransaction={() => onUnlinkTngTransaction(item)}
-                onDelete={() =>
-                  confirmAction("Delete item?", "Remove this item from the claim.", () =>
-                    onDeleteItem(item)
-                  )
-                }
+                onOpen={() => setViewingItemId(item.id)}
                 tngTransactions={tngTransactions}
               />
             ))}
@@ -475,15 +483,15 @@ export function ClaimDetail({
         disabled={!isDraft}
         item={viewingItem}
         onAttachReceipt={(item, receipt) => onAttachReceipt(item, receipt)}
-        onClose={() => setViewingItem(null)}
+        onClose={() => setViewingItemId(null)}
         onDelete={(item) =>
           confirmAction("Delete item?", "Remove this item from the claim.", () => {
             onDeleteItem(item);
-            setViewingItem(null);
+            setViewingItemId(null);
           })
         }
         onEdit={(item) => {
-          setViewingItem(null);
+          setViewingItemId(null);
           setEditingItem(item);
         }}
         onLinkTngTransaction={onLinkTngTransaction}
@@ -513,178 +521,66 @@ export function ClaimDetail({
         selectedValue={itemSort}
         title="Sort items"
       />
-    </View>
+    </ScrollView>
   );
 }
 
+/**
+ * Compact item row — tap the whole row to open the detail/action modal.
+ * No inline buttons: keeps the list tight regardless of how many items exist.
+ */
 function ClaimItemRow({
-  disabled,
   item,
-  onAttachReceipt,
-  onEdit,
-  onLinkTngTransaction,
   onOpen,
-  onRemoveReceipt,
-  onUnlinkTngTransaction,
-  tngTransactions,
-  onDelete
+  tngTransactions
 }: {
-  disabled: boolean;
   item: ClaimItemDraft;
-  onAttachReceipt: (receipt: LocalReceiptFile) => void;
-  onEdit: () => void;
-  onLinkTngTransaction: (
-    item: ClaimItemDraft,
-    transaction: TngTransaction
-  ) => void;
   onOpen: () => void;
-  onRemoveReceipt: () => void;
-  onUnlinkTngTransaction: () => void;
   tngTransactions: TngTransaction[];
-  onDelete: () => void;
 }) {
   const meta = getItemMeta(item.type);
-  const receipt = useReceiptDraft(item.receiptId);
-  const [viewerOpen, setViewerOpen] = useState(false);
-  const [tngPickerOpen, setTngPickerOpen] = useState(false);
-  const linkedTransaction = tngTransactions.find(
-    (transaction) => transaction.id === item.tngTransactionId
-  );
-  const canUseTng = ["toll", "parking", "grab", "taxi", "train", "bus"].includes(
-    item.type
-  );
-  const canEditItem = item.type !== "mileage";
-  const isTngPending = item.mode === "tng_pending" || item.mode === "tng_linked";
+  const isTngPending = item.mode === "tng_pending";
+  const isTngLinked = !!item.tngTransactionId;
+  const hasReceipt = !!item.receiptId;
+
+  // Compact status chips shown inline
+  const chips: { label: string; style: "warn" | "ok" | "muted" }[] = [];
+  if (isTngPending && !isTngLinked) chips.push({ label: "TNG pending", style: "warn" });
+  if (isTngLinked) chips.push({ label: "TNG linked", style: "ok" });
+  if (hasReceipt) chips.push({ label: "🧾", style: "ok" });
 
   return (
-    <View style={styles.itemRow}>
-      <Pressable
-        accessibilityRole="button"
-        onPress={onOpen}
-        style={({ pressed }) => [
-          styles.itemOpenArea,
-          pressed ? styles.itemRowPressed : null
-        ]}
-      >
-        <View style={styles.itemDateCol}>
-          <Text style={styles.itemDate}>{formatDate(item.itemDate)}</Text>
-        </View>
-        <Text style={styles.itemIcon}>{meta.icon}</Text>
-        <View style={styles.itemBody}>
-          <Text style={styles.itemType}>{meta.label}</Text>
-          <Text style={styles.itemTitle}>{item.title}</Text>
-          {isTngPending ? (
-            <Text style={item.tngTransactionId ? styles.tngLinkedText : styles.tngPendingText}>
-              {item.tngTransactionId
-                ? `TNG linked${linkedTransaction ? ` - ${locationLabel(linkedTransaction)}` : ""}`
-                : "TNG pending - link transaction"}
-            </Text>
-          ) : null}
-          <Text style={item.receiptId ? styles.receiptStatusAttached : styles.receiptStatusMissing}>
-            {item.receiptId
-              ? receipt.data?.uploadStatus === "uploaded"
-                ? "Receipt uploaded"
-                : "Receipt attached"
-              : "No receipt"}
-          </Text>
-        </View>
-      </Pressable>
-      <View style={styles.itemAmountCol}>
-        <Text style={styles.itemAmount}>
-          {formatMoney(item.amountCents, item.currency)}
-        </Text>
-        {!disabled ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={() =>
-            void openLocalReceiptPicker("gallery").then((receipt) => {
-              if (receipt) {
-                onAttachReceipt(receipt);
-              }
-            })
-          }
-          style={styles.receiptChipButton}
-        >
-          <Text style={styles.receiptChipText}>
-            {item.receiptId ? "Replace" : "Receipt"}
-          </Text>
-        </Pressable>
-        ) : null}
-        {item.receiptId ? (
-          <View style={styles.itemMiniActions}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setViewerOpen(true)}
-              style={styles.viewReceiptButton}
-            >
-              <Text style={styles.viewReceiptText}>View</Text>
-            </Pressable>
-            {!disabled ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={onRemoveReceipt}
-              style={styles.removeReceiptMiniButton}
-            >
-              <Text style={styles.removeReceiptMiniText}>Remove</Text>
-            </Pressable>
-            ) : null}
+    <Pressable
+      accessibilityLabel={`${meta.label} ${item.title}, ${formatMoney(item.amountCents, item.currency)}`}
+      accessibilityRole="button"
+      onPress={onOpen}
+      style={({ pressed }) => [styles.compactItemRow, pressed ? styles.compactItemRowPressed : null]}
+    >
+      {/* Date */}
+      <Text style={styles.compactDate}>{formatShortDate(item.itemDate)}</Text>
+      {/* Icon */}
+      <Text style={styles.compactIcon}>{meta.icon}</Text>
+      {/* Title + chips */}
+      <View style={styles.compactBody}>
+        <Text numberOfLines={1} style={styles.compactTitle}>{item.title || meta.label}</Text>
+        {chips.length > 0 ? (
+          <View style={styles.compactChips}>
+            {chips.map((chip) => (
+              <View key={chip.label} style={[styles.compactChip, chip.style === "warn" ? styles.chipWarn : chip.style === "ok" ? styles.chipOk : styles.chipMuted]}>
+                <Text style={[styles.compactChipText, chip.style === "warn" ? styles.chipTextWarn : chip.style === "ok" ? styles.chipTextOk : styles.chipTextMuted]}>{chip.label}</Text>
+              </View>
+            ))}
           </View>
         ) : null}
-        {!disabled && canUseTng ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setTngPickerOpen(true)}
-            style={item.tngTransactionId ? styles.tngLinkedButton : styles.tngLinkButton}
-          >
-            <Text style={item.tngTransactionId ? styles.tngLinkedButtonText : styles.tngLinkButtonText}>
-              {item.tngTransactionId ? "TNG" : "Link TNG"}
-            </Text>
-          </Pressable>
-        ) : null}
-        {!disabled && item.tngTransactionId ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={onUnlinkTngTransaction}
-          style={styles.unlinkTngButton}
-        >
-          <Text style={styles.unlinkTngText}>Unlink</Text>
-        </Pressable>
-        ) : null}
-        {!disabled ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={onEdit}
-          style={styles.editItemButton}
-        >
-          <Text style={styles.editItemText}>Edit</Text>
-        </Pressable>
-        ) : null}
-        {!disabled ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={onDelete}
-          style={styles.deleteItemButton}
-        >
-          <Text style={styles.deleteItemText}>×</Text>
-        </Pressable>
-        ) : null}
       </View>
-      <ReceiptViewerModal
-        onClose={() => setViewerOpen(false)}
-        receipt={receipt.data ?? null}
-        visible={viewerOpen}
-      />
-      <TngLinkModal
-        item={item}
-        onClose={() => setTngPickerOpen(false)}
-        onLink={(transaction) => {
-          onLinkTngTransaction(item, transaction);
-          setTngPickerOpen(false);
-        }}
-        transactions={tngTransactions}
-        visible={tngPickerOpen}
-      />
-    </View>
+      {/* Amount + chevron */}
+      <View style={styles.compactRight}>
+        <Text style={[styles.compactAmount, isTngPending && !isTngLinked ? styles.compactAmountPending : null]}>
+          {isTngPending && !isTngLinked ? "—" : formatMoney(item.amountCents, item.currency)}
+        </Text>
+        <Text style={styles.compactChevron}>›</Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -747,7 +643,7 @@ function ClaimItemDetailModal({
             </Pressable>
           </View>
 
-          <ScrollView contentContainerStyle={styles.modalBody}>
+          <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled" style={styles.modalScroll}>
             <View style={styles.itemDetailHero}>
               <Text style={styles.itemDetailIcon}>{meta.icon}</Text>
               <View style={styles.itemDetailHeroText}>
@@ -855,7 +751,13 @@ function ClaimItemDetailModal({
                 {item.tngTransactionId ? (
                   <Pressable
                     accessibilityRole="button"
-                    onPress={() => onUnlinkTngTransaction(item)}
+                    onPress={() =>
+                      confirmAction(
+                        "Unlink TNG Transaction?",
+                        "This removes the TNG link from this item. The transaction will return to Open status.",
+                        () => onUnlinkTngTransaction(item)
+                      )
+                    }
                     style={styles.detailSecondaryAction}
                   >
                     <Text style={styles.detailSecondaryText}>Unlink TNG</Text>
@@ -926,7 +828,7 @@ function AddClaimItemModal({
 }) {
   const [transportType, setTransportType] = useState<ClaimItemType>("grab");
   const [date, setDate] = useState(todayInput());
-  const [amount, setAmount] = useState("0.00");
+  const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
   const [paidViaTng, setPaidViaTng] = useState(false);
@@ -936,9 +838,15 @@ function AddClaimItemModal({
   const [claimMode, setClaimMode] = useState<"fixed_rate" | "receipt">(
     "fixed_rate"
   );
-  const [mealSession, setMealSession] = useState<MealSession>("NOON");
+  // Meal: multi-select sessions (Morning, Noon, Evening) or Full Day
+  const [mealSessions, setMealSessions] = useState<Set<MealSession>>(new Set(["NOON"]));
+  const [mealFullDay, setMealFullDay] = useState(false);
   const [checkInDate, setCheckInDate] = useState(todayInput());
   const [checkOutDate, setCheckOutDate] = useState(tomorrowInput());
+  // Toll / Parking location fields
+  const [entryLocation, setEntryLocation] = useState("");
+  const [exitLocation, setExitLocation] = useState("");
+  const [parkingLocation, setParkingLocation] = useState("");
   const [perDiemDays, setPerDiemDays] = useState("1");
   const [perDiemRate, setPerDiemRate] = useState(rates.perDiemRate);
 
@@ -973,7 +881,13 @@ function AddClaimItemModal({
     ? selectedTrip.finalDistanceM / 1000
     : 0;
   const mileageAmountCents = centsFromNumber(selectedTripKm * selectedTripRate);
-  const mealRateCents = getMealRateCents(rates, mealSession);
+  // Meal: sum all selected sessions (or full day rate)
+  const mealRateCents = mealFullDay
+    ? centsFromNumber(parseRate(rates.fullDayMealRate))
+    : [...mealSessions].reduce(
+        (sum, s) => sum + getMealRateCents(rates, s),
+        0
+      );
   const lodgingNights = calculateNights(checkInDate, checkOutDate);
   const lodgingDatesValid = isAfterDate(checkOutDate, checkInDate);
   const lodgingAmountCents =
@@ -995,6 +909,7 @@ function AddClaimItemModal({
             ? perDiemAmountCents
             : amountCents;
   const requiresDescription = kind === "other";
+  const mealSessionsValid = mealFullDay || mealSessions.size > 0;
   const canAdd =
     Boolean(date) &&
     (kind === "mileage"
@@ -1003,7 +918,9 @@ function AddClaimItemModal({
         ? perDiemDayCount > 0 && effectiveAmountCents > 0
         : kind === "lodging"
           ? lodgingDatesValid && effectiveAmountCents > 0
-        : paidViaTng || effectiveAmountCents > 0) &&
+        : kind === "meal" && claimMode === "fixed_rate"
+          ? mealSessionsValid
+          : paidViaTng || effectiveAmountCents > 0) &&
     (!requiresDescription || description.trim().length > 0);
 
   function handleAdd() {
@@ -1027,7 +944,14 @@ function AddClaimItemModal({
       return;
     }
 
-    if (!paidViaTng && effectiveAmountCents <= 0) {
+    if (kind === "meal" && claimMode === "fixed_rate" && !mealSessionsValid) {
+      setErrorMessage("Select at least one meal session.");
+      return;
+    }
+
+    // Require amount > 0 for non-TNG, non-fixed-rate-meal, non-mileage, non-per-diem items
+    const needsAmount = !paidViaTng && !(kind === "meal" && claimMode === "fixed_rate") && kind !== "mileage" && kind !== "per_diem";
+    if (needsAmount && effectiveAmountCents <= 0) {
       setErrorMessage("Please enter an amount greater than 0.00.");
       return;
     }
@@ -1043,12 +967,27 @@ function AddClaimItemModal({
         : kind === "lodging"
           ? checkInDate
           : date;
+
+    // Build session label for meal title
+    const mealSessionDesc = mealFullDay
+      ? "Full Day"
+      : [...mealSessions].map((s) => mealSessionLabel(s)).join(" + ");
+
+    // Build location note for toll/parking
+    const locationNote =
+      kind === "toll"
+        ? [entryLocation.trim() && `Entry: ${entryLocation.trim()}`, exitLocation.trim() && `Exit: ${exitLocation.trim()}`].filter(Boolean).join(", ")
+        : kind === "parking"
+          ? parkingLocation.trim()
+          : "";
+
     const generatedNotes = buildCalculatedNotes({
       checkOutDate,
       claimMode,
       kind: kind as ClaimModalKind,
       lodgingNights,
-      mealSession,
+      locationNote,
+      mealSessionDesc,
       notes,
       paidViaTng,
       perDiemDayCount,
@@ -1059,26 +998,56 @@ function AddClaimItemModal({
       selectedTripRate
     });
 
-    onAddItem({
-      amountCents: paidViaTng ? 0 : effectiveAmountCents,
-      itemDate,
-      mode: paidViaTng ? "tng_pending" : null,
-      notes: generatedNotes,
-      receipt,
-      tngTransactionId: null,
-      title:
-        description.trim() ||
-        (kind === "mileage" && selectedTrip
-          ? tripTitle(selectedTrip)
-          : kind === "meal" && claimMode === "fixed_rate"
-            ? `${meta.defaultTitle} - ${mealSessionLabel(mealSession)}`
+    // For meal fixed_rate, create one item per session (or one full day item)
+    if (kind === "meal" && claimMode === "fixed_rate") {
+      if (mealFullDay) {
+        onAddItem({
+          amountCents: centsFromNumber(parseRate(rates.fullDayMealRate)),
+          itemDate,
+          mode: "fixed_rate",
+          notes: [notes.trim(), "Full Day meal"].filter(Boolean).join("\n") || null,
+          receipt: null,
+          tngTransactionId: null,
+          title: description.trim() || "Meal - Full Day",
+          tripId: null,
+          type: "meal"
+        });
+      } else {
+        for (const s of mealSessions) {
+          onAddItem({
+            amountCents: getMealRateCents(rates, s),
+            itemDate,
+            mode: "fixed_rate",
+            notes: [notes.trim(), `${mealSessionLabel(s)} meal`].filter(Boolean).join("\n") || null,
+            receipt: null,
+            tngTransactionId: null,
+            title: description.trim() || `Meal - ${mealSessionLabel(s)}`,
+            tripId: null,
+            type: "meal"
+          });
+        }
+      }
+    } else {
+      onAddItem({
+        amountCents: paidViaTng ? 0 : effectiveAmountCents,
+        itemDate,
+        mode: paidViaTng ? "tng_pending" : null,
+        notes: generatedNotes,
+        receipt,
+        tngTransactionId: null,
+        title:
+          description.trim() ||
+          (kind === "mileage" && selectedTrip
+            ? tripTitle(selectedTrip)
             : kind === "lodging"
               ? `${meta.defaultTitle} - ${lodgingNights} night${lodgingNights === 1 ? "" : "s"}`
               : meta.defaultTitle),
-      tripId: kind === "mileage" ? selectedTrip?.id ?? null : null,
-      type: meta.type
-    });
-    setAmount("0.00");
+        tripId: kind === "mileage" ? selectedTrip?.id ?? null : null,
+        type: meta.type
+      });
+    }
+
+    setAmount("");
     setDescription("");
     setNotes("");
     setPaidViaTng(false);
@@ -1086,11 +1055,15 @@ function AddClaimItemModal({
     setErrorMessage(null);
     setSelectedTripId(null);
     setClaimMode("fixed_rate");
-    setMealSession("NOON");
+    setMealSessions(new Set(["NOON"]));
+    setMealFullDay(false);
     setCheckInDate(todayInput());
     setCheckOutDate(tomorrowInput());
     setPerDiemDays("1");
     setPerDiemRate(rates.perDiemRate);
+    setEntryLocation("");
+    setExitLocation("");
+    setParkingLocation("");
     onClose();
   }
 
@@ -1110,7 +1083,7 @@ function AddClaimItemModal({
             </Pressable>
           </View>
 
-          <ScrollView contentContainerStyle={styles.modalBody}>
+          <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled" style={styles.modalScroll}>
             {errorMessage ? (
               <View style={styles.errorBox}>
                 <Text style={styles.errorText}>{errorMessage}</Text>
@@ -1125,7 +1098,11 @@ function AddClaimItemModal({
                     <Pressable
                       accessibilityRole="button"
                       key={transport.label}
-                      onPress={() => setTransportType(transport.type)}
+                      onPress={() => {
+                        setTransportType(transport.type);
+                        // FLIGHT cannot be paid via TNG
+                        if (transport.type === "flight") setPaidViaTng(false);
+                      }}
                       style={[
                         styles.transportOption,
                         transportType === transport.type
@@ -1141,7 +1118,8 @@ function AddClaimItemModal({
               </View>
             ) : null}
 
-            {kind === "transport" || kind === "toll" || kind === "parking" ? (
+            {/* TNG toggle: Toll, Parking, and non-Flight transport only */}
+            {kind === "toll" || kind === "parking" || (kind === "transport" && transportType !== "flight") ? (
               <Pressable
                 accessibilityRole="switch"
                 accessibilityState={{ checked: paidViaTng }}
@@ -1247,36 +1225,64 @@ function AddClaimItemModal({
 
             {kind === "meal" && claimMode === "fixed_rate" ? (
               <View style={styles.field}>
-                <Text style={styles.label}>Meal Session</Text>
-                <View style={styles.sessionGrid}>
-                  {mealSessions.map((session) => (
+                <Text style={styles.label}>Sessions (tap to select multiple)</Text>
+                {/* Full Day option */}
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => { setMealFullDay((p) => !p); }}
+                  style={[styles.sessionRow, mealFullDay ? styles.sessionRowActive : null]}
+                >
+                  <Text style={styles.sessionRowIcon}>☀️</Text>
+                  <View style={styles.sessionRowBody}>
+                    <Text style={[styles.sessionRowLabel, mealFullDay ? styles.sessionRowLabelActive : null]}>Full Day</Text>
+                    <Text style={styles.sessionRowSub}>Breakfast + Lunch + Dinner</Text>
+                  </View>
+                  <Text style={styles.sessionRowRate}>MYR {parseRate(rates.fullDayMealRate).toFixed(2)}</Text>
+                </Pressable>
+                <View style={styles.sessionDivider}><Text style={styles.sessionDividerText}>or by session</Text></View>
+                {mealSessions_CONST.map((s) => {
+                  const selected = !mealFullDay && mealSessions.has(s.type);
+                  const rate = getMealRateCents(rates, s.type) / 100;
+                  return (
                     <Pressable
                       accessibilityRole="button"
-                      key={session.type}
-                      onPress={() => setMealSession(session.type)}
-                      style={[
-                        styles.sessionOption,
-                        mealSession === session.type ? styles.sessionOptionActive : null
-                      ]}
+                      key={s.type}
+                      onPress={() => {
+                        if (mealFullDay) return;
+                        setMealSessions((prev) => {
+                          const next = new Set(prev);
+                          next.has(s.type) ? next.delete(s.type) : next.add(s.type);
+                          return next;
+                        });
+                      }}
+                      style={[styles.sessionRow, selected ? styles.sessionRowActive : null, mealFullDay ? styles.sessionRowDisabled : null]}
                     >
-                      <Text
-                        style={[
-                          styles.sessionOptionText,
-                          mealSession === session.type
-                            ? styles.sessionOptionTextActive
-                            : null
-                        ]}
-                      >
-                        {session.label}
-                      </Text>
+                      <Text style={styles.sessionRowIcon}>{s.icon}</Text>
+                      <View style={styles.sessionRowBody}>
+                        <Text style={[styles.sessionRowLabel, selected ? styles.sessionRowLabelActive : null]}>{s.label}</Text>
+                        <Text style={styles.sessionRowSub}>{s.sub}</Text>
+                      </View>
+                      <Text style={styles.sessionRowRate}>MYR {rate.toFixed(2)}</Text>
                     </Pressable>
-                  ))}
-                </View>
-                <AmountPreview
-                  label="Fixed Rate"
-                  value={formatMoney(mealRateCents, "MYR")}
-                />
+                  );
+                })}
+                {mealRateCents > 0 ? (
+                  <AmountPreview label="Total" value={formatMoney(mealRateCents, "MYR")} />
+                ) : null}
               </View>
+            ) : null}
+
+            {/* Toll location fields */}
+            {kind === "toll" ? (
+              <>
+                <Field label="Entry Plaza (optional)" value={entryLocation} onChangeText={setEntryLocation} />
+                <Field label="Exit Plaza (optional)" value={exitLocation} onChangeText={setExitLocation} />
+              </>
+            ) : null}
+
+            {/* Parking location field */}
+            {kind === "parking" ? (
+              <Field label="Location (optional)" value={parkingLocation} onChangeText={setParkingLocation} />
             ) : null}
 
             {kind === "lodging" && claimMode === "fixed_rate" ? (
@@ -1334,27 +1340,20 @@ function AddClaimItemModal({
                 onChangeText={setAmount}
               />
             )}
-            <Field
-              label={meta.descriptionLabel}
-              value={description}
-              onChangeText={setDescription}
-            />
-            <Field label="Notes (optional)" value={notes} onChangeText={setNotes} />
-
-            <View style={styles.field}>
-              <Text style={styles.label}>Receipt (optional)</Text>
-              <ReceiptCaptureField onChange={setReceipt} value={receipt} />
-              <ReceiptChoice
-                icon="📷"
-                title="Scan Document"
-                sub="Camera · auto edge detect · perspective fix"
-              />
-              <ReceiptChoice
-                icon="📎"
-                title="Attach from Gallery"
-                sub="JPEG · PNG · WebP · Max 5 MB"
-              />
-            </View>
+            {kind !== "mileage" ? (
+              <>
+                <Field
+                  label={meta.descriptionLabel}
+                  value={description}
+                  onChangeText={setDescription}
+                />
+                <Field label="Notes (optional)" value={notes} onChangeText={setNotes} />
+                <View style={styles.field}>
+                  <Text style={styles.label}>Receipt (optional)</Text>
+                  <ReceiptCaptureField onChange={setReceipt} value={receipt} />
+                </View>
+              </>
+            ) : null}
           </ScrollView>
 
           <View style={styles.modalFooter}>
@@ -1528,7 +1527,7 @@ function TngLinkModal({
               <Text style={styles.modalClose}>X</Text>
             </Pressable>
           </View>
-          <ScrollView contentContainerStyle={styles.modalBody}>
+          <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled" style={styles.modalScroll}>
             {candidates.length === 0 ? (
               <View style={styles.tngEmptyBox}>
                 <Text style={styles.tngEmptyTitle}>No matching TNG rows</Text>
@@ -1598,23 +1597,20 @@ function EditClaimItemModal({
     }
   ) => void;
 }) {
-  const [date, setDate] = useState(todayInput());
-  const [amount, setAmount] = useState("0.00");
-  const [title, setTitle] = useState("");
-  const [notes, setNotes] = useState("");
+  const [date, setDate] = useState(item?.itemDate ?? todayInput());
+  const [amount, setAmount] = useState(item ? (item.amountCents / 100).toFixed(2) : "");
+  const [title, setTitle] = useState(item?.title ?? "");
+  const [notes, setNotes] = useState(item?.notes ?? "");
   const [receipt, setReceipt] = useState<LocalReceiptFile | null>(null);
 
   useEffect(() => {
-    if (!item) {
-      return;
-    }
-
+    if (!item) return;
     setDate(item.itemDate);
     setAmount((item.amountCents / 100).toFixed(2));
     setTitle(item.title);
     setNotes(item.notes ?? "");
     setReceipt(null);
-  }, [item]);
+  }, [item?.id]);
 
   if (!item) {
     return null;
@@ -1625,21 +1621,25 @@ function EditClaimItemModal({
       <View style={styles.modalOverlay}>
         <View style={styles.sheet}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Edit Item</Text>
+            <View style={styles.modalHeaderCopy}>
+              <Text style={styles.modalTitle}>Edit {getItemMeta(item.type).label}</Text>
+              <Text style={styles.modalSubtitle}>{getItemMeta(item.type).icon} — updating amount, date, description, notes and receipt</Text>
+            </View>
             <Pressable accessibilityRole="button" onPress={onClose}>
               <Text style={styles.modalClose}>X</Text>
             </Pressable>
           </View>
-          <ScrollView contentContainerStyle={styles.modalBody}>
-            <DatePickerField label="Date" onChange={setDate} value={date} />
+          <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled" style={styles.modalScroll}>
+            <DatePickerField label="Date *" onChange={setDate} value={date} />
             <Field
               keyboardType="decimal-pad"
-              label="Amount (MYR)"
+              label="Amount (MYR) *"
               onChangeText={setAmount}
               value={amount}
+              placeholder="0.00"
             />
-            <Field label="Description" onChangeText={setTitle} value={title} />
-            <Field label="Notes" onChangeText={setNotes} value={notes} />
+            <Field label="Description" onChangeText={setTitle} value={title} placeholder={getItemMeta(item.type).label} />
+            <Field label="Notes (optional)" onChangeText={setNotes} value={notes} placeholder="Additional notes" />
             <View style={styles.field}>
               <Text style={styles.label}>Receipt</Text>
               {item.receiptId && !receipt ? (
@@ -1768,10 +1768,21 @@ function ReceiptCaptureField({
       />
       {value ? (
         <View style={styles.receiptPreview}>
+          {value.localUri ? (
+            <Image
+              source={{ uri: value.localUri }}
+              style={styles.receiptThumb}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.receiptThumbPlaceholder}>
+              <Text style={{ fontSize: 20 }}>🧾</Text>
+            </View>
+          )}
           <View style={styles.receiptPreviewBody}>
-            <Text style={styles.receiptPreviewTitle}>{value.name}</Text>
+            <Text style={styles.receiptPreviewTitle} numberOfLines={1}>{value.name}</Text>
             <Text style={styles.receiptPreviewSub}>
-              {value.mimeType ?? "image"} - {formatFileSize(value.fileSize)} - pending sync
+              {value.mimeType ?? "image"} · {formatFileSize(value.fileSize)}
             </Text>
           </View>
           <Pressable
@@ -1816,23 +1827,21 @@ function ReceiptViewerModal({
             </Pressable>
           </View>
           <View style={styles.receiptViewerBody}>
-            {receipt?.localUri?.startsWith("blob:") ||
-            receipt?.localUri?.startsWith("data:") ? (
+            {receipt?.localUri ? (
               <View style={styles.receiptImageFrame}>
-                <Text style={styles.receiptViewerIcon}>🧾</Text>
-                <Text style={styles.receiptViewerTitle}>Local receipt selected</Text>
-                <Text style={styles.receiptViewerCopy}>
-                  This file is stored locally and queued for upload.
-                </Text>
+                <Image
+                  source={{ uri: receipt.localUri }}
+                  style={styles.receiptFullImage}
+                  resizeMode="contain"
+                  onError={() => {/* silently fall through */}}
+                />
               </View>
             ) : (
               <View style={styles.receiptImageFrame}>
                 <Text style={styles.receiptViewerIcon}>🧾</Text>
-                <Text style={styles.receiptViewerTitle}>
-                  {receipt ? "Receipt metadata available" : "Receipt not loaded"}
-                </Text>
+                <Text style={styles.receiptViewerTitle}>Receipt not available</Text>
                 <Text style={styles.receiptViewerCopy}>
-                  {receipt?.localUri ?? "The local receipt record is not available yet."}
+                  The image could not be loaded. It may have been moved or not yet synced.
                 </Text>
               </View>
             )}
@@ -1873,11 +1882,13 @@ function Field({
   keyboardType,
   label,
   onChangeText,
+  placeholder,
   value
 }: {
   keyboardType?: "default" | "decimal-pad";
   label: string;
   onChangeText: (value: string) => void;
+  placeholder?: string;
   value: string;
 }) {
   return (
@@ -1886,7 +1897,9 @@ function Field({
       <TextInput
         keyboardType={keyboardType ?? "default"}
         onChangeText={onChangeText}
+        placeholder={placeholder}
         placeholderTextColor="#94a3b8"
+        selectTextOnFocus
         style={styles.input}
         value={value}
       />
@@ -2107,8 +2120,9 @@ function buildCalculatedNotes({
   checkOutDate,
   claimMode,
   kind,
+  locationNote,
   lodgingNights,
-  mealSession,
+  mealSessionDesc,
   notes,
   paidViaTng,
   perDiemDayCount,
@@ -2120,8 +2134,9 @@ function buildCalculatedNotes({
   checkOutDate: string;
   claimMode: "fixed_rate" | "receipt";
   kind: ClaimModalKind;
+  locationNote?: string;
   lodgingNights: number;
-  mealSession: MealSession;
+  mealSessionDesc?: string;
   notes: string;
   paidViaTng: boolean;
   perDiemDayCount: number;
@@ -2143,9 +2158,13 @@ function buildCalculatedNotes({
   if (kind === "meal") {
     generated.push(
       claimMode === "fixed_rate"
-        ? `Fixed rate meal - ${mealSessionLabel(mealSession)}`
+        ? `Fixed rate meal${mealSessionDesc ? ` - ${mealSessionDesc}` : ""}`
         : "Receipt meal"
     );
+  }
+
+  if ((kind === "toll" || kind === "parking") && locationNote) {
+    generated.push(locationNote);
   }
 
   if (kind === "lodging") {
@@ -2205,6 +2224,11 @@ function periodLabel(start: string | null, end: string | null): string {
   return formatDate(start ?? end);
 }
 
+function formatShortDate(value: string | null | undefined) {
+  if (!value) return "-";
+  return new Date(value).toLocaleDateString("en-MY", { day: "2-digit", month: "short" });
+}
+
 function formatDate(value: string | null | undefined) {
   if (!value) {
     return "-";
@@ -2255,12 +2279,76 @@ async function openLocalReceiptPicker(
   source: LocalReceiptFile["source"]
 ): Promise<LocalReceiptFile | null> {
   if (Platform.OS !== "web") {
+    // ── Native: use expo-image-picker ────────────────────────────────────────
+    const options: ImagePicker.ImagePickerOptions = {
+      mediaTypes: ["images"],
+      quality: 0.82,
+      allowsEditing: false,
+      base64: false,
+      exif: false,
+    };
+
+    let result: ImagePicker.ImagePickerResult;
+
+    if (source === "camera") {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Camera permission required",
+          "Please allow camera access in Settings to snap receipts."
+        );
+        return null;
+      }
+      result = await ImagePicker.launchCameraAsync(options);
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Photo library permission required",
+          "Please allow photo access in Settings to attach receipts from your gallery."
+        );
+        return null;
+      }
+      result = await ImagePicker.launchImageLibraryAsync(options);
+    }
+
+    if (result.canceled || result.assets.length === 0) return null;
+
+    const asset = result.assets[0];
+    const srcUri = asset.uri;
+    const mimeType = asset.mimeType ?? "image/jpeg";
+    const ext = mimeType === "image/png" ? "png" : "jpg";
+    const filename = `receipt-${Date.now()}.${ext}`;
+
+    // ── Copy to permanent app storage so it survives cache clears ──────────
+    let permanentUri = srcUri;
+    try {
+      const dir = `${FileSystem.documentDirectory}receipts/`;
+      const dirInfo = await FileSystem.getInfoAsync(dir);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+      }
+      const destUri = `${dir}${filename}`;
+      await FileSystem.copyAsync({ from: srcUri, to: destUri });
+      permanentUri = destUri;
+    } catch {
+      // Fall back to original URI if copy fails — still usable this session
+      permanentUri = srcUri;
+    }
+
+    // Get accurate file size from the permanent copy
+    let fileSize: number | null = asset.fileSize ?? null;
+    try {
+      const info = await FileSystem.getInfoAsync(permanentUri);
+      if (info.exists && "size" in info) fileSize = info.size ?? fileSize;
+    } catch { /* ignore */ }
+
     return {
-      fileSize: null,
-      localUri: `local://${source}/receipt/${Date.now()}.jpg`,
-      mimeType: "image/jpeg",
-      name: source === "camera" ? "Camera receipt" : "Gallery receipt",
-      source
+      fileSize,
+      localUri: permanentUri,
+      mimeType,
+      name: filename,
+      source,
     };
   }
 
@@ -2341,8 +2429,13 @@ function isAfterDate(value: string, compareTo: string) {
 }
 
 const styles = StyleSheet.create({
+  pageScroll: {
+    flex: 1
+  },
   page: {
-    gap: spacing.md
+    gap: spacing.md,
+    padding: spacing.md,
+    paddingBottom: spacing.xl
   },
   loadingPanel: {
     alignItems: "center",
@@ -2824,6 +2917,85 @@ const styles = StyleSheet.create({
     fontSize: typography.body,
     fontWeight: "900"
   },
+  modalScroll: {
+    flex: 1
+  },
+  // ── Compact item row ──────────────────────────────────────────────────────
+  compactItemRow: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10
+  },
+  compactItemRowPressed: {
+    backgroundColor: "#f8fafc"
+  },
+  compactDate: {
+    color: "#64748b",
+    flexShrink: 0,
+    fontSize: 11,
+    fontWeight: "700",
+    width: 46
+  },
+  compactIcon: {
+    flexShrink: 0,
+    fontSize: 16,
+    width: 22
+  },
+  compactBody: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0
+  },
+  compactTitle: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "800"
+  },
+  compactChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 4
+  },
+  compactChip: {
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 2
+  },
+  chipWarn: { backgroundColor: "#fef9c3" },
+  chipOk: { backgroundColor: "#dcfce7" },
+  chipMuted: { backgroundColor: "#f1f5f9" },
+  compactChipText: {
+    fontSize: 10,
+    fontWeight: "800"
+  },
+  chipTextWarn: { color: "#854d0e" },
+  chipTextOk: { color: "#15803d" },
+  chipTextMuted: { color: "#64748b" },
+  compactRight: {
+    alignItems: "flex-end",
+    flexShrink: 0,
+    gap: 2
+  },
+  compactAmount: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  compactAmountPending: {
+    color: "#854d0e"
+  },
+  compactChevron: {
+    color: "#94a3b8",
+    fontSize: 18,
+    fontWeight: "800",
+    lineHeight: 18
+  },
   modalOverlay: {
     alignItems: "center",
     backgroundColor: "rgba(15, 23, 42, 0.42)",
@@ -2836,6 +3008,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 16,
     borderWidth: 1,
+    flex: 1,
     maxHeight: "92%",
     maxWidth: 480,
     overflow: "hidden",
@@ -2992,6 +3165,60 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm
+  },
+  sessionRow: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: 4,
+    minHeight: 52,
+    paddingHorizontal: spacing.md
+  },
+  sessionRowActive: {
+    backgroundColor: "#f0fdf4",
+    borderColor: "#0f766e"
+  },
+  sessionRowDisabled: {
+    opacity: 0.4
+  },
+  sessionRowIcon: {
+    fontSize: 20
+  },
+  sessionRowBody: {
+    flex: 1,
+    gap: 2
+  },
+  sessionRowLabel: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  sessionRowLabelActive: {
+    color: "#0f766e",
+    fontWeight: "900"
+  },
+  sessionRowSub: {
+    color: colors.muted,
+    fontSize: 11
+  },
+  sessionRowRate: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "800"
+  },
+  sessionDivider: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginVertical: spacing.xs
+  },
+  sessionDividerText: {
+    color: colors.muted,
+    fontSize: 11
   },
   sessionOption: {
     alignItems: "center",
@@ -3428,7 +3655,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: spacing.sm,
-    padding: spacing.md
+    padding: spacing.sm
+  },
+  receiptThumb: {
+    borderRadius: 6,
+    height: 52,
+    width: 52
+  },
+  receiptThumbPlaceholder: {
+    alignItems: "center",
+    backgroundColor: "#f1f5f9",
+    borderRadius: 6,
+    height: 52,
+    justifyContent: "center",
+    width: 52
+  },
+  receiptFullImage: {
+    borderRadius: 8,
+    height: 320,
+    width: "100%"
   },
   receiptPreviewBody: {
     flex: 1,

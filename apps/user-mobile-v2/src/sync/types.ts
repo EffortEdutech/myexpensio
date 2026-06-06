@@ -1,8 +1,11 @@
 export type SyncEntityType =
   | "claim"
   | "claim_item"
+  | "commitment"
+  | "commitment_payment"
   | "expense"
   | "export_job"
+  | "ledger_entry"
   | "receipt"
   | "sync_state"
   | "tng_statement_batch"
@@ -26,3 +29,11 @@ export type SyncQueueItem = {
   lastError: string | null;
 };
 
+export type PushSyncItem = {
+  queue_id: string;
+  entity_type: SyncEntityType;
+  entity_id: string;
+  operation: SyncOperation;
+  payload: unknown;
+  client_updated_at: string;
+};

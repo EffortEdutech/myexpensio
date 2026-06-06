@@ -1,3 +1,4 @@
+import * as Sharing from "expo-sharing";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -9,6 +10,7 @@ import {
 } from "react-native";
 
 import type { ClaimDraft } from "@/features/claims/types";
+import { buildLocalPdf } from "@/features/exports/buildLocalPdf";
 import { downloadCsvExport } from "@/features/exports/exportFiles";
 import { useCreateLocalExportJob } from "@/features/exports/hooks/useExportActions";
 import {
@@ -17,6 +19,9 @@ import {
   useExportUsageSummary
 } from "@/features/exports/hooks/useExports";
 import type { ExportFormat, ExportJob } from "@/features/exports/types";
+import { canUseFeature } from "@/features/subscription/featureGates";
+import { useSubscription } from "@/features/subscription/hooks/useSubscription";
+import { useAuthStore } from "@/state/authStore";
 import { colors, spacing, typography } from "@/theme/tokens";
 
 type ExportScreenProps = {
@@ -28,10 +33,14 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
   const [selectedClaimIds, setSelectedClaimIds] = useState<string[]>([]);
   const [format, setFormat] = useState<ExportFormat>("CSV");
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
   const exportJobs = useExportJobs();
   const usage = useExportUsageSummary();
   const preview = useExportPreview(selectedClaimIds);
   const createExport = useCreateLocalExportJob();
+  const { tier } = useSubscription();
+  const accessToken = useAuthStore((s) => s.session?.accessToken);
+  const canExportPdf = canUseFeature(tier, "exports_pdf");
   const selectableClaims = useMemo(
     () => claims.filter((claim) => claim.deletedAt === null),
     [claims]
@@ -43,12 +52,15 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
   const limitReached =
     usage.data?.limit != null &&
     usage.data.exportsCreated >= usage.data.limit;
-  const selectedFormatNeedsBackend = format !== "CSV";
+  // PDF is now handled locally — never "needs backend"
+  const selectedFormatNeedsBackend = format === "XLSX";
   const primaryActionDisabled =
     selectedClaimIds.length === 0 ||
     createExport.isPending ||
+    pdfGenerating ||
     limitReached ||
-    selectedFormatNeedsBackend;
+    selectedFormatNeedsBackend ||
+    (format === "PDF" && !canExportPdf);
 
   function toggleClaim(claimId: string) {
     setSelectedClaimIds((current) =>
@@ -62,8 +74,13 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
     setDownloadNotice(null);
 
     try {
+      if (format === "PDF") {
+        await handleGeneratePdf();
+        return;
+      }
+
       if (format !== "CSV") {
-        setDownloadNotice(`${format} generation needs the backend export service.`);
+        setDownloadNotice(`${format} export is not yet available.`);
         return;
       }
 
@@ -84,6 +101,41 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
     }
   }
 
+  async function handleGeneratePdf() {
+    if (!preview.data?.payload) {
+      setDownloadNotice("No export data available. Select at least one claim.");
+      return;
+    }
+    setPdfGenerating(true);
+    setDownloadNotice(null);
+    try {
+      const result = await buildLocalPdf(
+        preview.data.payload,
+        preview.data.appendices,
+        { claimerName: "Claimant" },
+        accessToken
+      );
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (!canShare) {
+        setDownloadNotice(`PDF saved: ${result.uri}`);
+        return;
+      }
+
+      await Sharing.shareAsync(result.uri, {
+        mimeType: "application/pdf",
+        dialogTitle: "Save or share your expense claim PDF",
+        UTI: "com.adobe.pdf"
+      });
+
+      setDownloadNotice("PDF ready — tap to save or share.");
+    } catch (error) {
+      setDownloadNotice(error instanceof Error ? error.message : "PDF generation failed.");
+    } finally {
+      setPdfGenerating(false);
+    }
+  }
+
   function handleDownloadHistory(job: ExportJob) {
     try {
       if (!job.previewPayload || job.format !== "CSV") {
@@ -99,33 +151,36 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
   }
 
   return (
-    <View style={styles.page}>
+    <ScrollView style={styles.pageScroll} contentContainerStyle={styles.page}>
+      {/* Header — title only, no subtitle */}
       <View style={styles.header}>
         <Text style={styles.title}>Exports</Text>
-        <Text style={styles.subtitle}>
-          Generate real CSV files locally. PDF and XLSX stay locked until the backend export service is wired.
-        </Text>
       </View>
 
-      <View style={styles.summaryGrid}>
-        <Metric
-          label="Selected"
-          value={`${selectedClaimIds.length}`}
-        />
-        <Metric
-          label="Rows"
-          value={`${preview.data?.rowCount ?? 0}`}
-        />
-        <Metric
-          label="Total"
-          value={formatMoney(preview.data?.totalAmountCents ?? 0)}
-        />
+      {/* Compact stats bar */}
+      <View style={styles.statsBar}>
+        <Text style={styles.statItem}>
+          <Text style={styles.statNum}>{selectedClaimIds.length}</Text>
+          <Text style={styles.statSep}> selected</Text>
+        </Text>
+        {selectedClaimIds.length > 0 ? (
+          <>
+            <Text style={styles.statDot}>·</Text>
+            <Text style={styles.statItem}>
+              <Text style={styles.statNum}>{preview.data?.rowCount ?? 0}</Text>
+              <Text style={styles.statSep}> rows</Text>
+            </Text>
+            <Text style={styles.statDot}>·</Text>
+            <Text style={styles.statNum}>{formatMoney(preview.data?.totalAmountCents ?? 0)}</Text>
+          </>
+        ) : null}
       </View>
 
       <UsageCard
         exportsCreated={usage.data?.exportsCreated ?? 0}
         limit={usage.data?.limit ?? null}
         periodEnd={usage.data?.periodEnd ?? ""}
+        tier={tier}
       />
 
       {limitReached ? (
@@ -157,13 +212,18 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
         ))}
       </View>
 
-      {selectedFormatNeedsBackend ? (
-        <View style={styles.backendNotice}>
-          <Text style={styles.backendNoticeTitle}>
-            {format} export needs backend generation
+      {format === "PDF" && !canExportPdf ? (
+        <View style={styles.proNotice}>
+          <Text style={styles.proNoticeTitle}>PRO feature</Text>
+          <Text style={styles.proNoticeCopy}>
+            On-device PDF export with TNG statement highlighting is available on PRO and PREMIUM plans.
           </Text>
+        </View>
+      ) : format === "XLSX" ? (
+        <View style={styles.backendNotice}>
+          <Text style={styles.backendNoticeTitle}>XLSX coming soon</Text>
           <Text style={styles.backendNoticeCopy}>
-            CSV downloads now. {format} requires the production export service or a dedicated file-generation library before it can create a real file.
+            Excel export is planned for a future release. Use CSV for now — it opens directly in Excel.
           </Text>
         </View>
       ) : null}
@@ -278,13 +338,19 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
         ]}
       >
         <Text style={styles.generateText}>
-          {selectedFormatNeedsBackend
-            ? `${format} Backend Required`
-            : limitReached
-              ? "Export Limit Reached"
-              : createExport.isPending
-                ? "Generating CSV..."
-                : "Download CSV"}
+          {format === "PDF" && !canExportPdf
+            ? "PRO Required — Upgrade to Export PDF"
+            : format === "XLSX"
+              ? "XLSX — Coming Soon"
+              : limitReached
+                ? "Export Limit Reached"
+                : pdfGenerating
+                  ? "Generating PDF…"
+                  : createExport.isPending
+                    ? "Generating CSV…"
+                    : format === "PDF"
+                      ? "Generate PDF"
+                      : "Download CSV"}
         </Text>
       </Pressable>
 
@@ -325,7 +391,7 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
           </View>
         )}
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -365,29 +431,33 @@ function ExportJobRow({
 function UsageCard({
   exportsCreated,
   limit,
-  periodEnd
+  periodEnd,
+  tier
 }: {
   exportsCreated: number;
   limit: number | null;
   periodEnd: string;
+  tier: string;
 }) {
   const remaining = limit == null ? null : Math.max(0, limit - exportsCreated);
+  const tierLabel = tier === "PREMIUM" ? "Premium" : tier === "PRO" ? "Pro" : "Free";
+  const csvNote = tier === "FREE"
+    ? "CSV only. Upgrade to PRO or PREMIUM to unlock PDF export."
+    : "CSV (local) · PDF on-device · TNG highlights via scan service.";
 
   return (
     <View style={styles.usageCard}>
       <View style={styles.usageMain}>
-        <Text style={styles.usageTitle}>Trial exports</Text>
-        <Text style={styles.usageCopy}>
-          CSV files are generated locally. PDF/XLSX production files stay deferred to the backend service.
-        </Text>
+        <Text style={styles.usageTitle}>{tierLabel} plan</Text>
+        <Text style={styles.usageCopy}>{csvNote}</Text>
       </View>
       <View style={styles.usageRight}>
         <Text style={styles.usageMetric}>
           {limit == null ? "Unlimited" : `${exportsCreated}/${limit}`}
         </Text>
         <Text style={styles.usageSub}>
-          {remaining == null ? "available" : `${remaining} left`}
-          {periodEnd ? ` until ${formatDate(periodEnd)}` : ""}
+          {remaining == null ? "CSV exports" : `${remaining} left`}
+          {periodEnd && remaining != null ? ` until ${formatDate(periodEnd)}` : ""}
         </Text>
       </View>
     </View>
@@ -428,45 +498,46 @@ function formatDate(value: string) {
 }
 
 const styles = StyleSheet.create({
+  pageScroll: {
+    flex: 1
+  },
   page: {
-    gap: spacing.md
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl
   },
   header: {
-    gap: spacing.xs
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between"
   },
   title: {
     color: colors.text,
     fontSize: typography.title,
     fontWeight: "900"
   },
-  subtitle: {
-    color: colors.muted,
-    fontSize: typography.caption,
-    fontWeight: "700",
-    lineHeight: 18
-  },
-  summaryGrid: {
+  statsBar: {
+    alignItems: "center",
     flexDirection: "row",
-    gap: spacing.sm
+    gap: 6
   },
-  metric: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    flex: 1,
-    gap: 2,
-    padding: spacing.md
-  },
-  metricValue: {
+  statItem: {
+    flexDirection: "row"
+  } as const,
+  statNum: {
     color: colors.text,
-    fontSize: typography.body,
+    fontSize: typography.caption,
     fontWeight: "900"
   },
-  metricLabel: {
+  statSep: {
     color: colors.muted,
     fontSize: typography.caption,
     fontWeight: "700"
+  },
+  statDot: {
+    color: colors.muted,
+    fontSize: typography.caption
   },
   usageCard: {
     alignItems: "center",
@@ -524,6 +595,25 @@ const styles = StyleSheet.create({
   },
   limitNoticeCopy: {
     color: "#9a3412",
+    fontSize: typography.caption,
+    fontWeight: "700",
+    lineHeight: 18
+  },
+  proNotice: {
+    backgroundColor: "#fdf4ff",
+    borderColor: "#e9d5ff",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 3,
+    padding: spacing.md
+  },
+  proNoticeTitle: {
+    color: "#6b21a8",
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  proNoticeCopy: {
+    color: "#7e22ce",
     fontSize: typography.caption,
     fontWeight: "700",
     lineHeight: 18

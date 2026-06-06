@@ -202,8 +202,8 @@ export default function WorkspaceEditDrawer({
             <div>
               <label className={LABEL}>Plan tier</label>
               <select value={tier} onChange={(e) => setTier(e.target.value as 'FREE' | 'PRO' | 'PREMIUM')} className={INPUT}>
-                <option value="FREE">Free — 2 route calculations/month</option>
-                <option value="PRO">Pro — unlimited routes (RM18/mo)</option>
+                <option value="FREE">Free — trial access, exports locked</option>
+                <option value="PRO">Pro — claims export (RM18/mo)</option>
                 <option value="PREMIUM">Premium — business suite (RM29/mo)</option>
               </select>
             </div>

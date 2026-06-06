@@ -1,9 +1,10 @@
 import type { FeatureKey, SubscriptionTier } from "@/features/subscription/types";
 
 const featureMinimumTier: Record<FeatureKey, SubscriptionTier> = {
-  business_space: "PREMIUM",
-  exports: "PRO",
-  personal_tax: "PRO",
+  business_space: "FREE",   // unlocked for testing — will restore to PREMIUM post-pilot
+  exports: "FREE",          // CSV export — all tiers
+  exports_pdf: "PRO",       // on-device PDF + TNG highlight — PRO and above
+  personal_tax: "FREE",
   receipt_scan: "PRO"
 };
 
@@ -20,4 +21,3 @@ export function canUseFeature(tier: SubscriptionTier, feature: FeatureKey) {
 export function getRequiredTier(feature: FeatureKey) {
   return featureMinimumTier[feature];
 }
-

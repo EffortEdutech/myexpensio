@@ -9,7 +9,7 @@
 //   USER subscription → entity_type='USER', entity_id=user.id
 //   ORG  subscription → entity_type='ORG',  entity_id=org_id  (team workspace)
 //
-// Unlimited routes/trips/exports if:
+// Routes/trips are available on all tiers. Exports are unlimited if:
 //   • Org is PRO or PREMIUM (team workspace pays)
 //   • Individual user is PRO or PREMIUM (self-pays)
 
@@ -84,8 +84,8 @@ export async function GET() {
     const isUnlimited = isPaid(orgTier) || isPaid(userTier)
 
     const limits = {
-      routes_per_month:  isUnlimited ? null : (config?.free_routes_per_month ?? 2),
-      trips_per_month:   isUnlimited ? null : (config?.free_trips_per_month ?? null),
+      routes_per_month:  null,
+      trips_per_month:   null,
       exports_per_month: isUnlimited ? null : (config?.free_exports_per_month ?? 0),
     }
 
@@ -133,7 +133,7 @@ export async function GET() {
         cancel_at_period_end: false, grace_until: null, last_invoice_at: null,
       },
       usage: { period_start: '', routes_calls: 0, trips_created: 0, exports_created: 0 },
-      limits: { routes_per_month: 2, trips_per_month: null, exports_per_month: 0 },
+      limits: { routes_per_month: null, trips_per_month: null, exports_per_month: 0 },
       tier: 'FREE', is_unlimited: false,
     })
   }

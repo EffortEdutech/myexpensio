@@ -17,6 +17,11 @@ type NavItem = {
   exact?: boolean
 }
 
+type NavGroup = {
+  section: string
+  items: NavItem[]
+}
+
 // ── Nav item sets ──────────────────────────────────────────────────────────────
 
 const TEAM_ITEMS: NavItem[] = [
@@ -31,19 +36,9 @@ const TEAM_ITEMS: NavItem[] = [
     icon:  'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
   },
   {
-    label: 'Export Templates',
-    href:  '/templates',
-    icon:  'M4 6h16M4 10h16M4 14h16M4 18h7',
-  },
-  {
     label: 'Exports',
     href:  '/exports',
     icon:  'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4',
-  },
-  {
-    label: 'Audit Log',
-    href:  '/audit',
-    icon:  'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
   },
 ]
 
@@ -63,6 +58,11 @@ const AGENT_ITEMS: NavItem[] = [
 // Items shown at the bottom of every workspace type
 const SHARED_ITEMS: NavItem[] = [
   {
+    label: 'Export Templates',
+    href:  '/templates',
+    icon:  'M4 6h16M4 10h16M4 14h16M4 18h7',
+  },
+  {
     label: 'Members',
     href:  '/workspace-members',
     icon:  'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z',
@@ -76,6 +76,11 @@ const SHARED_ITEMS: NavItem[] = [
     label: 'Billing',
     href:  '/billing',
     icon:  'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z',
+  },
+  {
+    label: 'Audit Log',
+    href:  '/audit',
+    icon:  'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
   },
   {
     label: 'Settings',
@@ -93,24 +98,44 @@ const DASHBOARD_ITEM: NavItem = {
 
 // ── Nav builder ────────────────────────────────────────────────────────────────
 
-function buildNavItems(ctx: WorkspaceAuthContext): NavItem[] {
+function buildNavGroups(ctx: WorkspaceAuthContext): NavGroup[] {
+  const operations: NavGroup = {
+    section: 'Operations',
+    items: [DASHBOARD_ITEM],
+  }
+
+  const team: NavGroup = {
+    section: 'Claims',
+    items: TEAM_ITEMS,
+  }
+
+  const agent: NavGroup = {
+    section: 'Partner',
+    items: AGENT_ITEMS,
+  }
+
+  const administration: NavGroup = {
+    section: 'Administration',
+    items: SHARED_ITEMS,
+  }
+
   // Internal staff who land on Workspace App see everything
   // (but they should primarily use Console for platform operations)
   if (ctx.isInternalStaff) {
     return [
-      DASHBOARD_ITEM,
-      ...TEAM_ITEMS,
-      ...AGENT_ITEMS,
-      ...SHARED_ITEMS,
+      operations,
+      team,
+      agent,
+      administration,
     ]
   }
 
   // AGENT workspace
   if (ctx.isAgentWorkspace) {
     return [
-      DASHBOARD_ITEM,
-      ...AGENT_ITEMS,
-      ...SHARED_ITEMS,
+      operations,
+      agent,
+      administration,
     ]
   }
 
@@ -118,9 +143,9 @@ function buildNavItems(ctx: WorkspaceAuthContext): NavItem[] {
   // After the workspace-auth.ts fix, workspaceType will never be null,
   // but we keep this as the final fallback for safety.
   return [
-    DASHBOARD_ITEM,
-    ...TEAM_ITEMS,
-    ...SHARED_ITEMS,
+    operations,
+    team,
+    administration,
   ]
 }
 
@@ -171,12 +196,21 @@ export default function WorkspaceNav({
   ctx: WorkspaceAuthContext
   onNavigate?: () => void
 }) {
-  const items = buildNavItems(ctx)
+  const groups = buildNavGroups(ctx)
 
   return (
-    <nav className="px-3 space-y-0.5">
-      {items.map((item) => (
-        <NavLink key={item.href} item={item} onNavigate={onNavigate} />
+    <nav className="px-3 space-y-4">
+      {groups.map((group) => (
+        <div key={group.section}>
+          <p className="px-3 mb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">
+            {group.section}
+          </p>
+          <div className="space-y-0.5">
+            {group.items.map((item) => (
+              <NavLink key={item.href} item={item} onNavigate={onNavigate} />
+            ))}
+          </div>
+        </div>
       ))}
     </nav>
   )

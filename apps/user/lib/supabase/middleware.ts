@@ -10,6 +10,8 @@ const PUBLIC_PATHS = [
   '/auth',
   '/auth-test',
   '/change-password',
+  '/terms',
+  '/privacy',
 ]
 
 const AUTH_ONLY_PATHS = ['/login', '/forgot-password']

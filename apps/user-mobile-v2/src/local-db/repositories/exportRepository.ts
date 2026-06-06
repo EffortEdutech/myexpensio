@@ -294,11 +294,19 @@ function buildTngAppendixPreview(rows: ClaimItemExportRow[]) {
       existing.totalAmountCents += row.amount_cents;
       existing.transactionCount += 1;
       existing.hasSourcePdf = existing.hasSourcePdf || Boolean(row.tng_source_file_uri);
+      // Collect each linked item for the scan service highlight call
+      existing.items.push({ transNo: row.tng_trans_no, amountCents: row.amount_cents });
+      // Keep the first non-null sourceFileUri we encounter for this group
+      if (!existing.sourceFileUri && row.tng_source_file_uri) {
+        existing.sourceFileUri = row.tng_source_file_uri;
+      }
       continue;
     }
 
     groups.set(key, {
       hasSourcePdf: Boolean(row.tng_source_file_uri),
+      items: [{ transNo: row.tng_trans_no, amountCents: row.amount_cents }],
+      sourceFileUri: row.tng_source_file_uri ?? null,
       statementLabel: row.tng_statement_label ?? "TNG statement",
       totalAmountCents: row.amount_cents,
       transactionCount: 1,

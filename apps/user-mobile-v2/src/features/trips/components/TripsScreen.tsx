@@ -1,10 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as FileSystem from "expo-file-system/legacy";
+import * as ImagePicker from "expo-image-picker";
+import * as Location from "expo-location";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,11 +20,14 @@ import {
 
 import { DatePickerField } from "@/components/DatePickerField";
 import type { ClaimDraft } from "@/features/claims/types";
+import { ErrorState } from "@/components/ErrorState";
+import { SkeletonList } from "@/components/SkeletonRow";
 import {
   RouteMap,
   type LatLng,
   type RouteMapRoute
 } from "@/features/trips/components/RouteMap";
+import { SinglePinMap } from "@/features/trips/components/SinglePinMap";
 import type {
   CreateTripInput,
   TripCalculationMode,
@@ -27,13 +36,16 @@ import type {
   VehicleType
 } from "@/features/trips/types";
 import type { ClaimRates } from "@/state/settingsStore";
+import { getSyncBaseUrl } from "@/sync/syncConfig";
 import { colors, spacing, typography } from "@/theme/tokens";
 
 type TripsScreenProps = {
   claims: ClaimDraft[];
   isCreatingTrip: boolean;
   isDeletingTrip: boolean;
+  isError?: boolean;
   isLoading: boolean;
+  isRefreshing?: boolean;
   isStoppingTrip: boolean;
   isUpdatingTrip: boolean;
   onAddMileageToClaim: (input: {
@@ -45,6 +57,7 @@ type TripsScreenProps = {
   }) => void;
   onCreateTrip: (input: CreateTripInput) => Promise<TripDraft>;
   onDeleteTrip: (trip: TripDraft) => Promise<void>;
+  onRefresh?: () => void;
   onStopGpsTrip: (input: { distanceM: number; tripId: string }) => Promise<void>;
   onUpdateTrip: (input: UpdateTripInput) => Promise<TripDraft | null>;
   rates: ClaimRates;
@@ -70,6 +83,43 @@ type GeocodeSuggestion = {
   label: string;
   latLng: LatLng;
 };
+
+// ── Favorite Locations ────────────────────────────────────────────────────────
+type FavoriteLocation = {
+  id: string;
+  shortName: string;
+  label: string;
+  latLng: LatLng;
+};
+
+const FAV_STORAGE_KEY = "myexpensio-favorite-locations";
+const FAV_MAX = 8;
+
+async function loadFavorites(): Promise<FavoriteLocation[]> {
+  try {
+    const raw = await AsyncStorage.getItem(FAV_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as FavoriteLocation[]) : [];
+  } catch { return []; }
+}
+
+async function saveFavorites(favs: FavoriteLocation[]): Promise<void> {
+  await AsyncStorage.setItem(FAV_STORAGE_KEY, JSON.stringify(favs));
+}
+
+async function addFavorite(fav: Omit<FavoriteLocation, "id">): Promise<FavoriteLocation[]> {
+  const existing = await loadFavorites();
+  if (existing.some((f) => f.label === fav.label)) return existing;
+  const updated = [{ ...fav, id: `fav-${Date.now()}` }, ...existing].slice(0, FAV_MAX);
+  await saveFavorites(updated);
+  return updated;
+}
+
+async function removeFavorite(id: string): Promise<FavoriteLocation[]> {
+  const existing = await loadFavorites();
+  const updated = existing.filter((f) => f.id !== id);
+  await saveFavorites(updated);
+  return updated;
+}
 
 const tripStatusFilters: Array<{ label: string; value: TripStatusFilter }> = [
   { label: "All", value: "all" },
@@ -103,6 +153,9 @@ export function TripsScreen({
   onDeleteTrip,
   onStopGpsTrip,
   onUpdateTrip,
+  isError = false,
+  isRefreshing = false,
+  onRefresh,
   rates,
   trips
 }: TripsScreenProps) {
@@ -110,6 +163,7 @@ export function TripsScreen({
   const [categoryFilter, setCategoryFilter] =
     useState<TripCategoryFilter>("all");
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [favLocationsOpen, setFavLocationsOpen] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<TripDraft | null>(null);
   const [sortKey, setSortKey] = useState<TripSortKey>("date_desc");
   const [sortSheetOpen, setSortSheetOpen] = useState(false);
@@ -117,6 +171,73 @@ export function TripsScreen({
   const activeGpsTrip = trips.find(
     (trip) => trip.status === "draft" && trip.calculationMode === "gps_tracking"
   );
+
+  // ── Live GPS tracking ──────────────────────────────────────────────────────
+  const [liveDistanceM, setLiveDistanceM] = useState(0);
+  const locationSubRef = useRef<Location.LocationSubscription | null>(null);
+  const lastLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+  const accumulatedMRef = useRef(0);
+
+  useEffect(() => {
+    if (!activeGpsTrip || Platform.OS === "web") {
+      // Stop watching if no active GPS trip
+      if (locationSubRef.current) {
+        locationSubRef.current.remove();
+        locationSubRef.current = null;
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    async function startWatching() {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted" || cancelled) return;
+
+      // Reset accumulators when a new GPS trip begins
+      if (!locationSubRef.current) {
+        accumulatedMRef.current = 0;
+        lastLocationRef.current = null;
+        setLiveDistanceM(0);
+      }
+
+      locationSubRef.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.BestForNavigation,
+          distanceInterval: 10,   // update every 10 m moved
+          timeInterval: 5000,     // or every 5 s
+        },
+        (loc) => {
+          const { latitude, longitude } = loc.coords;
+          if (lastLocationRef.current) {
+            const delta = haversineM(
+              lastLocationRef.current.lat,
+              lastLocationRef.current.lng,
+              latitude,
+              longitude
+            );
+            // Ignore spurious jumps > 300 m in 5 s (GPS glitch)
+            if (delta < 300) {
+              accumulatedMRef.current += delta;
+              setLiveDistanceM(Math.round(accumulatedMRef.current));
+            }
+          }
+          lastLocationRef.current = { lat: latitude, lng: longitude };
+        }
+      );
+    }
+
+    void startWatching();
+
+    return () => {
+      cancelled = true;
+      if (locationSubRef.current) {
+        locationSubRef.current.remove();
+        locationSubRef.current = null;
+      }
+    };
+  }, [activeGpsTrip?.id]);
+
   const visibleTrips = useMemo(
     () =>
       sortTrips(
@@ -150,37 +271,42 @@ export function TripsScreen({
         >
           <View style={styles.activeGlow} />
           <Text style={styles.activeBannerText}>
-            GPS trip in progress - tap to return
+            GPS trip in progress{liveDistanceM > 0 ? ` · ${(liveDistanceM / 1000).toFixed(2)} km` : ""} — tap to return
           </Text>
           <Text style={styles.bannerArrow}>{">"}</Text>
         </Pressable>
       ) : null}
 
-      <View style={styles.actionStack}>
+      <View style={styles.actionGrid}>
+        <TripActionButton
+          icon="📐"
+          label="Mileage Calc"
+          onPress={() => setFormMode("route")}
+          tone="blue"
+        />
+        <TripActionButton
+          icon="📏"
+          label="Odometer"
+          onPress={() => setFormMode("odometer")}
+          tone="amber"
+        />
         <TripActionButton
           icon={activeGpsTrip ? "🔴" : "▶"}
-          label={activeGpsTrip ? "Return to Tracker" : "Start GPS Trip"}
+          label={activeGpsTrip ? "Return to GPS" : "GPS Trip"}
           onPress={() => {
             if (activeGpsTrip) {
               setSelectedTrip(activeGpsTrip);
               return;
             }
-
             setFormMode("gps");
           }}
           tone="dark"
         />
         <TripActionButton
-          icon="📏"
-          label="Odometer Trip"
-          onPress={() => setFormMode("odometer")}
-          tone="amber"
-        />
-        <TripActionButton
-          icon="📐"
-          label="Mileage Calculator"
-          onPress={() => setFormMode("route")}
-          tone="blue"
+          icon="⭐"
+          label="Fav Locations"
+          onPress={() => setFavLocationsOpen(true)}
+          tone="star"
         />
       </View>
 
@@ -196,7 +322,7 @@ export function TripsScreen({
               style={styles.toolbarMenuButton}
             >
               <Text style={styles.toolbarMenuText}>
-                Filter: {tripFilterSummary(statusFilter, categoryFilter)} v
+                Filter: {tripFilterSummary(statusFilter, categoryFilter)} ▾
               </Text>
             </Pressable>
             <Pressable
@@ -205,17 +331,17 @@ export function TripsScreen({
               style={styles.toolbarMenuButton}
             >
               <Text style={styles.toolbarMenuText}>
-                Sort: {tripSortLabel(sortKey)} v
+                Sort: {tripSortLabel(sortKey)} ▾
               </Text>
             </Pressable>
           </View>
         </View>
       ) : null}
 
-      {isLoading ? (
-        <View style={styles.empty}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
+      {isLoading && trips.length === 0 ? (
+        <SkeletonList count={4} />
+      ) : isError && trips.length === 0 ? (
+        <ErrorState message="Couldn't load trips" onRetry={onRefresh} />
       ) : trips.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyIcon}>🗺</Text>
@@ -226,16 +352,29 @@ export function TripsScreen({
           </Text>
         </View>
       ) : (
-        <View style={styles.list}>
-          {visibleTrips.length === 0 ? (
+        <FlatList
+          data={visibleTrips}
+          keyExtractor={(item) => item.id}
+          style={styles.list}
+          contentContainerStyle={styles.listContent}
+          initialNumToRender={12}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews
+          refreshControl={
+            onRefresh ? (
+              <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
+            ) : undefined
+          }
+          ListEmptyComponent={
             <View style={styles.emptyCompact}>
               <Text style={styles.emptyCopy}>No trips match this filter.</Text>
             </View>
-          ) : null}
-          {visibleTrips.map((trip) => (
+          }
+          renderItem={({ item: trip }) => (
             <TripCard key={trip.id} onPress={() => setSelectedTrip(trip)} trip={trip} />
-          ))}
-        </View>
+          )}
+        />
       )}
 
       <TripFormModal
@@ -259,6 +398,7 @@ export function TripsScreen({
           await onDeleteTrip(trip);
           setSelectedTrip(null);
         }}
+        liveDistanceM={liveDistanceM}
         onStopGpsTrip={onStopGpsTrip}
         onUpdateTrip={async (input) => {
           const updated = await onUpdateTrip(input);
@@ -287,6 +427,10 @@ export function TripsScreen({
         options={tripSortOptions}
         selectedValue={sortKey}
         title="Sort trips"
+      />
+      <FavLocationsSheet
+        isVisible={favLocationsOpen}
+        onClose={() => setFavLocationsOpen(false)}
       />
     </View>
   );
@@ -353,7 +497,7 @@ function TripActionButton({
   icon: string;
   label: string;
   onPress: () => void;
-  tone: "amber" | "blue" | "dark";
+  tone: "amber" | "blue" | "dark" | "star";
 }) {
   return (
     <Pressable
@@ -491,6 +635,403 @@ function OptionList<T extends string>({
   );
 }
 
+// ── FavLocationsSheet ─────────────────────────────────────────────────────────
+function FavLocationsSheet({
+  isVisible,
+  onClose
+}: {
+  isVisible: boolean;
+  onClose: () => void;
+}) {
+  const [favorites, setFavorites] = useState<FavoriteLocation[]>([]);
+  const [mapScrollLocked, setMapScrollLocked] = useState(false);
+
+  // ── Shared form state (reused for both add and edit) ──────────────────────
+  type FormMode = { kind: "add" } | { kind: "edit"; id: string } | null;
+  const [formMode, setFormMode] = useState<FormMode>(null);
+  const [formName, setFormName] = useState("");
+  const [formAddress, setFormAddress] = useState(""); // free-text, user-controlled
+  const [formLatLng, setFormLatLng] = useState<LatLng | null>(null); // from map pin only
+  const [formMapCenter, setFormMapCenter] = useState<LatLng | null>(null);
+  // Map search — navigation helper only, never writes to formAddress
+  const [mapSearch, setMapSearch] = useState("");
+  const [mapSearchResults, setMapSearchResults] = useState<GeocodeSuggestion[]>([]);
+  const [mapSearching, setMapSearching] = useState(false);
+  const [mapSearchError, setMapSearchError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (isVisible) {
+      loadFavorites().then(setFavorites).catch(() => {});
+      closeForm();
+    }
+  }, [isVisible]);
+
+  // Live search for map navigation only
+  useEffect(() => {
+    if (mapSearch.trim().length < 3) {
+      setMapSearchResults([]);
+      setMapSearchError(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setMapSearching(true);
+      void searchGeocodeSuggestions(mapSearch)
+        .then((results) => {
+          if (!cancelled) {
+            setMapSearchResults(results);
+            setMapSearchError(results.length === 0 ? "No results found." : null);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setMapSearchResults([]);
+            setMapSearchError("Search failed. Check your connection.");
+          }
+        })
+        .finally(() => { if (!cancelled) setMapSearching(false); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [mapSearch]);
+
+  function closeForm() {
+    setFormMode(null);
+    setFormName("");
+    setFormAddress("");
+    setFormLatLng(null);
+    setFormMapCenter(null);
+    setMapSearch("");
+    setMapSearchResults([]);
+    setMapSearchError(null);
+  }
+
+  function openAdd() {
+    closeForm();
+    setFormMode({ kind: "add" });
+  }
+
+  function openEdit(fav: FavoriteLocation) {
+    setFormMode({ kind: "edit", id: fav.id });
+    setFormName(fav.shortName);
+    setFormAddress(fav.label);
+    setFormLatLng(fav.latLng);
+    setFormMapCenter(fav.latLng);
+    setMapSearch("");
+    setMapSearchResults([]);
+    setMapSearchError(null);
+  }
+
+  async function handleSave() {
+    if (!formLatLng || !formName.trim()) return;
+    setIsSaving(true);
+    try {
+      if (formMode?.kind === "edit") {
+        const updated = favorites.map((f) =>
+          f.id === formMode.id
+            ? { ...f, shortName: formName.trim(), label: formAddress.trim(), latLng: formLatLng }
+            : f
+        );
+        await saveFavorites(updated);
+        setFavorites(updated);
+      } else {
+        const updated = await addFavorite({
+          shortName: formName.trim(),
+          label: formAddress.trim() || formName.trim(),
+          latLng: formLatLng
+        });
+        setFavorites(updated);
+      }
+      closeForm();
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    const updated = await removeFavorite(id);
+    setFavorites(updated);
+    if (formMode?.kind === "edit" && formMode.id === id) closeForm();
+  }
+
+  if (!isVisible) return null;
+
+  const isFormOpen = formMode !== null;
+  const isEditMode = formMode?.kind === "edit";
+  const saveDisabled = !formLatLng || !formName.trim() || isSaving;
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+      <View style={styles.modalOverlay}>
+        <View style={styles.sheet}>
+          {/* Header */}
+          <View style={styles.modalHeader}>
+            <View style={styles.modalHeaderTitle}>
+              <Text style={styles.modalTitle}>⭐ Favourite Locations</Text>
+              <Text style={styles.modalSub}>
+                Saved places for quick origin / destination entry
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              onPress={onClose}
+              style={styles.closeButton}
+            >
+              <Text style={styles.closeButtonText}>✕</Text>
+            </Pressable>
+          </View>
+
+          <ScrollView
+            contentContainerStyle={styles.modalBody}
+            keyboardShouldPersistTaps="handled"
+            scrollEnabled={!mapScrollLocked}
+            style={styles.modalScroll}
+          >
+            {/* ── List view ── */}
+            {!isFormOpen ? (
+              <>
+                {favorites.length === 0 ? (
+                  <View style={styles.favMgrEmpty}>
+                    <Text style={styles.favMgrEmptyIcon}>⭐</Text>
+                    <Text style={styles.favMgrEmptyTitle}>No saved locations</Text>
+                    <Text style={styles.favMgrEmptyText}>
+                      Save locations while creating a trip or add one below.
+                    </Text>
+                  </View>
+                ) : null}
+                {favorites.map((fav) => (
+                  <View key={fav.id} style={styles.favMgrRow}>
+                    <View style={styles.favMgrItem}>
+                      <View style={styles.favMgrItemBody}>
+                        <Text style={styles.favMgrItemName} numberOfLines={1}>
+                          ⭐ {fav.shortName}
+                        </Text>
+                        <Text style={styles.favMgrItemLabel} numberOfLines={1}>
+                          {fav.label}
+                        </Text>
+                      </View>
+                      <View style={styles.favMgrItemActions}>
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => openEdit(fav)}
+                          style={styles.favMgrEditBtn}
+                        >
+                          <Text style={styles.favMgrEditBtnText}>✏️</Text>
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => void handleDelete(fav.id)}
+                          style={styles.favMgrDeleteBtn}
+                        >
+                          <Text style={styles.favMgrDeleteBtnText}>🗑</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </>
+            ) : null}
+
+            {/* ── Add / Edit form ── */}
+            {isFormOpen ? (
+              <View style={styles.favMgrAddCard}>
+                <Text style={styles.favMgrAddTitle}>
+                  {isEditMode ? "Edit Location" : "Add New Location"}
+                </Text>
+
+                {/* Short Name */}
+                <View style={styles.field}>
+                  <Text style={styles.label}>Short Name *</Text>
+                  <TextInput
+                    autoFocus
+                    onChangeText={setFormName}
+                    placeholder="e.g. Home, Office, Client HQ"
+                    placeholderTextColor="#94a3b8"
+                    style={styles.input}
+                    value={formName}
+                  />
+                </View>
+
+                {/* Address — free text, completely independent of the map */}
+                <View style={styles.field}>
+                  <Text style={styles.label}>Address / Description</Text>
+                  <TextInput
+                    onChangeText={setFormAddress}
+                    placeholder="e.g. No 12, Jalan ABC, Taman XYZ"
+                    placeholderTextColor="#94a3b8"
+                    style={[styles.input, styles.textarea]}
+                    multiline
+                    value={formAddress}
+                  />
+                </View>
+
+                {/* Map search — navigation only, never writes to Address */}
+                <View style={styles.favMgrMapSearchWrap}>
+                  <Text style={styles.favMgrMapSearchLabel}>
+                    🔍 Search to navigate the map
+                  </Text>
+                  <View style={styles.routeInputShell}>
+                    <TextInput
+                      onChangeText={(v) => {
+                        setMapSearch(v);
+                        setMapSearchResults([]);
+                      }}
+                      placeholder="Type a place name to jump to it…"
+                      placeholderTextColor="#94a3b8"
+                      style={styles.routeInput}
+                      value={mapSearch}
+                    />
+                    {mapSearching ? (
+                      <Text style={styles.routeInputSpinner}>...</Text>
+                    ) : null}
+                  </View>
+                  {mapSearchError && mapSearch.trim().length >= 3 && !mapSearching ? (
+                    <Text style={styles.searchErrorText}>{mapSearchError}</Text>
+                  ) : null}
+                  {mapSearchResults.length > 0 ? (
+                    <View style={styles.suggestionPanel}>
+                      <Text style={styles.suggestionPanelTitle}>Jump to location</Text>
+                      {mapSearchResults.slice(0, 5).map((s) => (
+                        <Pressable
+                          accessibilityRole="button"
+                          key={s.id}
+                          onPress={() => {
+                            setFormMapCenter(s.latLng);
+                            setFormLatLng(s.latLng);
+                            setMapSearch("");
+                            setMapSearchResults([]);
+                          }}
+                          style={styles.suggestionItem}
+                        >
+                          <Text style={styles.suggestionMain}>
+                            {shortLocationName(s.label)}
+                          </Text>
+                          <Text numberOfLines={2} style={styles.suggestionSub}>
+                            {s.label}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+
+                {/* Map — always visible, tap/drag to set pin */}
+                <View style={styles.favMgrMapWrap}>
+                  <Text style={styles.favMgrMapHint}>
+                    {formLatLng
+                      ? "📍 Drag or tap to adjust exact location"
+                      : "📍 Tap the map to drop a pin *"}
+                  </Text>
+                  <View
+                    onTouchStart={() => setMapScrollLocked(true)}
+                    onTouchEnd={() => setMapScrollLocked(false)}
+                    onTouchCancel={() => setMapScrollLocked(false)}
+                  >
+                    <SinglePinMap
+                      center={formMapCenter}
+                      pinLatLng={formLatLng}
+                      onPinSet={(ll) => setFormLatLng(ll)}
+                    />
+                  </View>
+                  <Text style={styles.favMgrMapCoords}>
+                    {formLatLng
+                      ? `📌 ${formLatLng[0].toFixed(5)}, ${formLatLng[1].toFixed(5)}`
+                      : "No pin set yet"}
+                  </Text>
+                </View>
+
+                {/* Actions */}
+                <View style={styles.favMgrEditActions}>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={closeForm}
+                    style={styles.favMgrCancelBtn}
+                  >
+                    <Text style={styles.favMgrCancelText}>Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={saveDisabled}
+                    onPress={() => void handleSave()}
+                    style={[styles.favMgrSaveBtn, saveDisabled ? styles.disabled : null]}
+                  >
+                    <Text style={styles.favMgrSaveText}>
+                      {isSaving ? "Saving..." : isEditMode ? "Save Changes" : "Add Location"}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
+          </ScrollView>
+
+          {/* Footer: Add button (only in list view) */}
+          {!isFormOpen ? (
+            <View style={styles.modalFooter}>
+              <Pressable
+                accessibilityRole="button"
+                disabled={favorites.length >= FAV_MAX}
+                onPress={openAdd}
+                style={[styles.saveButton, favorites.length >= FAV_MAX ? styles.disabled : null]}
+              >
+                <Text style={styles.saveButtonText}>
+                  {favorites.length >= FAV_MAX
+                    ? `Max ${FAV_MAX} locations reached`
+                    : "+ Add New Location"}
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ── OdometerStep — accordion card for Origin / Destination ───────────────────
+function OdometerStep({
+  children,
+  icon,
+  isDone,
+  isOpen,
+  onToggle,
+  stepNumber,
+  subtitle,
+  title
+}: {
+  children: React.ReactNode;
+  icon: string;
+  isDone: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
+  stepNumber: number;
+  subtitle: string;
+  title: string;
+}) {
+  return (
+    <View style={[styles.odoStep, isDone && !isOpen ? styles.odoStepDone : null]}>
+      <Pressable accessibilityRole="button" onPress={onToggle} style={styles.odoStepHeader}>
+        <View style={styles.odoStepBadge}>
+          <Text style={styles.odoStepBadgeText}>{stepNumber}</Text>
+        </View>
+        <View style={styles.odoStepTitleWrap}>
+          <View style={styles.odoStepTitleRow}>
+            <Text style={styles.odoStepIcon}>{icon}</Text>
+            <Text style={styles.odoStepTitle}>{title}</Text>
+            {isDone ? <Text style={styles.odoStepCheck}>✓</Text> : null}
+          </View>
+          <Text style={styles.odoStepSubtitle} numberOfLines={1}>{subtitle}</Text>
+        </View>
+        <Text style={styles.odoStepChevron}>{isOpen ? "▴" : "▾"}</Text>
+      </Pressable>
+      {isOpen ? (
+        <View style={styles.odoStepBody}>{children}</View>
+      ) : null}
+    </View>
+  );
+}
+
 function TripFormModal({
   isCreating,
   mode,
@@ -521,8 +1062,12 @@ function TripFormModal({
   const [geocodingTarget, setGeocodingTarget] = useState<
     "origin" | "destination" | null
   >(null);
-  const [startEvidence, setStartEvidence] = useState<string | null>(null);
-  const [endEvidence, setEndEvidence] = useState<string | null>(null);
+  // Odometer-specific state
+  const [originReading, setOriginReading] = useState("");
+  const [destinationReading, setDestinationReading] = useState("");
+  const [originEvidence, setOriginEvidence] = useState<string | null>(null);
+  const [destinationEvidence, setDestinationEvidence] = useState<string | null>(null);
+  const [originSectionDone, setOriginSectionDone] = useState(false);
   const [vehicleType, setVehicleType] = useState<VehicleType>("car");
 
   useEffect(() => {
@@ -537,6 +1082,10 @@ function TripFormModal({
 
   const distance = Number(distanceKm);
   const isGps = mode === "gps";
+  const isOdometer = mode === "odometer";
+  const odoOriginKm = Number(originReading);
+  const odoDestKm = Number(destinationReading);
+  const odoDistance = odoDestKm - odoOriginKm;
   const selectedRoute = routeAlternatives.find(
     (route) => route.id === selectedRouteId
   );
@@ -558,8 +1107,15 @@ function TripFormModal({
     distance > 0;
   const hasRouteSearchInput =
     origin.trim().length > 0 && destination.trim().length > 0;
+  const odoValid =
+    originReading.length > 0 &&
+    Number.isFinite(odoOriginKm) &&
+    odoOriginKm >= 0 &&
+    destinationReading.length > 0 &&
+    Number.isFinite(odoDestKm) &&
+    odoDistance > 0;
   const valid =
-    isGps || (mode === "route" ? Boolean(selectedRoute) : hasBaseRouteInput);
+    isGps || (mode === "route" ? Boolean(selectedRoute) : isOdometer ? odoValid : hasBaseRouteInput);
   const title =
     mode === "gps"
       ? "Start GPS Trip"
@@ -586,19 +1142,25 @@ function TripFormModal({
         destinationText: destination.trim() || null,
         distanceM: isGps
           ? null
-          : Math.round((selectedRoute?.distanceKm ?? distance) * 1000),
-        endEvidenceUri: endEvidence,
+          : isOdometer
+            ? Math.round(odoDistance * 1000)
+            : Math.round((selectedRoute?.distanceKm ?? distance) * 1000),
+        endEvidenceUri: isOdometer ? destinationEvidence : null,
         notes:
           [
             notes.trim(),
-            selectedRoute ? `Route option: ${selectedRoute.label}` : ""
+            isOdometer
+              ? `Odometer: ${odoOriginKm} → ${odoDestKm} km`
+              : selectedRoute
+                ? `Route option: ${selectedRoute.label}`
+                : ""
           ]
             .filter(Boolean)
             .join("\n") || null,
         originText: origin.trim() || null,
         routeOptionLabel: selectedRoute?.label ?? null,
         startedAt,
-        startEvidenceUri: startEvidence,
+        startEvidenceUri: isOdometer ? originEvidence : null,
         vehicleType
       });
       resetForm();
@@ -710,8 +1272,11 @@ function TripFormModal({
     setRouteError(null);
     setIsRouteLoading(false);
     setGeocodingTarget(null);
-    setStartEvidence(null);
-    setEndEvidence(null);
+    setOriginReading("");
+    setDestinationReading("");
+    setOriginEvidence(null);
+    setDestinationEvidence(null);
+    setOriginSectionDone(false);
     setVehicleType("car");
   }
 
@@ -734,12 +1299,13 @@ function TripFormModal({
       <View style={styles.modalOverlay}>
         <View style={styles.sheet}>
           <View style={styles.modalHeader}>
-            <View>
-              <Text style={styles.modalTitle}>{title}</Text>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.modalTitle} numberOfLines={1}>{title}</Text>
               <Text style={styles.modalSub}>
                 {isGps
                   ? "Start a draft trip and stop it when you arrive."
-                  : "Record route, distance, and vehicle type for mileage claims."}
+                  : mode === "odometer" ? "Record origin and destination odometer readings."
+                  : "Calculate route and distance for mileage claims."}
               </Text>
             </View>
             <View style={styles.modalHeaderActions}>
@@ -752,13 +1318,19 @@ function TripFormModal({
                   <Text style={styles.resetButtonText}>Reset</Text>
                 </Pressable>
               ) : null}
-              <Pressable accessibilityRole="button" onPress={onClose}>
-                <Text style={styles.modalClose}>X</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                onPress={onClose}
+                style={styles.closeButton}
+              >
+                <Text style={styles.closeButtonText}>✕</Text>
               </Pressable>
             </View>
           </View>
 
-          <ScrollView contentContainerStyle={styles.modalBody}>
+          <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled" style={styles.modalScroll}>
             <View style={styles.fieldRow}>
               <DatePickerField label="Date" onChange={setDate} value={date} />
               <Field label="Time" onChangeText={setTime} value={time} />
@@ -798,6 +1370,7 @@ function TripFormModal({
                         setOriginLatLng(suggestion.latLng);
                         clearRouteSelection();
                       }}
+                      selectedLatLng={originLatLng}
                       onUseCurrent={() => void useCurrentPosition("origin")}
                       pin="green"
                       value={origin}
@@ -816,6 +1389,7 @@ function TripFormModal({
                         setDestinationLatLng(suggestion.latLng);
                         clearRouteSelection();
                       }}
+                      selectedLatLng={destinationLatLng}
                       onUseCurrent={() =>
                         void useCurrentPosition("destination")
                       }
@@ -859,54 +1433,117 @@ function TripFormModal({
                     ) : null}
                   </>
                 ) : (
-                  <>
-                    <Field
-                      label="Origin"
-                      onChangeText={setOrigin}
-                      placeholder="e.g. Ayer Keroh, Melaka"
-                      value={origin}
-                    />
-                    <Field
-                      label="Destination"
-                      onChangeText={setDestination}
-                      placeholder="e.g. Putrajaya, Selangor"
-                      value={destination}
-                    />
-                    <Field
-                      keyboardType="decimal-pad"
-                      label="Odometer Distance (km) *"
-                      onChangeText={(value) => {
-                        if (value === "" || /^\d*\.?\d*$/.test(value)) {
-                          setDistanceKm(value);
-                        }
-                      }}
-                      placeholder="e.g. 52.40"
-                      value={distanceKm}
-                    />
-                  </>
-                )}
-                {mode === "odometer" ? (
-                  <View style={styles.evidenceSection}>
-                    <EvidenceCapture
-                      label="Start Reading"
-                      onChange={setStartEvidence}
-                      value={startEvidence}
-                    />
-                    <EvidenceCapture
-                      label="End Reading"
-                      onChange={setEndEvidence}
-                      value={endEvidence}
-                    />
+                  // ── Odometer accordion flow ──────────────────────────────
+                  <View style={styles.odoFlow}>
+
+                    {/* Step 1: Origin */}
+                    <OdometerStep
+                      icon="🟢"
+                      stepNumber={1}
+                      title="Origin"
+                      subtitle={
+                        originSectionDone && originReading
+                          ? `${originReading} km · ${origin || "no location set"}`
+                          : "Enter reading when you depart"
+                      }
+                      isOpen={!originSectionDone}
+                      isDone={originSectionDone}
+                      onToggle={() => setOriginSectionDone((v) => !v)}
+                    >
+                      <FavPickField
+                        label="Location (optional)"
+                        onChangeText={setOrigin}
+                        placeholder="e.g. Ayer Keroh, Melaka"
+                        value={origin}
+                      />
+                      <Field
+                        keyboardType="decimal-pad"
+                        label="Odometer Reading (km) *"
+                        onChangeText={(v) => {
+                          if (v === "" || /^\d*\.?\d*$/.test(v)) setOriginReading(v);
+                        }}
+                        placeholder="e.g. 12450"
+                        value={originReading}
+                      />
+                      <EvidenceCapture
+                        label="Origin Reading"
+                        onChange={setOriginEvidence}
+                        value={originEvidence}
+                      />
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={!originReading || Number(originReading) < 0}
+                        onPress={() => setOriginSectionDone(true)}
+                        style={[
+                          styles.odoStepDoneBtn,
+                          !originReading ? styles.disabled : null
+                        ]}
+                      >
+                        <Text style={styles.odoStepDoneBtnText}>
+                          Done — Save Origin ›
+                        </Text>
+                      </Pressable>
+                    </OdometerStep>
+
+                    {/* Step 2: Destination */}
+                    <OdometerStep
+                      icon="🔴"
+                      stepNumber={2}
+                      title="Destination"
+                      subtitle={
+                        originSectionDone && destinationReading
+                          ? `${destinationReading} km · ${destination || "no location set"}`
+                          : originSectionDone
+                            ? "Enter reading when you arrive"
+                            : "Complete Origin first"
+                      }
+                      isOpen={originSectionDone}
+                      isDone={odoValid}
+                      onToggle={() => { if (originSectionDone) setOriginSectionDone(false); }}
+                    >
+                      <FavPickField
+                        label="Location (optional)"
+                        onChangeText={setDestination}
+                        placeholder="e.g. Putrajaya, Selangor"
+                        value={destination}
+                      />
+                      <Field
+                        keyboardType="decimal-pad"
+                        label="Odometer Reading (km) *"
+                        onChangeText={(v) => {
+                          if (v === "" || /^\d*\.?\d*$/.test(v)) setDestinationReading(v);
+                        }}
+                        placeholder="e.g. 12502"
+                        value={destinationReading}
+                      />
+                      <EvidenceCapture
+                        label="Destination Reading"
+                        onChange={setDestinationEvidence}
+                        value={destinationEvidence}
+                      />
+                    </OdometerStep>
+
+                    {/* Auto-calculated distance */}
+                    {odoValid ? (
+                      <View style={styles.odoSummary}>
+                        <Text style={styles.odoSummaryLabel}>Calculated Distance</Text>
+                        <Text style={styles.odoSummaryValue}>
+                          {odoDistance.toFixed(2)} km
+                        </Text>
+                        <Text style={styles.odoSummaryMath}>
+                          {odoDestKm} − {odoOriginKm} = {odoDistance.toFixed(2)} km
+                        </Text>
+                      </View>
+                    ) : null}
                   </View>
-                ) : null}
+                )}
               </>
             ) : (
               <View style={styles.infoBox}>
                 <Text style={styles.infoText}>
-                  GPS permissions and live points will use native device APIs in
-                  the production build. This local-first sprint creates the
-                  resumable draft trip and lets you stop it with a final
-                  distance.
+                  Tapping &quot;Start GPS Trip&quot; will request location permission and
+                  begin live tracking. Your distance is recorded automatically.
+                  Open the trip again to stop and finalise.
                 </Text>
               </View>
             )}
@@ -950,6 +1587,7 @@ function TripDetailModal({
   isDeletingTrip,
   isStoppingTrip,
   isUpdatingTrip,
+  liveDistanceM,
   onAddMileageToClaim,
   onClose,
   onDeleteTrip,
@@ -962,6 +1600,8 @@ function TripDetailModal({
   isDeletingTrip: boolean;
   isStoppingTrip: boolean;
   isUpdatingTrip: boolean;
+  /** Live GPS distance in metres from the tracking loop in TripsScreen */
+  liveDistanceM?: number;
   onAddMileageToClaim: (input: {
     amountCents: number;
     claim: ClaimDraft;
@@ -1053,7 +1693,7 @@ function TripDetailModal({
             </Pressable>
           </View>
 
-          <ScrollView contentContainerStyle={styles.modalBody}>
+          <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled" style={styles.modalScroll}>
             <View style={styles.detailGrid}>
               <Metric label="Status" value={trip.status === "draft" ? "In Progress" : "Final"} />
               <Metric label="Distance" value={finalDistanceM > 0 ? formatKm(finalDistanceM) : "-"} />
@@ -1150,24 +1790,39 @@ function TripDetailModal({
               <View style={styles.infoBox}>
                 <Text style={styles.infoText}>
                   Odometer evidence:{" "}
-                  {trip.odometerStartEvidenceUri ? "Start attached" : "Start missing"}{" "}
-                  / {trip.odometerEndEvidenceUri ? "End attached" : "End missing"}
+                  {trip.odometerStartEvidenceUri ? "Origin attached" : "Origin missing"}{" "}
+                  / {trip.odometerEndEvidenceUri ? "Destination attached" : "Destination missing"}
                 </Text>
               </View>
             ) : null}
 
             {trip.status === "draft" ? (
               <View style={styles.infoBox}>
-                <Text style={styles.infoText}>
-                  Stop this GPS trip by entering the final distance captured by
-                  the tracker.
-                </Text>
+                {/* Live GPS readout */}
+                {(liveDistanceM ?? 0) > 0 ? (
+                  <View style={{ backgroundColor: "#f0fdf4", borderRadius: 8, padding: spacing.sm, marginBottom: spacing.sm }}>
+                    <Text style={{ color: "#15803d", fontSize: 22, fontWeight: "900", textAlign: "center" }}>
+                      {((liveDistanceM ?? 0) / 1000).toFixed(2)} km
+                    </Text>
+                    <Text style={{ color: "#16a34a", fontSize: 11, fontWeight: "700", textAlign: "center", marginTop: 2 }}>
+                      Live GPS distance
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={styles.infoText}>
+                    GPS is tracking your position. Tap Stop to finalise the distance.
+                  </Text>
+                )}
                 <Field
                   keyboardType="decimal-pad"
-                  label="Final GPS distance (km)"
+                  label={(liveDistanceM ?? 0) > 0 ? "Adjust distance (km)" : "Final GPS distance (km)"}
                   onChangeText={setStopDistanceKm}
-                  placeholder="e.g. 12.40"
-                  value={stopDistanceKm}
+                  placeholder={
+                    (liveDistanceM ?? 0) > 0
+                      ? ((liveDistanceM ?? 0) / 1000).toFixed(2)
+                      : "e.g. 12.40"
+                  }
+                  value={stopDistanceKm || ((liveDistanceM ?? 0) > 0 ? ((liveDistanceM ?? 0) / 1000).toFixed(2) : "")}
                 />
                 <Pressable
                   accessibilityRole="button"
@@ -1319,6 +1974,73 @@ function VehicleSelector({
   );
 }
 
+// ── FavPickField ─────────────────────────────────────────────────────────────
+// Lightweight field for odometer/GPS origin-destination:
+// shows saved favorites as chips, plain text input underneath.
+function FavPickField({
+  label,
+  onChangeText,
+  placeholder,
+  value,
+}: {
+  label: string;
+  onChangeText: (v: string) => void;
+  placeholder?: string;
+  value: string;
+}) {
+  const [favorites, setFavorites] = useState<FavoriteLocation[]>([]);
+
+  useEffect(() => {
+    loadFavorites().then(setFavorites).catch(() => {});
+  }, []);
+
+  function handleRemove(id: string) {
+    removeFavorite(id).then(setFavorites).catch(() => {});
+  }
+
+  const [favOpen, setFavOpen] = useState(false);
+
+  return (
+    <View style={styles.favPickWrap}>
+      <View style={styles.routeAddressHeader}>
+        <Text style={styles.label}>{label}</Text>
+        {favorites.length > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setFavOpen((v) => !v)}
+            style={[styles.favDropButton, favOpen ? styles.favDropButtonActive : null]}
+          >
+            <Text style={styles.favDropButtonText}>⭐ Favs {favOpen ? "▲" : "▼"}</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      {favOpen && favorites.length > 0 ? (
+        <View style={styles.favDropPanel}>
+          {favorites.map((fav) => (
+            <Pressable
+              key={fav.id}
+              accessibilityRole="button"
+              onPress={() => { onChangeText(fav.shortName); setFavOpen(false); }}
+              onLongPress={() => handleRemove(fav.id)}
+              style={styles.favDropItem}
+            >
+              <Text style={styles.favDropItemText} numberOfLines={1}>⭐ {fav.shortName}</Text>
+              <Text style={styles.favDropItemSub} numberOfLines={1}>{fav.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      <TextInput
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor="#94a3b8"
+        style={styles.input}
+        value={value}
+      />
+    </View>
+  );
+}
+
 function RouteAddressField({
   isLoading,
   label,
@@ -1327,6 +2049,7 @@ function RouteAddressField({
   onSelect,
   onUseCurrent,
   pin,
+  selectedLatLng,
   value
 }: {
   isLoading: boolean;
@@ -1336,16 +2059,48 @@ function RouteAddressField({
   onSelect: (suggestion: GeocodeSuggestion) => void;
   onUseCurrent: () => void;
   pin: "green" | "red";
+  selectedLatLng: LatLng | null;
   value: string;
 }) {
   const [suggestions, setSuggestions] = useState<GeocodeSuggestion[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [favorites, setFavorites] = useState<FavoriteLocation[]>([]);
+  const [savedThisSession, setSavedThisSession] = useState(false);
+
+  // Load favorites on mount
+  useEffect(() => {
+    loadFavorites().then(setFavorites).catch(() => {});
+  }, []);
+
+  // Reset save flag when location changes
+  useEffect(() => {
+    setSavedThisSession(false);
+  }, [value]);
+
+  function handleSaveFavorite() {
+    if (!selectedLatLng || !value.trim()) return;
+    const short = value.split(",")[0].trim();
+    addFavorite({ shortName: short, label: value.trim(), latLng: selectedLatLng })
+      .then((updated) => {
+        setFavorites(updated);
+        setSavedThisSession(true);
+      })
+      .catch(() => {});
+  }
+
+  function handleRemoveFavorite(id: string) {
+    removeFavorite(id)
+      .then(setFavorites)
+      .catch(() => {});
+  }
 
   useEffect(() => {
     if (value.trim().length < 3) {
       setSuggestions([]);
       setIsOpen(false);
+      setSearchError(null);
       return;
     }
 
@@ -1357,12 +2112,14 @@ function RouteAddressField({
           if (!cancelled) {
             setSuggestions(results);
             setIsOpen(results.length > 0);
+            setSearchError(results.length === 0 ? "No results found. Try a different name." : null);
           }
         })
-        .catch(() => {
+        .catch((err: unknown) => {
           if (!cancelled) {
             setSuggestions([]);
             setIsOpen(false);
+            setSearchError(err instanceof Error ? err.message : "Search failed. Check your connection.");
           }
         })
         .finally(() => {
@@ -1378,32 +2135,62 @@ function RouteAddressField({
     };
   }, [value]);
 
+  const isFavAlready = selectedLatLng
+    ? favorites.some((f) => f.label === value.trim())
+    : false;
+
+  const [favOpen, setFavOpen] = useState(false);
+
   return (
     <View style={styles.routeAddressCard}>
       <View style={styles.routeAddressHeader}>
         <View style={styles.routeAddressTitle}>
-          <Text style={pin === "green" ? styles.originDot : styles.destDot}>
-            ●
-          </Text>
+          <Text style={pin === "green" ? styles.originDot : styles.destDot}>●</Text>
           <Text style={styles.label}>{label}</Text>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          onPress={onUseCurrent}
-          style={styles.currentLocationButton}
-        >
-          <Text style={styles.currentLocationButtonText}>
-            Use Current Position
-          </Text>
-        </Pressable>
+        <View style={styles.routeAddressActions}>
+          <Pressable accessibilityRole="button" onPress={onUseCurrent} style={styles.currentLocationButton}>
+            <Text style={styles.currentLocationButtonText}>Current</Text>
+          </Pressable>
+          {favorites.length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setFavOpen((v) => !v)}
+              style={[styles.favDropButton, favOpen ? styles.favDropButtonActive : null]}
+            >
+              <Text style={styles.favDropButtonText}>⭐ Favs {favOpen ? "▲" : "▼"}</Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
+
+      {/* Favorites dropdown */}
+      {favOpen && favorites.length > 0 ? (
+        <View style={styles.favDropPanel}>
+          {favorites.map((fav) => (
+            <Pressable
+              key={fav.id}
+              accessibilityRole="button"
+              onPress={() => {
+                onSelect({ id: fav.id, label: fav.label, latLng: fav.latLng });
+                setFavOpen(false);
+              }}
+              onLongPress={() => handleRemoveFavorite(fav.id)}
+              style={styles.favDropItem}
+            >
+              <Text style={styles.favDropItemText} numberOfLines={1}>⭐ {fav.shortName}</Text>
+              <Text style={styles.favDropItemSub} numberOfLines={1}>{fav.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
 
       <View style={styles.routeInputShell}>
         <TextInput
           onChangeText={onChangeText}
           onFocus={() => setIsOpen(suggestions.length > 0)}
           onSubmitEditing={onFind}
-          placeholder="Search or tap map..."
+          placeholder="Search a place..."
           placeholderTextColor="#94a3b8"
           returnKeyType="search"
           style={styles.routeInput}
@@ -1411,13 +2198,23 @@ function RouteAddressField({
         />
         {isSearching || isLoading ? (
           <Text style={styles.routeInputSpinner}>...</Text>
+        ) : selectedLatLng && value.trim() && !isFavAlready && !savedThisSession ? (
+          <Pressable accessibilityRole="button" onPress={handleSaveFavorite} style={styles.saveLocButton}>
+            <Text style={styles.saveLocButtonText}>⭐ Save</Text>
+          </Pressable>
+        ) : selectedLatLng && (isFavAlready || savedThisSession) ? (
+          <Text style={styles.savedLocText}>⭐</Text>
         ) : null}
       </View>
+
+      {!isOpen && searchError && value.trim().length >= 3 && !isSearching ? (
+        <Text style={styles.searchErrorText}>{searchError}</Text>
+      ) : null}
 
       {isOpen ? (
         <View style={styles.suggestionPanel}>
           <Text style={styles.suggestionPanelTitle}>Search results</Text>
-          {suggestions.slice(0, 4).map((suggestion) => (
+          {suggestions.slice(0, 5).map((suggestion) => (
             <Pressable
               accessibilityRole="button"
               key={suggestion.id}
@@ -1428,12 +2225,8 @@ function RouteAddressField({
               }}
               style={styles.suggestionItem}
             >
-              <Text style={styles.suggestionMain}>
-                {shortLocationName(suggestion.label)}
-              </Text>
-              <Text numberOfLines={2} style={styles.suggestionSub}>
-                {suggestion.label}
-              </Text>
+              <Text style={styles.suggestionMain}>{shortLocationName(suggestion.label)}</Text>
+              <Text numberOfLines={2} style={styles.suggestionSub}>{suggestion.label}</Text>
             </Pressable>
           ))}
         </View>
@@ -1522,65 +2315,63 @@ function EvidenceCapture({
 }) {
   return (
     <View style={styles.evidenceBlock}>
-      <Text style={styles.evidenceTitle}>Camera {label}</Text>
-      <EvidenceChoice
-        icon="Camera"
-        label="Take Photo"
-        onPress={() =>
-          void openEvidencePicker(label, "camera").then((uri) => {
-            if (uri) {
-              onChange(uri);
-            }
-          })
-        }
-        selected={value?.includes("camera")}
-        sub="Camera · auto edge detect · perspective fix"
-      />
-      <EvidenceChoice
-        icon={label.startsWith("Start") ? "Start" : "End"}
-        label={label.startsWith("Start") ? "Start" : "End"}
-        onPress={() =>
-          void openEvidencePicker(label, "gallery").then((uri) => {
-            if (uri) {
-              onChange(uri);
-            }
-          })
-        }
-        selected={value?.includes("gallery")}
-        sub="JPEG · PNG · WebP · Max 5 MB"
-      />
-      {value ? (
-        <View style={styles.evidencePreview}>
-          <Text style={styles.evidencePreviewText}>
-            {value.startsWith("blob:") || value.startsWith("local://")
-              ? "Evidence photo attached - pending sync"
-              : value}
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => onChange("")}
-            style={styles.evidenceRemoveButton}
-          >
-            <Text style={styles.evidenceRemoveText}>Remove</Text>
-          </Pressable>
-        </View>
-      ) : null}
+      <Text style={styles.evidenceTitle}>{label}</Text>
+      <View style={styles.evidenceCapture}>
+        <EvidenceChoice
+          icon="📷"
+          title="Scan Document"
+          sub="Camera · auto edge detect · perspective fix"
+          selected={value?.includes("camera")}
+          onPress={() =>
+            void openEvidencePicker(label, "camera").then((uri) => {
+              if (uri) onChange(uri);
+            })
+          }
+        />
+        <EvidenceChoice
+          icon="📎"
+          title="Attach from Gallery"
+          sub="JPEG · PNG · WebP · Max 5 MB"
+          selected={value?.includes("gallery")}
+          onPress={() =>
+            void openEvidencePicker(label, "gallery").then((uri) => {
+              if (uri) onChange(uri);
+            })
+          }
+        />
+        {value ? (
+          <View style={styles.evidencePreview}>
+            <Text style={styles.evidencePreviewText}>
+              {value.startsWith("blob:") || value.startsWith("local://")
+                ? "Photo attached · pending sync"
+                : value}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onChange("")}
+              style={styles.evidenceRemoveButton}
+            >
+              <Text style={styles.evidenceRemoveText}>Remove</Text>
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }
 
 function EvidenceChoice({
   icon,
-  label,
   onPress,
   selected,
-  sub
+  sub,
+  title
 }: {
   icon: string;
-  label: string;
   onPress: () => void;
   selected?: boolean;
   sub: string;
+  title: string;
 }) {
   return (
     <Pressable
@@ -1590,7 +2381,7 @@ function EvidenceChoice({
     >
       <Text style={styles.evidenceChoiceIcon}>{icon}</Text>
       <View style={styles.evidenceChoiceBody}>
-        <Text style={styles.evidenceChoiceTitle}>{label}</Text>
+        <Text style={styles.evidenceChoiceTitle}>{title}</Text>
         <Text style={styles.evidenceChoiceSub}>{sub}</Text>
       </View>
       <Text style={styles.evidenceChoiceArrow}>›</Text>
@@ -1781,38 +2572,54 @@ async function geocodeAddress(query: string) {
 }
 
 async function searchGeocodeSuggestions(query: string) {
+  // On React Native, User-Agent is settable in fetch (unlike browsers).
+  // We call Nominatim directly — no proxy needed on native.
+  // On web, the proxy is used to avoid CORS.
+  const isNative = Platform.OS !== "web";
+  const baseUrl = getSyncBaseUrl();
+
+  if (!isNative && baseUrl) {
+    // Web: use the server-side proxy which sets User-Agent for us
+    const url = `${baseUrl}/api/geocode?q=${encodeURIComponent(query)}`;
+    const response = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error(`Location search failed (${response.status})`);
+    const { results } = (await response.json()) as {
+      results: Array<{ place_id: number; display_name: string; lat: number; lon: number }>;
+    };
+    return results.map((r, i): GeocodeSuggestion => ({
+      id: String(r.place_id ?? i),
+      label: r.display_name,
+      latLng: [r.lat, r.lon] as LatLng,
+    }));
+  }
+
+  // Native (Android/iOS): call Nominatim directly with proper User-Agent
   const params = new URLSearchParams({
+    q: query,
+    format: "json",
+    limit: "6",
     countrycodes: "my",
-    format: "jsonv2",
-    limit: "5",
-    q: query
+    addressdetails: "0",
   });
   const response = await fetch(
     `https://nominatim.openstreetmap.org/search?${params.toString()}`,
     {
       headers: {
-        Accept: "application/json"
-      }
+        "User-Agent": "myexpensio/1.0 (mileage-claim-saas; effort.myexpensio@gmail.com)",
+        "Accept": "application/json",
+      },
     }
   );
-
-  if (!response.ok) {
-    throw new Error("Location search failed. Please try a more specific place.");
-  }
-
-  const results = (await response.json()) as Array<{
-    display_name?: string;
-    place_id?: number;
-    lat?: string;
-    lon?: string;
+  if (!response.ok) throw new Error(`Geocode error ${response.status}`);
+  const raw = (await response.json()) as Array<{
+    display_name?: string; place_id?: number; lat?: string; lon?: string;
   }>;
-
-  return results
-    .filter((result) => result.lat && result.lon)
-    .map((result, index): GeocodeSuggestion => ({
-      id: String(result.place_id ?? `${result.lat}-${result.lon}-${index}`),
-      label: result.display_name ?? query,
-      latLng: [Number(result.lat), Number(result.lon)] as LatLng
+  return raw
+    .filter((r) => r.lat && r.lon)
+    .map((r, i): GeocodeSuggestion => ({
+      id: String(r.place_id ?? i),
+      label: r.display_name ?? query,
+      latLng: [Number(r.lat), Number(r.lon)] as LatLng,
     }));
 }
 
@@ -1861,7 +2668,36 @@ async function fetchRouteAlternatives(origin: LatLng, destination: LatLng) {
   });
 }
 
-function getCurrentLatLng() {
+/** Haversine distance in metres between two lat/lng points */
+function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6_371_000; // Earth radius in metres
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+async function getCurrentLatLng(): Promise<LatLng> {
+  // ── Native: use expo-location ─────────────────────────────────────────────
+  if (Platform.OS !== "web") {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== "granted") {
+      throw new Error(
+        "Location permission was denied. Grant location access in Settings."
+      );
+    }
+    const loc = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+    });
+    return [loc.coords.latitude, loc.coords.longitude];
+  }
+
+  // ── Web: navigator.geolocation ────────────────────────────────────────────
   return new Promise<LatLng>((resolve, reject) => {
     if (!navigator.geolocation) {
       reject(
@@ -1900,6 +2736,39 @@ function shortLocationName(label: string) {
   return label.split(",").slice(0, 2).join(",").trim();
 }
 
+async function reverseGeocode(latLng: LatLng): Promise<string> {
+  const isNative = Platform.OS !== "web";
+  const baseUrl = getSyncBaseUrl();
+
+  if (!isNative && baseUrl) {
+    const url = `${baseUrl}/api/geocode/reverse?lat=${latLng[0]}&lon=${latLng[1]}`;
+    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!res.ok) throw new Error("Reverse geocode failed");
+    const data = (await res.json()) as { display_name?: string };
+    return data.display_name ?? `${latLng[0].toFixed(5)}, ${latLng[1].toFixed(5)}`;
+  }
+
+  const params = new URLSearchParams({
+    lat: String(latLng[0]),
+    lon: String(latLng[1]),
+    format: "json",
+    zoom: "17",
+    addressdetails: "0",
+  });
+  const res = await fetch(
+    `https://nominatim.openstreetmap.org/reverse?${params.toString()}`,
+    {
+      headers: {
+        "User-Agent": "myexpensio/1.0 (mileage-claim-saas; effort.myexpensio@gmail.com)",
+        "Accept": "application/json",
+      },
+    }
+  );
+  if (!res.ok) throw new Error("Reverse geocode failed");
+  const data = (await res.json()) as { display_name?: string };
+  return data.display_name ?? `${latLng[0].toFixed(5)}, ${latLng[1].toFixed(5)}`;
+}
+
 function confirmTripDelete(onConfirm: () => void) {
   if (Platform.OS === "web") {
     if (window.confirm("Delete this trip?")) {
@@ -1919,7 +2788,58 @@ async function openEvidencePicker(
   source: "camera" | "gallery"
 ): Promise<string | null> {
   if (Platform.OS !== "web") {
-    return `local://${source}/odometer/${label.toLowerCase().replace(/\s+/g, "-")}/${Date.now()}.jpg`;
+    // ── Native: real camera / gallery via expo-image-picker ──────────────
+    const options: ImagePicker.ImagePickerOptions = {
+      mediaTypes: ["images"],
+      quality: 0.82,
+      allowsEditing: false,
+      base64: false,
+      exif: false,
+    };
+
+    let result: ImagePicker.ImagePickerResult;
+
+    if (source === "camera") {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Camera permission required",
+          "Please allow camera access in Settings to snap odometer readings."
+        );
+        return null;
+      }
+      result = await ImagePicker.launchCameraAsync(options);
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Photo library permission required",
+          "Please allow photo access in Settings to attach odometer images."
+        );
+        return null;
+      }
+      result = await ImagePicker.launchImageLibraryAsync(options);
+    }
+
+    if (result.canceled || result.assets.length === 0) return null;
+
+    const asset = result.assets[0];
+    const mimeType = asset.mimeType ?? "image/jpeg";
+    const ext = mimeType === "image/png" ? "png" : "jpg";
+    const filename = `odometer-${label.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}.${ext}`;
+
+    try {
+      const dir = `${FileSystem.documentDirectory}odometer/`;
+      const dirInfo = await FileSystem.getInfoAsync(dir);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+      }
+      const destUri = `${dir}${filename}`;
+      await FileSystem.copyAsync({ from: asset.uri, to: destUri });
+      return destUri;
+    } catch {
+      return asset.uri; // fallback to temp URI
+    }
   }
 
   const documentRef = (globalThis as typeof globalThis & {
@@ -1966,7 +2886,9 @@ async function openEvidencePicker(
 
 const styles = StyleSheet.create({
   page: {
-    gap: spacing.md
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md
   },
   header: {
     alignItems: "baseline",
@@ -2011,8 +2933,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "900"
   },
-  actionStack: {
-    alignItems: "stretch",
+  actionGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm
   },
   listToolbar: {
@@ -2049,11 +2972,13 @@ const styles = StyleSheet.create({
   },
   tripAction: {
     alignItems: "center",
-    borderRadius: 24,
+    borderRadius: 14,
+    flexBasis: "48%",
     flexDirection: "row",
+    flexGrow: 1,
     gap: spacing.sm,
     minHeight: 48,
-    paddingHorizontal: spacing.lg
+    paddingHorizontal: spacing.md
   },
   tripAction_dark: {
     backgroundColor: "rgba(15,23,42,0.88)"
@@ -2063,6 +2988,9 @@ const styles = StyleSheet.create({
   },
   tripAction_blue: {
     backgroundColor: "rgba(37,99,235,0.82)"
+  },
+  tripAction_star: {
+    backgroundColor: "rgba(161,124,0,0.82)"
   },
   tripActionIcon: {
     color: colors.surface,
@@ -2106,6 +3034,10 @@ const styles = StyleSheet.create({
   },
   list: {
     gap: spacing.sm
+  },
+  listContent: {
+    gap: spacing.sm,
+    paddingBottom: 90
   },
   filterPanel: {
     backgroundColor: "rgba(248, 250, 252, 0.86)",
@@ -2234,6 +3166,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 16,
     borderWidth: 1,
+    flex: 1,
     maxHeight: "92%",
     maxWidth: 520,
     overflow: "hidden",
@@ -2288,9 +3221,29 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "900"
   },
+  closeButton: {
+    alignItems: "center",
+    backgroundColor: "#f1f5f9",
+    borderRadius: 20,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  closeButtonText: {
+    color: "#475569",
+    fontSize: 16,
+    fontWeight: "900",
+    lineHeight: 18,
+  },
+  favPickWrap: {
+    gap: 6,
+  },
   modalBody: {
     gap: spacing.md,
     padding: spacing.lg
+  },
+  modalScroll: {
+    flex: 1
   },
   optionSheet: {
     backgroundColor: colors.surface,
@@ -2421,6 +3374,80 @@ const styles = StyleSheet.create({
     color: "#94a3b8",
     fontSize: typography.caption,
     fontWeight: "900"
+  },
+  saveLocButton: {
+    backgroundColor: "#fefce8",
+    borderColor: "#fde047",
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  saveLocButtonText: {
+    color: "#854d0e",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  savedLocText: {
+    fontSize: 16,
+    paddingHorizontal: 4,
+  },
+  routeAddressActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+  favDropButton: {
+    backgroundColor: "#fefce8",
+    borderColor: "#fde047",
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  favDropButtonActive: {
+    backgroundColor: "#fde047",
+  },
+  favDropButtonText: {
+    color: "#854d0e",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  favDropPanel: {
+    backgroundColor: colors.surface,
+    borderColor: "#fde047",
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 4,
+    overflow: "hidden",
+  },
+  favDropItem: {
+    borderBottomColor: "#fef9c3",
+    borderBottomWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+  },
+  favDropItemText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  favDropItemSub: {
+    color: colors.muted,
+    fontSize: 11,
+    marginTop: 1,
+  },
+  favRow: { marginBottom: 0 },
+  favRowContent: { gap: 0 },
+  favChip: { display: "none" },
+  favChipStar: { display: "none" },
+  favChipText: { display: "none" },
+  searchErrorText: {
+    color: "#dc2626",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 4,
+    paddingHorizontal: 2,
   },
   suggestionPanel: {
     backgroundColor: colors.surface,
@@ -2675,15 +3702,18 @@ const styles = StyleSheet.create({
     fontSize: typography.caption,
     fontWeight: "900"
   },
+  evidenceCapture: {
+    gap: spacing.sm
+  },
   evidenceChoice: {
     alignItems: "center",
-    backgroundColor: colors.surface,
+    backgroundColor: "#f8fafc",
     borderColor: colors.border,
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 1,
     flexDirection: "row",
     gap: spacing.md,
-    minHeight: 62,
+    minHeight: 58,
     paddingHorizontal: spacing.md
   },
   evidenceSelected: {
@@ -2691,39 +3721,39 @@ const styles = StyleSheet.create({
     borderColor: "#22c55e"
   },
   evidenceChoiceIcon: {
-    color: "#0f172a",
-    fontSize: typography.caption,
-    fontWeight: "900",
-    width: 54
+    fontSize: 22,
+    lineHeight: 26,
+    textAlign: "center",
+    width: 34
   },
   evidenceChoiceBody: {
-    flex: 1,
-    gap: 2
+    flex: 1
   },
   evidenceChoiceTitle: {
     color: colors.text,
-    fontSize: typography.body,
+    fontSize: typography.caption,
     fontWeight: "900"
   },
   evidenceChoiceSub: {
     color: colors.muted,
-    fontSize: typography.caption,
-    fontWeight: "700"
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 2
   },
   evidenceChoiceArrow: {
     color: "#94a3b8",
-    fontSize: 18,
-    fontWeight: "900"
+    fontSize: 22,
+    fontWeight: "800"
   },
   evidencePreview: {
     alignItems: "center",
     backgroundColor: "#f0fdf4",
     borderColor: "#bbf7d0",
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 1,
     flexDirection: "row",
     gap: spacing.sm,
-    padding: spacing.md
+    padding: spacing.sm
   },
   evidencePreviewText: {
     color: "#15803d",
@@ -2888,5 +3918,283 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.45
+  },
+  // ── Odometer accordion ───────────────────────────────────────────────────
+  odoFlow: {
+    gap: spacing.sm
+  },
+  odoStep: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: "hidden"
+  },
+  odoStepDone: {
+    borderColor: "#22c55e",
+    backgroundColor: "#f0fdf4"
+  },
+  odoStepHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 56,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  odoStepBadge: {
+    alignItems: "center",
+    backgroundColor: "#e2e8f0",
+    borderRadius: 999,
+    height: 24,
+    justifyContent: "center",
+    width: 24
+  },
+  odoStepBadgeText: {
+    color: "#475569",
+    fontSize: 11,
+    fontWeight: "900"
+  },
+  odoStepTitleWrap: {
+    flex: 1,
+    gap: 2
+  },
+  odoStepTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6
+  },
+  odoStepIcon: {
+    fontSize: 14
+  },
+  odoStepTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  odoStepCheck: {
+    color: "#16a34a",
+    fontSize: 14,
+    fontWeight: "900"
+  },
+  odoStepSubtitle: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "700"
+  },
+  odoStepChevron: {
+    color: "#94a3b8",
+    fontSize: 14,
+    fontWeight: "900"
+  },
+  odoStepBody: {
+    borderTopColor: "#f1f5f9",
+    borderTopWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md
+  },
+  odoStepDoneBtn: {
+    alignItems: "center",
+    backgroundColor: "#0f172a",
+    borderRadius: 8,
+    justifyContent: "center",
+    minHeight: 40
+  },
+  odoStepDoneBtnText: {
+    color: colors.surface,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  odoSummary: {
+    alignItems: "center",
+    backgroundColor: "#f0fdf4",
+    borderColor: "#22c55e",
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 2,
+    padding: spacing.md
+  },
+  odoSummaryLabel: {
+    color: "#15803d",
+    fontSize: typography.caption,
+    fontWeight: "900",
+    textTransform: "uppercase"
+  },
+  odoSummaryValue: {
+    color: "#15803d",
+    fontSize: 26,
+    fontWeight: "900"
+  },
+  odoSummaryMath: {
+    color: "#16a34a",
+    fontSize: 11,
+    fontWeight: "700"
+  },
+  // ── Fav Locations Manager ────────────────────────────────────────────────
+  favMgrEmpty: {
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.lg
+  },
+  favMgrEmptyIcon: {
+    fontSize: 34
+  },
+  favMgrEmptyTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  favMgrEmptyText: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    lineHeight: 18,
+    maxWidth: 260,
+    textAlign: "center"
+  },
+  favMgrRow: {
+    borderBottomColor: "#f1f5f9",
+    borderBottomWidth: 1
+  },
+  favMgrItem: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm
+  },
+  favMgrItemBody: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0
+  },
+  favMgrItemName: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "800"
+  },
+  favMgrItemLabel: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  favMgrItemActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+    flexShrink: 0
+  },
+  favMgrEditBtn: {
+    alignItems: "center",
+    backgroundColor: "#f1f5f9",
+    borderRadius: 8,
+    height: 36,
+    justifyContent: "center",
+    width: 36
+  },
+  favMgrEditBtnText: {
+    fontSize: 16
+  },
+  favMgrDeleteBtn: {
+    alignItems: "center",
+    backgroundColor: "#fff1f2",
+    borderRadius: 8,
+    height: 36,
+    justifyContent: "center",
+    width: 36
+  },
+  favMgrDeleteBtnText: {
+    fontSize: 16
+  },
+  favMgrEditWrap: {
+    gap: spacing.sm,
+    paddingVertical: spacing.sm
+  },
+  favMgrEditInput: {
+    backgroundColor: colors.surface,
+    borderColor: "#2563eb",
+    borderRadius: 8,
+    borderWidth: 1.5,
+    color: colors.text,
+    fontSize: typography.body,
+    minHeight: 44,
+    paddingHorizontal: spacing.md
+  },
+  favMgrEditSub: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700",
+    paddingHorizontal: 2
+  },
+  favMgrEditActions: {
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  favMgrCancelBtn: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 40
+  },
+  favMgrCancelText: {
+    color: "#475569",
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  favMgrSaveBtn: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 40
+  },
+  favMgrSaveText: {
+    color: colors.onPrimary,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  favMgrAddCard: {
+    backgroundColor: "#f8fafc",
+    borderColor: colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: spacing.md,
+    marginTop: spacing.sm,
+    padding: spacing.md
+  },
+  favMgrAddTitle: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  favMgrMapSearchWrap: {
+    backgroundColor: "#f0f9ff",
+    borderColor: "#bae6fd",
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.sm
+  },
+  favMgrMapSearchLabel: {
+    color: "#0369a1",
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  favMgrMapWrap: {
+    gap: 6
+  },
+  favMgrMapHint: {
+    color: "#0369a1",
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  favMgrMapCoords: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "700",
+    textAlign: "right"
   }
 });

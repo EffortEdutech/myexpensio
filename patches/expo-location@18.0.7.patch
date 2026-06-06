@@ -1,0 +1,40 @@
+diff --git a/android/src/main/java/expo/modules/location/LocationHelpers.kt b/android/src/main/java/expo/modules/location/LocationHelpers.kt
+--- a/android/src/main/java/expo/modules/location/LocationHelpers.kt
++++ b/android/src/main/java/expo/modules/location/LocationHelpers.kt
+@@ -188,7 +188,7 @@
+             override fun resolve(value: Any?) {
+               continuation.resume(value as? Bundle ?: Bundle())
+             }
+-            override fun reject(code: String, message: String?, cause: Throwable?) {
++            override fun reject(code: String?, message: String?, cause: Throwable?) {
+               continuation.resumeWithException(CodedException(code, message, cause))
+             }
+           },
+@@ -210,7 +210,7 @@
+             override fun resolve(value: Any?) {
+               it.resume(value as? Bundle ?: Bundle())
+             }
+-            override fun reject(code: String, message: String?, cause: Throwable?) {
++            override fun reject(code: String?, message: String?, cause: Throwable?) {
+               it.resumeWithException(CodedException(code, message, cause))
+             }
+           },
+diff --git a/android/src/main/java/expo/modules/location/taskConsumers/LocationTaskConsumer.kt b/android/src/main/java/expo/modules/location/taskConsumers/LocationTaskConsumer.kt
+--- a/android/src/main/java/expo/modules/location/taskConsumers/LocationTaskConsumer.kt
++++ b/android/src/main/java/expo/modules/location/taskConsumers/LocationTaskConsumer.kt
+@@ -17,7 +17,6 @@
+ import com.google.android.gms.location.LocationResult
+ import com.google.android.gms.location.LocationServices
+-import expo.modules.core.MapHelper
+ import expo.modules.core.arguments.MapArguments
+ import expo.modules.core.arguments.ReadableArguments
+@@ -278,7 +278,7 @@
+     val oldestLocation = mLastReportedLocation ?: mDeferredLocations[0]
+     val newestLocation = mDeferredLocations[mDeferredLocations.size - 1]
+-    val options: Arguments = MapArguments(task.options)
+-    val distance = options.getDouble("deferredUpdatesDistance")
+-    val interval = options.getLong("deferredUpdatesInterval")
++    val taskOpts = task.options
++    val distance = (taskOpts["deferredUpdatesDistance"] as? Number)?.toDouble() ?: 0.0
++    val interval = (taskOpts["deferredUpdatesInterval"] as? Number)?.toLong() ?: 0L
+     val distance = options.getDouble("deferredUpdatesDistance")

@@ -1,52 +1,71 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 
+import { ErrorState } from "@/components/ErrorState";
+import { SkeletonList } from "@/components/SkeletonRow";
 import type { ClaimDraft } from "@/features/claims/types";
 import { colors, spacing, typography } from "@/theme/tokens";
 
 type ClaimDraftListProps = {
   claims: ClaimDraft[];
+  isError?: boolean;
   isLoading: boolean;
   onOpen?: (claim: ClaimDraft) => void;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 };
 
 export function ClaimDraftList({
   claims,
+  isError = false,
   isLoading,
-  onOpen
+  onOpen,
+  onRefresh,
+  isRefreshing = false,
 }: ClaimDraftListProps) {
-  if (isLoading) {
-    return (
-      <View style={styles.emptyState}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
+  if (isLoading && claims.length === 0) {
+    return <SkeletonList count={5} />;
   }
 
-  if (claims.length === 0) {
+  if (isError && claims.length === 0) {
     return (
-      <View style={styles.emptyState}>
-        <Text style={styles.emptyTitle}>No claims yet</Text>
-        <Text style={styles.emptyCopy}>
-          Create a claim to group your trips and expenses for submission.
-        </Text>
-      </View>
+      <ErrorState
+        message="Couldn't load claims"
+        onRetry={onRefresh}
+      />
     );
   }
 
   return (
-    <View style={styles.list}>
-      {claims.map((claim) => {
+    <FlatList
+      data={claims}
+      keyExtractor={(item) => item.id}
+      style={styles.list}
+      contentContainerStyle={styles.listContent}
+      onRefresh={onRefresh}
+      refreshing={isRefreshing}
+      initialNumToRender={12}
+      maxToRenderPerBatch={10}
+      windowSize={5}
+      removeClippedSubviews
+      ListEmptyComponent={
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyTitle}>No claims yet</Text>
+          <Text style={styles.emptyCopy}>
+            Create a claim to group your trips and expenses for submission.
+          </Text>
+        </View>
+      }
+      renderItem={({ item: claim }) => {
         const isDraft = claim.status === "draft";
         const dateLabel = formatClaimPeriod(claim);
-
         return (
           <Pressable
+            accessibilityLabel={`${claim.title ?? dateLabel}, ${isDraft ? "Draft" : "Submitted"}, ${formatMoney(claim)}`}
             accessibilityRole="button"
-            key={claim.id}
             onPress={() => onOpen?.(claim)}
             style={({ pressed }) => [
               styles.card,
-              pressed ? styles.cardPressed : null
+              pressed ? styles.cardPressed : null,
             ]}
           >
             <View style={styles.dateCol}>
@@ -54,20 +73,19 @@ export function ClaimDraftList({
               <View
                 style={[
                   styles.statusBadge,
-                  isDraft ? styles.statusBadgeDraft : styles.statusBadgeSubmitted
+                  isDraft ? styles.statusBadgeDraft : styles.statusBadgeSubmitted,
                 ]}
               >
                 <Text
                   style={[
                     styles.statusText,
-                    isDraft ? styles.statusTextDraft : styles.statusTextSubmitted
+                    isDraft ? styles.statusTextDraft : styles.statusTextSubmitted,
                   ]}
                 >
                   {isDraft ? "Draft" : "Submitted"}
                 </Text>
               </View>
             </View>
-
             <View style={styles.descCol}>
               <Text numberOfLines={1} style={styles.title}>
                 {claim.title ?? dateLabel}
@@ -78,15 +96,14 @@ export function ClaimDraftList({
                   : `submitted ${formatDate(claim.submittedAt)}`}
               </Text>
             </View>
-
             <View style={styles.amountCol}>
               <Text style={styles.amount}>{formatMoney(claim)}</Text>
               <Text style={styles.arrow}>{">"}</Text>
             </View>
           </Pressable>
         );
-      })}
-    </View>
+      }}
+    />
   );
 }
 
@@ -161,11 +178,15 @@ function formatRelative(value: string) {
 }
 
 const styles = StyleSheet.create({
+  listContent: {
+    paddingBottom: 90
+  },
   list: {
     backgroundColor: colors.border,
     borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
+    flex: 1,
     overflow: "hidden"
   },
   card: {

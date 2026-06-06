@@ -28,7 +28,7 @@ const CATALOGUE: Record<
       name:        'Pro — Monthly',
       tier:        'PRO',
       interval:    'month',
-      description: 'Unlimited route calculations, all features included.',
+      description: 'Claims export and paid-plan features included.',
     },
     price: (provider) => {
       if (provider !== 'STRIPE') return null

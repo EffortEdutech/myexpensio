@@ -441,6 +441,12 @@ export default function SettingsPage() {
                 Version {process.env.NEXT_PUBLIC_APP_VERSION ?? '—'} (Official Build) (64-bit)
               </div>
               <div style={S.aboutDivider} />
+              <div style={S.legalRow}>
+                <Link href="/terms" style={S.legalLink}>Terms of Service</Link>
+                <span style={S.legalDot}>·</span>
+                <Link href="/privacy" style={S.legalLink}>Privacy Policy</Link>
+              </div>
+              <div style={S.aboutDivider} />
               <div style={S.aboutCopy}>Copyright © EffortEdutech 2026. All rights reserved.</div>
               <div style={S.aboutPowered}>Built with ❤️ by EffortEdutech</div>
             </div>
@@ -644,6 +650,9 @@ const S: Record<string, CSSProperties> = {
   aboutAppName: { fontSize: 15, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.01em' },
   aboutVersion: { fontSize: 12, color: '#475569', marginTop: 1 },
   aboutDivider: { height: 1, backgroundColor: '#f1f5f9', margin: '8px 0' },
+  legalRow: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  legalLink: { fontSize: 12, color: '#2563eb', fontWeight: 700, textDecoration: 'none' },
+  legalDot: { fontSize: 12, color: '#cbd5e1' },
   aboutCopy: { fontSize: 11, color: '#94a3b8' },
   aboutPowered: { fontSize: 11, color: '#cbd5e1' },
 }

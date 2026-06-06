@@ -3,6 +3,7 @@
 import { claimQueryKeys } from "@/features/claims/hooks/useClaimDrafts";
 import type {
   ClaimDraft,
+  ClaimItemDraft,
   CreateClaimItemDraftInput,
   UpdateClaimDraftInput,
   UpdateClaimItemDraftInput
@@ -243,11 +244,28 @@ export function useLinkTngTransactionToClaimItem() {
 export function useUnlinkTngTransactionFromClaimItem() {
   const deviceId = useDeviceStore((state) => state.deviceId);
   const invalidate = useInvalidateClaimData();
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (input: { claimId: string; itemId: string }) =>
       unlinkTngTransactionFromClaimItem(input.itemId, deviceId),
-    onSuccess: (_item, input) => invalidate(input.claimId)
+    // Optimistically clear tngTransactionId so the button flips immediately
+    onMutate: (input) => {
+      queryClient.setQueryData<ClaimItemDraft[]>(
+        claimQueryKeys.items(input.claimId),
+        (old) =>
+          old?.map((item) =>
+            item.id === input.itemId
+              ? { ...item, tngTransactionId: null, linkStatus: "unlinked" as const }
+              : item
+          )
+      );
+    },
+    onSuccess: (_item, input) => invalidate(input.claimId),
+    onError: (_err, input) => {
+      // Rollback on failure by re-invalidating
+      invalidate(input.claimId);
+    }
   });
 }
 

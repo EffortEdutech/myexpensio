@@ -61,8 +61,17 @@ export type ExportPreviewPayload = {
   rows: ExportPreviewRow[];
 };
 
+export type TngAppendixItem = {
+  transNo: string;
+  amountCents: number;
+};
+
 export type TngAppendixPreview = {
   hasSourcePdf: boolean;
+  /** {transNo, amountCents} pairs — used by the scan service for PDF highlighting */
+  items: TngAppendixItem[];
+  /** Local file URI of the TNG statement PDF, e.g. local://tng/statement.pdf */
+  sourceFileUri: string | null;
   statementLabel: string;
   totalAmountCents: number;
   transactionCount: number;

@@ -76,9 +76,13 @@ export function useCreateBlankClaimDraft() {
   return useMutation({
     mutationFn: async (input?: CreateClaimDraftInput) => {
       const today = new Date().toISOString().slice(0, 10);
+      const defaultTitle = new Date().toLocaleDateString("en-MY", {
+        month: "long",
+        year: "numeric"
+      });
       const claim = await createClaimDraft(
         {
-          title: input?.title ?? null,
+          title: input?.title ?? defaultTitle,
           periodStart: input?.periodStart ?? today,
           periodEnd: input?.periodEnd ?? today,
           currency: "MYR"
@@ -105,4 +109,3 @@ export function useCreateBlankClaimDraft() {
     }
   });
 }
-

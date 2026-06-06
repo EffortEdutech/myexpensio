@@ -46,7 +46,7 @@ const PRO_ENTITLEMENTS: EntitlementsShape = {
 }
 
 const FALLBACK_FREE_ENTITLEMENTS: EntitlementsShape = {
-  routeCalculationsPerMonth: 2,
+  routeCalculationsPerMonth: null,
   tripsPerMonth: null,
   exportsPerMonth: 0,
 }
@@ -115,15 +115,12 @@ export async function GET() {
   if (isUnlimited) {
     entitlements = PRO_ENTITLEMENTS
   } else {
-    // FREE tier: use platform_config limits (admin-editable), fall back to hardcoded
+    // FREE tier: route calculations and trips are no longer limited.
+    // Exports remain the paid-plan gate.
     const pc = platformRes.data
     entitlements = {
-      routeCalculationsPerMonth: pc?.free_routes_per_month !== undefined
-        ? pc.free_routes_per_month
-        : FALLBACK_FREE_ENTITLEMENTS.routeCalculationsPerMonth,
-      tripsPerMonth: pc?.free_trips_per_month !== undefined
-        ? pc.free_trips_per_month
-        : FALLBACK_FREE_ENTITLEMENTS.tripsPerMonth,
+      routeCalculationsPerMonth: FALLBACK_FREE_ENTITLEMENTS.routeCalculationsPerMonth,
+      tripsPerMonth: FALLBACK_FREE_ENTITLEMENTS.tripsPerMonth,
       exportsPerMonth: pc?.free_exports_per_month != null
         ? pc.free_exports_per_month
         : FALLBACK_FREE_ENTITLEMENTS.exportsPerMonth,
