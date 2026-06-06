@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createClientForRequest } from '@/lib/supabase/api-client'
 import { buildExport } from '@/lib/export-builder'
 import { buildPdfData, generatePDF, DEFAULT_PDF_LAYOUT } from '@/lib/pdf-builder'
-import type { PdfData, PdfClaim, PdfItem } from '@/lib/pdf-builder'
+import type { PdfData, PdfClaim, PdfItem, PdfLayoutConfig } from '@/lib/pdf-builder'
 import { PRESET_COLUMNS, resolveColumns, type ExportColumnKey } from '@/lib/export-columns'
 import type { ClaimForExport, ItemForExport, TripForExport } from '@/lib/export-builder'
 import {
@@ -92,25 +92,6 @@ function mobilePeriodLabel(start: string | null | undefined, end: string | null 
   return `${s.toLocaleDateString('en-MY', { month: 'short' })} – ${e.toLocaleDateString('en-MY', { month: 'short', year: 'numeric' })}`
 }
 
-type PdfLayoutConfig = {
-  orientation: 'portrait' | 'landscape'
-  grouping: 'BY_DATE' | 'BY_CATEGORY'
-  show_summary_table: boolean
-  show_receipt_appendix: boolean
-  show_tng_appendix: boolean
-  show_declaration: boolean
-  accent_color: string
-}
-
-const DEFAULT_PDF_LAYOUT: PdfLayoutConfig = {
-  orientation: 'portrait',
-  grouping: 'BY_DATE',
-  show_summary_table: true,
-  show_receipt_appendix: true,
-  show_tng_appendix: true,
-  show_declaration: true,
-  accent_color: '#0f172a',
-}
 
 function err(code: string, message: string, status: number, details?: object) {
   return NextResponse.json({ error: { code, message, ...(details ? { details } : {}) } }, { status })
