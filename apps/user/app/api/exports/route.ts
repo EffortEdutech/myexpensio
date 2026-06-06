@@ -3,6 +3,8 @@ import { createClientForRequest } from '@/lib/supabase/api-client'
 import { buildExport } from '@/lib/export-builder'
 import { buildPdfData, generatePDF, DEFAULT_PDF_LAYOUT } from '@/lib/pdf-builder'
 import type { PdfData, PdfClaim, PdfItem, PdfLayoutConfig } from '@/lib/pdf-builder'
+import { PDFDocument as PdfLibDocument } from 'pdf-lib'
+import { highlightTransNos } from '@/lib/tng-highlighter'
 import { PRESET_COLUMNS, resolveColumns, type ExportColumnKey } from '@/lib/export-columns'
 import type { ClaimForExport, ItemForExport, TripForExport } from '@/lib/export-builder'
 import {
@@ -14,6 +16,51 @@ import {
 } from '@/lib/usage-limits'
 
 export const runtime = 'nodejs'
+
+// ── Mobile TNG highlight + merge ─────────────────────────────────────────────
+
+type MobileTngStatement = {
+  statementLabel: string
+  pdfBase64: string
+  items: Array<{ transNo: string; amountCents: number }>
+}
+
+/**
+ * Highlight claimed rows in each mobile TNG statement PDF (via Render.com scan
+ * service) then append pages to the main report PDF using pdf-lib.
+ * Mirrors V1's mergeTngStatements() but accepts inline base64 bytes instead of
+ * downloading from Supabase Storage.
+ * Safe: any error on a single statement is skipped, export never fails.
+ */
+async function mergeMobileTngStatements(mainBuf: Buffer, statements: MobileTngStatement[]): Promise<Buffer> {
+  const mainPdf = await PdfLibDocument.load(mainBuf)
+
+  for (const stmt of statements) {
+    try {
+      let stmtBuf = Buffer.from(stmt.pdfBase64, 'base64')
+
+      // Highlight claimed rows via scan service (same as V1)
+      if (stmt.items.length > 0) {
+        const highlightItems = stmt.items.map((i) => ({
+          trans_no: i.transNo,
+          amount:   (i.amountCents / 100).toFixed(2),
+        }))
+        stmtBuf = await highlightTransNos(stmtBuf, highlightItems)
+      }
+
+      // Merge pages into main PDF
+      const stmtPdf = await PdfLibDocument.load(stmtBuf)
+      const pages   = await mainPdf.copyPages(stmtPdf, stmtPdf.getPageIndices())
+      for (const page of pages) mainPdf.addPage(page)
+
+      console.log(`[exports/mobile] merged TNG statement: ${stmt.statementLabel} (${pages.length} pages)`)
+    } catch (e) {
+      console.warn(`[exports/mobile] TNG merge failed for ${stmt.statementLabel}:`, e)
+    }
+  }
+
+  return Buffer.from(await mainPdf.save())
+}
 
 // ── Mobile payload → PdfData mapper ──────────────────────────────────────────
 
@@ -145,7 +192,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null)
   if (!body) return err('VALIDATION_ERROR', 'Request body required', 400)
 
-  const { claim_ids, format, template_id, pdf_layout, signature_data_url, mobile_payload } = body
+  const { claim_ids, format, template_id, pdf_layout, signature_data_url, mobile_payload, mobile_tng_statements } = body
   if (!claim_ids?.length) return err('VALIDATION_ERROR', 'claim_ids is required', 400)
   if (!['CSV', 'XLSX', 'PDF'].includes(format)) return err('VALIDATION_ERROR', 'format must be CSV | XLSX | PDF', 400)
 
@@ -164,7 +211,14 @@ export async function POST(request: NextRequest) {
       mobileOrg?.name ?? 'My Organisation',
     )
 
-    const pdfBuffer = await generatePDF(supabase, pdfData, null)
+    // Generate main report PDF (TNG statements empty — we merge separately below)
+    let pdfBuffer = await generatePDF(supabase, pdfData, null)
+
+    // Highlight + merge mobile TNG statement PDFs if provided
+    if (Array.isArray(mobile_tng_statements) && mobile_tng_statements.length > 0) {
+      pdfBuffer = await mergeMobileTngStatements(pdfBuffer, mobile_tng_statements)
+    }
+
     const filename = `myexpensio-claim-${new Date().toISOString().slice(0, 10)}.pdf`
     return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,

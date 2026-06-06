@@ -53,18 +53,47 @@ export async function buildLocalPdf(
   const claimIds = payload.claims.map((c) => c.id);
   if (claimIds.length === 0) throw new Error("No claims selected.");
 
-  console.log("[buildLocalPdf] calling backend for", claimIds.length, "claim(s)...");
+  // ── Read local TNG statement PDFs ────────────────────────────────────────
+  // Send bytes to backend so it can highlight + merge them server-side.
+  const mobileTngStatements: Array<{
+    statementLabel: string;
+    pdfBase64: string;
+    items: Array<{ transNo: string; amountCents: number }>;
+  }> = [];
+
+  for (const appendix of _appendices.filter((a) => a.hasSourcePdf && a.sourceFileUri)) {
+    try {
+      const pdfBase64 = await readTngPdfBase64(appendix.sourceFileUri!);
+      if (pdfBase64) {
+        mobileTngStatements.push({
+          statementLabel: appendix.statementLabel,
+          pdfBase64,
+          items: appendix.items,
+        });
+        console.log("[buildLocalPdf] TNG statement loaded:", appendix.statementLabel);
+      }
+    } catch (e) {
+      console.warn("[buildLocalPdf] could not read TNG PDF:", appendix.sourceFileUri, e);
+    }
+  }
+
+  console.log("[buildLocalPdf] calling backend for", claimIds.length, "claim(s),", mobileTngStatements.length, "TNG statement(s)...");
 
   // ── Step 1: Call backend PDF endpoint ────────────────────────────────────
-  // mobile_payload sends the local SQLite data so the backend doesn't need
-  // to re-query Supabase (V2 mobile claims may not be synced to Supabase yet).
+  // mobile_payload — local SQLite data (no Supabase query needed)
+  // mobile_tng_statements — TNG PDF bytes for highlight + merge server-side
   const response = await fetch(`${API_BASE_URL}/api/exports`, {
     method: "POST",
     headers: {
       "Content-Type":  "application/json",
       "Authorization": `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({ claim_ids: claimIds, format: "PDF", mobile_payload: payload }),
+    body: JSON.stringify({
+      claim_ids:             claimIds,
+      format:                "PDF",
+      mobile_payload:        payload,
+      mobile_tng_statements: mobileTngStatements,
+    }),
   });
 
   if (!response.ok) {
@@ -105,6 +134,26 @@ export async function buildLocalPdf(
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Read a local TNG statement PDF and return its base64 content.
+ * Resolves local://tng/{filename} → documentDirectory/tng-statements/{filename}
+ */
+async function readTngPdfBase64(sourceFileUri: string): Promise<string | null> {
+  let fileUri = sourceFileUri;
+  if (sourceFileUri.startsWith("local://tng/")) {
+    const filename = sourceFileUri.replace("local://tng/", "");
+    fileUri = `${FileSystem.documentDirectory}tng-statements/${filename}`;
+  }
+  const info = await FileSystem.getInfoAsync(fileUri);
+  if (!info.exists) {
+    console.warn("[buildLocalPdf] TNG PDF not found at:", fileUri);
+    return null;
+  }
+  return FileSystem.readAsStringAsync(fileUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+}
 
 /**
  * Convert Uint8Array to base64 string.
