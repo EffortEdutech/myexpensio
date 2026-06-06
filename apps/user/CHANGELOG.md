@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.4.1](https://github.com/EffortEdutech/myexpensio/compare/v4.4.0...v4.4.1) (2026-06-06)
+
+
+### Bug Fixes
+
+* cast Buffer type for mobile TNG highlight TS error ([acb4fae](https://github.com/EffortEdutech/myexpensio/commit/acb4fae117e147a698b27cccee317bd4af3a4042))
+
 ## [4.4.0](https://github.com/EffortEdutech/myexpensio/compare/v4.3.3...v4.4.0) (2026-06-06)
 
 
