@@ -92,7 +92,7 @@ class SyncConflictError extends Error {
 }
 
 async function processItem(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: import('@supabase/supabase-js').SupabaseClient,
   userId: string,
   item: PushItem,
   serverNow: string
