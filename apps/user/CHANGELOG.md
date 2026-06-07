@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.5.0](https://github.com/EffortEdutech/myexpensio/compare/v4.4.3...v4.5.0) (2026-06-07)
+
+
+### Features
+
+* pdf grouping toggle — BY_DATE / BY_CATEGORY in mobile export ([295e975](https://github.com/EffortEdutech/myexpensio/commit/295e975f84fcc45fa34946b9f7802328c930dfc9))
+
 ### [4.4.3](https://github.com/EffortEdutech/myexpensio/compare/v4.4.2...v4.4.3) (2026-06-06)
 
 
