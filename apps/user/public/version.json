@@ -1,9 +1,6 @@
 {
-  "version": "4.5.0",
+  "version": "4.6.0",
   "changelog": [
-    "pdf grouping toggle — BY_DATE / BY_CATEGORY in mobile export ()",
-    "save TNG PDF bytes from parse response — reliable local storage for export attachment ()",
-    "use any type for TNG buffer to resolve ArrayBuffer generic mismatch ()",
-    "cast Buffer type for mobile TNG highlight TS error ()"
+    "signature image picker in mobile PDF export ()"
   ]
 }
