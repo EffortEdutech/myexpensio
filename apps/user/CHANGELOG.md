@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.6.0](https://github.com/EffortEdutech/myexpensio/compare/v4.5.0...v4.6.0) (2026-06-07)
+
+
+### Features
+
+* signature image picker in mobile PDF export ([148b6fe](https://github.com/EffortEdutech/myexpensio/commit/148b6fe64f560a8d1fd767513e40d07f5d0c29a9))
+
 ## [4.5.0](https://github.com/EffortEdutech/myexpensio/compare/v4.4.3...v4.5.0) (2026-06-07)
 
 
