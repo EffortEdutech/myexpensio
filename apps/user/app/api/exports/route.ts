@@ -80,6 +80,7 @@ function buildPdfDataFromMobilePayload(
   payload: MobilePayload,
   profile: { display_name?: string | null; email?: string | null; department?: string | null; location?: string | null; company_name?: string | null } | null,
   orgName: string,
+  layoutOverride?: Partial<PdfLayoutConfig>,
 ): PdfData {
   const rowsByClaimId = new Map<string, MobileExportPreviewRow[]>()
   for (const row of payload.rows) {
@@ -123,7 +124,7 @@ function buildPdfDataFromMobilePayload(
     generated_at: new Date(payload.generatedAt).toLocaleString('en-MY', {
       timeZone: 'Asia/Kuala_Lumpur', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
     }),
-    layout: DEFAULT_PDF_LAYOUT,
+    layout: { ...DEFAULT_PDF_LAYOUT, ...layoutOverride },
     claims,
     tng_statements: [],
   }
@@ -206,10 +207,15 @@ export async function POST(request: NextRequest) {
       supabase.from('organizations').select('name').eq('id', membership.org_id).maybeSingle(),
     ])
 
+    const mobileLayoutOverride: Partial<PdfLayoutConfig> = pdf_layout
+      ? { grouping: pdf_layout as 'BY_DATE' | 'BY_CATEGORY' }
+      : {}
+
     const pdfData = buildPdfDataFromMobilePayload(
       mobile_payload,
       mobileProfile,
       mobileOrg?.name ?? 'My Organisation',
+      mobileLayoutOverride,
     )
 
     // Generate main report PDF (TNG statements empty — we merge separately below)

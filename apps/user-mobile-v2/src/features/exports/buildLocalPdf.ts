@@ -29,6 +29,7 @@ const API_BASE_URL = (process.env as Record<string, string | undefined>)["EXPO_P
 export type BuildLocalPdfOptions = {
   claimerName?: string;
   orgName?: string;
+  pdfLayout?: "BY_DATE" | "BY_CATEGORY";
 };
 
 export type BuildLocalPdfResult = {
@@ -91,6 +92,7 @@ export async function buildLocalPdf(
     body: JSON.stringify({
       claim_ids:             claimIds,
       format:                "PDF",
+      pdf_layout:            _options.pdfLayout ?? "BY_DATE",
       mobile_payload:        payload,
       mobile_tng_statements: mobileTngStatements,
     }),

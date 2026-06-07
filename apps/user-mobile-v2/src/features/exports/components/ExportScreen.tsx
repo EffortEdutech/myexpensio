@@ -32,6 +32,7 @@ type ExportScreenProps = {
 export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
   const [selectedClaimIds, setSelectedClaimIds] = useState<string[]>([]);
   const [format, setFormat] = useState<ExportFormat>("CSV");
+  const [pdfLayout, setPdfLayout] = useState<"BY_DATE" | "BY_CATEGORY">("BY_DATE");
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const exportJobs = useExportJobs();
@@ -112,7 +113,7 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
       const result = await buildLocalPdf(
         preview.data.payload,
         preview.data.appendices,
-        { claimerName: "Claimant" },
+        { claimerName: "Claimant", pdfLayout },
         accessToken
       );
 
@@ -211,6 +212,26 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
           </Pressable>
         ))}
       </View>
+
+      {format === "PDF" && canExportPdf ? (
+        <View style={styles.layoutRow}>
+          <Text style={styles.layoutLabel}>Group by</Text>
+          <View style={styles.layoutToggle}>
+            {(["BY_DATE", "BY_CATEGORY"] as const).map((value) => (
+              <Pressable
+                accessibilityRole="button"
+                key={value}
+                onPress={() => setPdfLayout(value)}
+                style={[styles.segment, pdfLayout === value ? styles.segmentActive : null]}
+              >
+                <Text style={[styles.segmentText, pdfLayout === value ? styles.segmentTextActive : null]}>
+                  {value === "BY_DATE" ? "Date" : "Category"}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      ) : null}
 
       {format === "PDF" && !canExportPdf ? (
         <View style={styles.proNotice}>
@@ -640,6 +661,25 @@ const styles = StyleSheet.create({
   segmentGroup: {
     backgroundColor: "#f1f5f9",
     borderRadius: 8,
+    flexDirection: "row",
+    gap: 4,
+    padding: 4
+  },
+  layoutRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md
+  },
+  layoutLabel: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "900",
+    width: 60
+  },
+  layoutToggle: {
+    backgroundColor: "#f1f5f9",
+    borderRadius: 8,
+    flex: 1,
     flexDirection: "row",
     gap: 4,
     padding: 4
