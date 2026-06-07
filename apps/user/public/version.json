@@ -1,9 +1,9 @@
 {
-  "version": "4.4.3",
+  "version": "4.5.0",
   "changelog": [
-    "mobile PDF includes TNG statements with highlight via scan service ()",
-    "remove duplicate DEFAULT_PDF_LAYOUT and PdfLayoutConfig in exports route ()",
-    "mobile PDF fast path — use local payload, skip Supabase claims query ()",
-    "replace createClient type ref with SupabaseClient in push route ()"
+    "pdf grouping toggle — BY_DATE / BY_CATEGORY in mobile export ()",
+    "save TNG PDF bytes from parse response — reliable local storage for export attachment ()",
+    "use any type for TNG buffer to resolve ArrayBuffer generic mismatch ()",
+    "cast Buffer type for mobile TNG highlight TS error ()"
   ]
 }
