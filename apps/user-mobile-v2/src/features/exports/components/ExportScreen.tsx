@@ -1,7 +1,9 @@
+import * as ImagePicker from "expo-image-picker";
 import * as Sharing from "expo-sharing";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -33,6 +35,8 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
   const [selectedClaimIds, setSelectedClaimIds] = useState<string[]>([]);
   const [format, setFormat] = useState<ExportFormat>("CSV");
   const [pdfLayout, setPdfLayout] = useState<"BY_DATE" | "BY_CATEGORY">("BY_DATE");
+  const [signatureUri, setSignatureUri] = useState<string | null>(null);
+  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const exportJobs = useExportJobs();
@@ -113,7 +117,7 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
       const result = await buildLocalPdf(
         preview.data.payload,
         preview.data.appendices,
-        { claimerName: "Claimant", pdfLayout },
+        { claimerName: "Claimant", pdfLayout, signatureDataUrl },
         accessToken
       );
 
@@ -135,6 +139,33 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
     } finally {
       setPdfGenerating(false);
     }
+  }
+
+  async function handlePickSignature() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setDownloadNotice("Gallery permission is required to pick a signature image.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [3, 1],
+      quality: 0.8,
+      base64: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    setSignatureUri(asset.uri);
+    if (asset.base64) {
+      const mime = asset.mimeType ?? "image/jpeg";
+      setSignatureDataUrl(`data:${mime};base64,${asset.base64}`);
+    }
+  }
+
+  function handleClearSignature() {
+    setSignatureUri(null);
+    setSignatureDataUrl(null);
   }
 
   function handleDownloadHistory(job: ExportJob) {
@@ -230,6 +261,36 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
               </Pressable>
             ))}
           </View>
+        </View>
+      ) : null}
+
+      {format === "PDF" && canExportPdf ? (
+        <View style={styles.signatureSection}>
+          <Text style={styles.layoutLabel}>Signature</Text>
+          {signatureUri ? (
+            <View style={styles.signaturePreview}>
+              <Image
+                source={{ uri: signatureUri }}
+                style={styles.signatureImage}
+                resizeMode="contain"
+              />
+              <Pressable
+                accessibilityRole="button"
+                onPress={handleClearSignature}
+                style={styles.signatureClear}
+              >
+                <Text style={styles.signatureClearText}>Clear</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void handlePickSignature()}
+              style={styles.signatureButton}
+            >
+              <Text style={styles.signatureButtonText}>+ Add Signature Image</Text>
+            </Pressable>
+          )}
         </View>
       ) : null}
 
@@ -951,6 +1012,51 @@ const styles = StyleSheet.create({
     color: "#15803d",
     fontSize: typography.caption,
     fontWeight: "800"
+  },
+  signatureSection: {
+    gap: spacing.xs
+  },
+  signatureButton: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 56,
+    padding: spacing.md
+  },
+  signatureButtonText: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  signaturePreview: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: "#86efac",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    padding: spacing.sm
+  },
+  signatureImage: {
+    flex: 1,
+    height: 48
+  },
+  signatureClear: {
+    alignItems: "center",
+    backgroundColor: "#fee2e2",
+    borderRadius: 6,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs
+  },
+  signatureClearText: {
+    color: colors.danger,
+    fontSize: typography.caption,
+    fontWeight: "900"
   },
   disabled: {
     opacity: 0.45

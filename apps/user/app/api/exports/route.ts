@@ -219,7 +219,7 @@ export async function POST(request: NextRequest) {
     )
 
     // Generate main report PDF (TNG statements empty — we merge separately below)
-    let pdfBuffer = await generatePDF(supabase, pdfData, null)
+    let pdfBuffer = await generatePDF(supabase, pdfData, signature_data_url ?? null)
 
     // Highlight + merge mobile TNG statement PDFs if provided
     if (Array.isArray(mobile_tng_statements) && mobile_tng_statements.length > 0) {

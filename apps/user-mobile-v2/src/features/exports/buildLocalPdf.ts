@@ -30,6 +30,7 @@ export type BuildLocalPdfOptions = {
   claimerName?: string;
   orgName?: string;
   pdfLayout?: "BY_DATE" | "BY_CATEGORY";
+  signatureDataUrl?: string | null;
 };
 
 export type BuildLocalPdfResult = {
@@ -93,6 +94,7 @@ export async function buildLocalPdf(
       claim_ids:             claimIds,
       format:                "PDF",
       pdf_layout:            _options.pdfLayout ?? "BY_DATE",
+      signature_data_url:    _options.signatureDataUrl ?? null,
       mobile_payload:        payload,
       mobile_tng_statements: mobileTngStatements,
     }),
