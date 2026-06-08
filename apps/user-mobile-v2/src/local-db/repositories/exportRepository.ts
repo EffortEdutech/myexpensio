@@ -59,6 +59,17 @@ type ClaimItemExportRow = {
   tng_statement_label: string | null;
   tng_trans_no: string | null;
   tng_upload_batch_id: string | null;
+  // Rich metadata fields
+  meal_session: string | null;
+  lodging_check_in: string | null;
+  lodging_check_out: string | null;
+  perdiem_days: number | null;
+  perdiem_rate_myr: number | null;
+  perdiem_destination: string | null;
+  merchant: string | null;
+  qty: number | null;
+  unit: string | null;
+  rate_per_unit: number | null;
 };
 
 const freeExportLimit = 3;
@@ -138,6 +149,16 @@ export async function buildExportPreview(claimIds: string[]) {
         claim_items.item_date,
         claim_items.notes,
         claim_items.receipt_id,
+        claim_items.meal_session,
+        claim_items.lodging_check_in,
+        claim_items.lodging_check_out,
+        claim_items.perdiem_days,
+        claim_items.perdiem_rate_myr,
+        claim_items.perdiem_destination,
+        claim_items.merchant,
+        claim_items.qty,
+        claim_items.unit,
+        claim_items.rate_per_unit,
         tng_transactions.trans_no AS tng_trans_no,
         tng_transactions.statement_label AS tng_statement_label,
         tng_transactions.upload_batch_id AS tng_upload_batch_id,
@@ -168,11 +189,21 @@ export async function buildExportPreview(claimIds: string[]) {
     itemDate: item.item_date,
     itemId: item.item_id,
     itemType: item.item_type,
+    lodgingCheckIn: item.lodging_check_in ?? null,
+    lodgingCheckOut: item.lodging_check_out ?? null,
+    mealSession: item.meal_session ?? null,
+    merchant: item.merchant ?? null,
     notes: item.notes,
     paidViaTng: Boolean(item.tng_trans_no),
+    perdiemDays: item.perdiem_days ?? null,
+    perdiemDestination: item.perdiem_destination ?? null,
+    perdiemRateMyr: item.perdiem_rate_myr ?? null,
+    qty: item.qty ?? null,
+    ratePerUnit: item.rate_per_unit ?? null,
     receiptPresent: Boolean(item.receipt_id),
     title: item.title,
-    tngTransNo: item.tng_trans_no
+    tngTransNo: item.tng_trans_no,
+    unit: item.unit ?? null
   }));
   const appendices = buildTngAppendixPreview(itemRows);
 

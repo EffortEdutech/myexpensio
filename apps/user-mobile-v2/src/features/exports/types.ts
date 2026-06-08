@@ -53,6 +53,17 @@ export type ExportPreviewRow = {
   receiptPresent: boolean;
   title: string;
   tngTransNo: string | null;
+  // Rich metadata fields
+  mealSession: string | null;
+  lodgingCheckIn: string | null;
+  lodgingCheckOut: string | null;
+  perdiemDays: number | null;
+  perdiemRateMyr: number | null;
+  perdiemDestination: string | null;
+  merchant: string | null;
+  qty: number | null;
+  unit: string | null;
+  ratePerUnit: number | null;
 };
 
 export type ExportPreviewPayload = {

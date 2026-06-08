@@ -44,6 +44,13 @@ type ClaimDetailProps = {
     tripId?: string | null;
     title: string;
     type: ClaimItemType;
+    mealSession?: string | null;
+    lodgingCheckIn?: string | null;
+    lodgingCheckOut?: string | null;
+    perdiemDays?: number | null;
+    perdiemRateMyr?: number | null;
+    perdiemDestination?: string | null;
+    merchant?: string | null;
   }) => void;
   rates: ClaimRates;
   onAttachReceipt: (item: ClaimItemDraft, receipt: LocalReceiptFile) => void;
@@ -821,6 +828,13 @@ function AddClaimItemModal({
     tripId?: string | null;
     title: string;
     type: ClaimItemType;
+    mealSession?: string | null;
+    lodgingCheckIn?: string | null;
+    lodgingCheckOut?: string | null;
+    perdiemDays?: number | null;
+    perdiemRateMyr?: number | null;
+    perdiemDestination?: string | null;
+    merchant?: string | null;
   }) => void;
   onClose: () => void;
   rates: ClaimRates;
@@ -1004,6 +1018,7 @@ function AddClaimItemModal({
         onAddItem({
           amountCents: centsFromNumber(parseRate(rates.fullDayMealRate)),
           itemDate,
+          mealSession: "FULL_DAY",
           mode: "fixed_rate",
           notes: [notes.trim(), "Full Day meal"].filter(Boolean).join("\n") || null,
           receipt: null,
@@ -1017,6 +1032,7 @@ function AddClaimItemModal({
           onAddItem({
             amountCents: getMealRateCents(rates, s),
             itemDate,
+            mealSession: s,
             mode: "fixed_rate",
             notes: [notes.trim(), `${mealSessionLabel(s)} meal`].filter(Boolean).join("\n") || null,
             receipt: null,
@@ -1031,8 +1047,16 @@ function AddClaimItemModal({
       onAddItem({
         amountCents: paidViaTng ? 0 : effectiveAmountCents,
         itemDate,
+        lodgingCheckIn: kind === "lodging" ? checkInDate : null,
+        lodgingCheckOut: kind === "lodging" ? checkOutDate : null,
+        merchant: kind !== "mileage" && kind !== "per_diem" && kind !== "lodging" && kind !== "meal"
+          ? description.trim() || null
+          : null,
         mode: paidViaTng ? "tng_pending" : null,
         notes: generatedNotes,
+        perdiemDays: kind === "per_diem" ? perDiemDayCount : null,
+        perdiemDestination: kind === "per_diem" ? description.trim() || null : null,
+        perdiemRateMyr: kind === "per_diem" ? parseRate(perDiemRate) : null,
         receipt,
         tngTransactionId: null,
         title:

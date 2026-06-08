@@ -50,6 +50,17 @@ type ClaimItemRow = {
   updated_at: string;
   deleted_at: string | null;
   device_id: string;
+  // Rich metadata fields (migration 13)
+  meal_session: string | null;
+  lodging_check_in: string | null;
+  lodging_check_out: string | null;
+  perdiem_days: number | null;
+  perdiem_rate_myr: number | null;
+  perdiem_destination: string | null;
+  merchant: string | null;
+  qty: number | null;
+  unit: string | null;
+  rate_per_unit: number | null;
 };
 
 export async function listClaimDrafts() {
@@ -186,7 +197,17 @@ export async function createClaimItemDraft(
     createdAt: timestamp,
     updatedAt: timestamp,
     deletedAt: null,
-    deviceId
+    deviceId,
+    mealSession: input.mealSession ?? null,
+    lodgingCheckIn: input.lodgingCheckIn ?? null,
+    lodgingCheckOut: input.lodgingCheckOut ?? null,
+    perdiemDays: input.perdiemDays ?? null,
+    perdiemRateMyr: input.perdiemRateMyr ?? null,
+    perdiemDestination: input.perdiemDestination ?? null,
+    merchant: input.merchant ?? null,
+    qty: input.qty ?? null,
+    unit: input.unit ?? null,
+    ratePerUnit: input.ratePerUnit ?? null
   };
 
   await database.withTransactionAsync(async () => {
@@ -208,8 +229,18 @@ export async function createClaimItemDraft(
         created_at,
         updated_at,
         deleted_at,
-        device_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        device_id,
+        meal_session,
+        lodging_check_in,
+        lodging_check_out,
+        perdiem_days,
+        perdiem_rate_myr,
+        perdiem_destination,
+        merchant,
+        qty,
+        unit,
+        rate_per_unit
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       [
         item.id,
         item.claimId,
@@ -227,7 +258,17 @@ export async function createClaimItemDraft(
         item.createdAt,
         item.updatedAt,
         item.deletedAt,
-        item.deviceId
+        item.deviceId,
+        item.mealSession,
+        item.lodgingCheckIn,
+        item.lodgingCheckOut,
+        item.perdiemDays,
+        item.perdiemRateMyr,
+        item.perdiemDestination,
+        item.merchant,
+        item.qty,
+        item.unit,
+        item.ratePerUnit
       ]
     );
 
@@ -554,7 +595,47 @@ export async function updateClaimItemDraft(
         : existing.tng_transaction_id,
     title: input.title ?? existing.title,
     type: input.type ?? existing.type,
-    updatedAt: timestamp
+    updatedAt: timestamp,
+    mealSession:
+      Object.prototype.hasOwnProperty.call(input, "mealSession")
+        ? input.mealSession ?? null
+        : existing.meal_session,
+    lodgingCheckIn:
+      Object.prototype.hasOwnProperty.call(input, "lodgingCheckIn")
+        ? input.lodgingCheckIn ?? null
+        : existing.lodging_check_in,
+    lodgingCheckOut:
+      Object.prototype.hasOwnProperty.call(input, "lodgingCheckOut")
+        ? input.lodgingCheckOut ?? null
+        : existing.lodging_check_out,
+    perdiemDays:
+      Object.prototype.hasOwnProperty.call(input, "perdiemDays")
+        ? input.perdiemDays ?? null
+        : existing.perdiem_days,
+    perdiemRateMyr:
+      Object.prototype.hasOwnProperty.call(input, "perdiemRateMyr")
+        ? input.perdiemRateMyr ?? null
+        : existing.perdiem_rate_myr,
+    perdiemDestination:
+      Object.prototype.hasOwnProperty.call(input, "perdiemDestination")
+        ? input.perdiemDestination ?? null
+        : existing.perdiem_destination,
+    merchant:
+      Object.prototype.hasOwnProperty.call(input, "merchant")
+        ? input.merchant ?? null
+        : existing.merchant,
+    qty:
+      Object.prototype.hasOwnProperty.call(input, "qty")
+        ? input.qty ?? null
+        : existing.qty,
+    unit:
+      Object.prototype.hasOwnProperty.call(input, "unit")
+        ? input.unit ?? null
+        : existing.unit,
+    ratePerUnit:
+      Object.prototype.hasOwnProperty.call(input, "ratePerUnit")
+        ? input.ratePerUnit ?? null
+        : existing.rate_per_unit
   };
 
   await database.withTransactionAsync(async () => {
@@ -568,6 +649,16 @@ export async function updateClaimItemDraft(
             mode = ?,
             receipt_id = ?,
             tng_transaction_id = ?,
+            meal_session = ?,
+            lodging_check_in = ?,
+            lodging_check_out = ?,
+            perdiem_days = ?,
+            perdiem_rate_myr = ?,
+            perdiem_destination = ?,
+            merchant = ?,
+            qty = ?,
+            unit = ?,
+            rate_per_unit = ?,
             sync_status = 'pending',
             updated_at = ?
         WHERE id = ?
@@ -581,6 +672,16 @@ export async function updateClaimItemDraft(
         updatedItem.mode,
         updatedItem.receiptId,
         updatedItem.tngTransactionId,
+        updatedItem.mealSession,
+        updatedItem.lodgingCheckIn,
+        updatedItem.lodgingCheckOut,
+        updatedItem.perdiemDays,
+        updatedItem.perdiemRateMyr,
+        updatedItem.perdiemDestination,
+        updatedItem.merchant,
+        updatedItem.qty,
+        updatedItem.unit,
+        updatedItem.ratePerUnit,
         timestamp,
         input.itemId
       ]
@@ -1071,7 +1172,17 @@ function mapClaimItemRow(row: ClaimItemRow): ClaimItemDraft {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at,
-    deviceId: row.device_id
+    deviceId: row.device_id,
+    mealSession: row.meal_session ?? null,
+    lodgingCheckIn: row.lodging_check_in ?? null,
+    lodgingCheckOut: row.lodging_check_out ?? null,
+    perdiemDays: row.perdiem_days ?? null,
+    perdiemRateMyr: row.perdiem_rate_myr ?? null,
+    perdiemDestination: row.perdiem_destination ?? null,
+    merchant: row.merchant ?? null,
+    qty: row.qty ?? null,
+    unit: row.unit ?? null,
+    ratePerUnit: row.rate_per_unit ?? null
   };
 }
 

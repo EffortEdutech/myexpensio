@@ -492,5 +492,21 @@ export const localMigrations: LocalMigration[] = [
         ON receipts (owner_entity_type, owner_entity_id, updated_at DESC)
         WHERE deleted_at IS NULL;`
     ]
+  },
+  {
+    id: 13,
+    name: "claim_items_rich_metadata_sprint15",
+    statements: [
+      `ALTER TABLE claim_items ADD COLUMN meal_session TEXT;`,
+      `ALTER TABLE claim_items ADD COLUMN lodging_check_in TEXT;`,
+      `ALTER TABLE claim_items ADD COLUMN lodging_check_out TEXT;`,
+      `ALTER TABLE claim_items ADD COLUMN perdiem_days INTEGER;`,
+      `ALTER TABLE claim_items ADD COLUMN perdiem_rate_myr REAL;`,
+      `ALTER TABLE claim_items ADD COLUMN perdiem_destination TEXT;`,
+      `ALTER TABLE claim_items ADD COLUMN merchant TEXT;`,
+      `ALTER TABLE claim_items ADD COLUMN qty REAL;`,
+      `ALTER TABLE claim_items ADD COLUMN unit TEXT;`,
+      `ALTER TABLE claim_items ADD COLUMN rate_per_unit REAL;`
+    ]
   }
 ];

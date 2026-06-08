@@ -73,6 +73,17 @@ type MobileExportPreviewRow = {
   claimId: string; claimTitle: string; itemId: string; itemType: string; title: string
   amountCents: number; currency: string; itemDate: string; notes: string | null
   paidViaTng: boolean; receiptPresent: boolean; tngTransNo: string | null
+  // Rich metadata fields (migration 13)
+  mealSession?: string | null
+  lodgingCheckIn?: string | null
+  lodgingCheckOut?: string | null
+  perdiemDays?: number | null
+  perdiemRateMyr?: number | null
+  perdiemDestination?: string | null
+  merchant?: string | null
+  qty?: number | null
+  unit?: string | null
+  ratePerUnit?: number | null
 }
 type MobilePayload = { claims: MobileExportPreviewClaim[]; rows: MobileExportPreviewRow[]; generatedAt: string }
 
@@ -164,19 +175,19 @@ function buildClaimsFromMobilePayload(
         amount: row.amountCents / 100,
         currency: row.currency ?? 'MYR',
         claim_date: row.itemDate ?? null,
-        merchant: null,
+        merchant: row.merchant ?? null,
         notes: row.notes ?? null,
         receipt_url: null,
-        rate: null,
+        rate: row.ratePerUnit ?? null,
         paid_via_tng: row.paidViaTng ?? false,
         tng_transaction_id: null,
         tng_trans_no: row.tngTransNo ?? null,
-        perdiem_days: null,
-        perdiem_rate_myr: null,
-        perdiem_destination: null,
-        meal_session: null,
-        lodging_check_in: null,
-        lodging_check_out: null,
+        perdiem_days: row.perdiemDays ?? null,
+        perdiem_rate_myr: row.perdiemRateMyr ?? null,
+        perdiem_destination: row.perdiemDestination ?? null,
+        meal_session: row.mealSession ?? null,
+        lodging_check_in: row.lodgingCheckIn ?? null,
+        lodging_check_out: row.lodgingCheckOut ?? null,
         trip: null,
       })),
     }

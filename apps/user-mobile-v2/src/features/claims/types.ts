@@ -51,6 +51,17 @@ export type ClaimItemDraft = {
   updatedAt: string;
   deletedAt: string | null;
   deviceId: string;
+  // Rich metadata fields
+  mealSession: string | null;
+  lodgingCheckIn: string | null;
+  lodgingCheckOut: string | null;
+  perdiemDays: number | null;
+  perdiemRateMyr: number | null;
+  perdiemDestination: string | null;
+  merchant: string | null;
+  qty: number | null;
+  unit: string | null;
+  ratePerUnit: number | null;
 };
 
 export type CreateClaimDraftInput = {
@@ -73,6 +84,17 @@ export type CreateClaimItemDraftInput = {
   receiptId?: string | null;
   tripId?: string | null;
   tngTransactionId?: string | null;
+  // Rich metadata fields
+  mealSession?: string | null;
+  lodgingCheckIn?: string | null;
+  lodgingCheckOut?: string | null;
+  perdiemDays?: number | null;
+  perdiemRateMyr?: number | null;
+  perdiemDestination?: string | null;
+  merchant?: string | null;
+  qty?: number | null;
+  unit?: string | null;
+  ratePerUnit?: number | null;
 };
 
 export type UpdateClaimDraftInput = {
@@ -92,5 +114,16 @@ export type UpdateClaimItemDraftInput = {
   tngTransactionId?: string | null;
   title?: string;
   type?: ClaimItemType;
+  // Rich metadata fields
+  mealSession?: string | null;
+  lodgingCheckIn?: string | null;
+  lodgingCheckOut?: string | null;
+  perdiemDays?: number | null;
+  perdiemRateMyr?: number | null;
+  perdiemDestination?: string | null;
+  merchant?: string | null;
+  qty?: number | null;
+  unit?: string | null;
+  ratePerUnit?: number | null;
 };
 

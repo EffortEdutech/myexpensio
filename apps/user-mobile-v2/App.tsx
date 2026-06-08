@@ -1295,8 +1295,16 @@ type WorkClaimsSliceProps = {
       receipt?: LocalReceiptFile | null;
       mode?: string | null;
       tngTransactionId?: string | null;
+      tripId?: string | null;
       title: string;
       type: ClaimItemType;
+      mealSession?: string | null;
+      lodgingCheckIn?: string | null;
+      lodgingCheckOut?: string | null;
+      perdiemDays?: number | null;
+      perdiemRateMyr?: number | null;
+      perdiemDestination?: string | null;
+      merchant?: string | null;
     }
   ) => Promise<void>;
   onDeleteClaimItem: (item: ClaimItemDraft) => void;
