@@ -26,6 +26,7 @@ import { DatePickerField } from "@/components/DatePickerField";
 import { LoginScreen } from "@/features/auth/components/LoginScreen";
 import { nativeBiometricAuthAdapter } from "@/features/auth/biometricAuth";
 import { useSignOut } from "@/features/auth/hooks/useAuthActions";
+import { useOrgContext } from "@/features/auth/hooks/useOrgContext";
 import { useSessionRestore } from "@/features/auth/hooks/useSessionRestore";
 import { ClaimDetail } from "@/features/claims/components/ClaimDetail";
 import { ClaimDraftList } from "@/features/claims/components/ClaimDraftList";
@@ -638,6 +639,7 @@ function SettingsPanel({
   const updateProfile = useUserSettingsStore((state) => state.updateProfile);
   const updateRates = useUserSettingsStore((state) => state.updateRates);
   const profileSave = useProfileSave();
+  const { canManageRates, orgRole, workspaceType } = useOrgContext();
   const [openSections, setOpenSections] = useState({
     billing: false,
     profile: true,
@@ -822,6 +824,16 @@ function SettingsPanel({
         ]}
         title="Rates"
       >
+        {/* Read-only notice for non-admin org members */}
+        {!canManageRates && (
+          <View style={styles.ratesLockedBanner}>
+            <Text style={styles.ratesLockedBannerText}>
+              🔒 Rates are managed by your {workspaceType === "TEAM" ? "team" : "organisation"} admin
+              {orgRole ? ` (your role: ${orgRole})` : ""}.
+            </Text>
+          </View>
+        )}
+
         <SettingsCard
           icon="📚"
           sub="Company standard templates will sync from admin later. The saved personal rate is what new claims and trips refer to locally."
@@ -838,14 +850,16 @@ function SettingsPanel({
           title="Personal Rate Profile"
         >
           <SettingsTextField
+            editable={canManageRates}
             label="Rate Label"
-            onChangeText={(value) => updateRates({ rateLabel: value })}
+            onChangeText={(value) => canManageRates && updateRates({ rateLabel: value })}
             value={rates.rateLabel}
           />
           <SettingsTextField
+            editable={canManageRates}
             label="Notes"
             multiline
-            onChangeText={(value) => updateRates({ notes: value })}
+            onChangeText={(value) => canManageRates && updateRates({ notes: value })}
             value={rates.notes}
           />
         </SettingsCard>
@@ -856,15 +870,17 @@ function SettingsPanel({
           title="Mileage Rates"
         >
           <RateInputRow
+            editable={canManageRates}
             label="🚗 Car rate per km"
-            onChangeText={(value) => updateRates({ mileageCarRate: numericRate(value) })}
+            onChangeText={(value) => canManageRates && updateRates({ mileageCarRate: numericRate(value) })}
             suffix="/km"
             value={rates.mileageCarRate}
           />
           <RateInputRow
+            editable={canManageRates}
             label="🏍 Motorcycle rate per km"
             onChangeText={(value) =>
-              updateRates({ mileageMotorcycleRate: numericRate(value) })
+              canManageRates && updateRates({ mileageMotorcycleRate: numericRate(value) })
             }
             suffix="/km"
             value={rates.mileageMotorcycleRate}
@@ -882,26 +898,30 @@ function SettingsPanel({
           title="Meal Rates"
         >
           <RateInputRow
+            editable={canManageRates}
             label="Morning"
-            onChangeText={(value) => updateRates({ mealMorningRate: numericRate(value) })}
+            onChangeText={(value) => canManageRates && updateRates({ mealMorningRate: numericRate(value) })}
             suffix="/session"
             value={rates.mealMorningRate}
           />
           <RateInputRow
+            editable={canManageRates}
             label="Noon"
-            onChangeText={(value) => updateRates({ mealNoonRate: numericRate(value) })}
+            onChangeText={(value) => canManageRates && updateRates({ mealNoonRate: numericRate(value) })}
             suffix="/session"
             value={rates.mealNoonRate}
           />
           <RateInputRow
+            editable={canManageRates}
             label="Evening"
-            onChangeText={(value) => updateRates({ mealEveningRate: numericRate(value) })}
+            onChangeText={(value) => canManageRates && updateRates({ mealEveningRate: numericRate(value) })}
             suffix="/session"
             value={rates.mealEveningRate}
           />
           <RateInputRow
+            editable={canManageRates}
             label="Full Day"
-            onChangeText={(value) => updateRates({ fullDayMealRate: numericRate(value) })}
+            onChangeText={(value) => canManageRates && updateRates({ fullDayMealRate: numericRate(value) })}
             suffix="/day"
             value={rates.fullDayMealRate}
           />
@@ -919,8 +939,9 @@ function SettingsPanel({
             title="Lodging Rate"
           >
             <RateInputRow
+              editable={canManageRates}
               label="Rate per night"
-              onChangeText={(value) => updateRates({ lodgingRate: numericRate(value) })}
+              onChangeText={(value) => canManageRates && updateRates({ lodgingRate: numericRate(value) })}
               suffix="/night"
               value={rates.lodgingRate}
             />
@@ -931,27 +952,30 @@ function SettingsPanel({
             title="Per Diem Allowance"
           >
             <RateInputRow
+              editable={canManageRates}
               label="Daily allowance rate"
-              onChangeText={(value) => updateRates({ perDiemRate: numericRate(value) })}
+              onChangeText={(value) => canManageRates && updateRates({ perDiemRate: numericRate(value) })}
               suffix="/day"
               value={rates.perDiemRate}
             />
           </SettingsCard>
         </View>
 
-        <View style={styles.settingsActions}>
-          <PrimarySettingsButton
-            label="Save Personal Rates"
-            onPress={() => showSaved("Personal rates saved locally.")}
-          />
-          <SecondarySettingsButton
-            label="Reset Defaults"
-            onPress={() => {
-              updateRates(defaultRates);
-              showSaved("Default rates restored.");
-            }}
-          />
-        </View>
+        {canManageRates && (
+          <View style={styles.settingsActions}>
+            <PrimarySettingsButton
+              label="Save Personal Rates"
+              onPress={() => showSaved("Personal rates saved locally.")}
+            />
+            <SecondarySettingsButton
+              label="Reset Defaults"
+              onPress={() => {
+                updateRates(defaultRates);
+                showSaved("Default rates restored.");
+              }}
+            />
+          </View>
+        )}
       </SettingsAccordion>
 
       <SettingsAccordion
@@ -1163,11 +1187,13 @@ function SettingsCard({
 }
 
 function SettingsTextField({
+  editable = true,
   label,
   multiline,
   onChangeText,
   value
 }: {
+  editable?: boolean;
   label: string;
   multiline?: boolean;
   onChangeText: (value: string) => void;
@@ -1177,10 +1203,15 @@ function SettingsTextField({
     <View style={styles.settingsField}>
       <Text style={styles.settingsLabel}>{label}</Text>
       <TextInput
+        editable={editable}
         multiline={multiline}
         onChangeText={onChangeText}
         placeholderTextColor="#94a3b8"
-        style={[styles.settingsInput, multiline ? styles.settingsTextarea : null]}
+        style={[
+          styles.settingsInput,
+          multiline ? styles.settingsTextarea : null,
+          !editable ? styles.inputReadOnly : null
+        ]}
         value={value}
       />
     </View>
@@ -1188,11 +1219,13 @@ function SettingsTextField({
 }
 
 function RateInputRow({
+  editable = true,
   label,
   onChangeText,
   suffix,
   value
 }: {
+  editable?: boolean;
   label: string;
   onChangeText: (value: string) => void;
   suffix: string;
@@ -1204,9 +1237,10 @@ function RateInputRow({
       <View style={styles.rateRight}>
         <Text style={styles.ratePrefix}>MYR</Text>
         <TextInput
+          editable={editable}
           keyboardType="decimal-pad"
           onChangeText={onChangeText}
-          style={styles.rateInput}
+          style={[styles.rateInput, !editable ? styles.inputReadOnly : null]}
           value={value}
         />
         <Text style={styles.rateSuffix}>{suffix}</Text>
@@ -2613,6 +2647,24 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
     width: 58
+  },
+  inputReadOnly: {
+    backgroundColor: "#f1f5f9",
+    color: "#94a3b8"
+  },
+  ratesLockedBanner: {
+    backgroundColor: "#fef3c7",
+    borderColor: "#fbbf24",
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10
+  },
+  ratesLockedBannerText: {
+    color: "#92400e",
+    fontSize: 13,
+    lineHeight: 18
   },
   settingsActions: {
     flexDirection: "row",

@@ -508,5 +508,15 @@ export const localMigrations: LocalMigration[] = [
       `ALTER TABLE claim_items ADD COLUMN unit TEXT;`,
       `ALTER TABLE claim_items ADD COLUMN rate_per_unit REAL;`
     ]
+  },
+  {
+    id: 14,
+    name: "profiles_cache_org_context_sprint16",
+    statements: [
+      `ALTER TABLE profiles_cache ADD COLUMN org_id TEXT;`,
+      `ALTER TABLE profiles_cache ADD COLUMN org_role TEXT;`,
+      `ALTER TABLE profiles_cache ADD COLUMN workspace_type TEXT;`,
+      `ALTER TABLE profiles_cache ADD COLUMN effective_tier TEXT;`,
+    ]
   }
 ];

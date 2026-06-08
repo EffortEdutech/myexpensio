@@ -43,6 +43,7 @@ async function applyBootstrapPayload(payload: Record<string, unknown>): Promise<
 
   // Apply profile
   const profile = payload.profile as Record<string, unknown> | null;
+  const orgCtx = payload.org_context as Record<string, unknown> | null;
   if (profile?.id) {
     await db.runAsync(
       `INSERT INTO profiles_cache (id, email, display_name, department, location, company_name, sync_status, updated_at)
@@ -57,6 +58,22 @@ async function applyBootstrapPayload(payload: Record<string, unknown>): Promise<
         profile.company_name ?? null, now,
       ] as BindRow
     );
+
+    // Save org context fields — requires migration 14 columns on profiles_cache
+    if (orgCtx?.org_id) {
+      await db.runAsync(
+        `UPDATE profiles_cache
+         SET org_id=?, org_role=?, workspace_type=?, effective_tier=?
+         WHERE id=?`,
+        [
+          orgCtx.org_id as string,
+          (orgCtx.org_role as string) ?? null,
+          (orgCtx.workspace_type as string) ?? null,
+          (orgCtx.effective_tier as string) ?? "FREE",
+          profile.id as string,
+        ] as BindRow
+      );
+    }
   }
 
   // Apply subscription

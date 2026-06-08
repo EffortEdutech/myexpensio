@@ -8,6 +8,7 @@
 //   - spaces (PERSONAL always; BUSINESS for PREMIUM)
 //   - rate_version (current rates)
 //   - usage_counters
+//   - org_context (org_id, org_role, workspace_type, effective_tier)
 //
 // Called once after mobile login or when the local DB has no cursor.
 
@@ -67,6 +68,36 @@ export async function GET(request: NextRequest) {
     .select('feature, count, period_start, period_end')
     .eq('user_id', user.id)
 
+  // ── Org context ────────────────────────────────────────────────────────────
+  // get_active_org resolves: ORG subscription → USER subscription (fallback).
+  // Returns { org_id, org_name, org_role, tier } or null.
+  let orgContext: {
+    org_id: string;
+    org_role: string;
+    workspace_type: string | null;
+    effective_tier: string;
+  } | null = null
+
+  const { data: activeOrg } = await supabase.rpc('get_active_org', {
+    p_user_id: user.id,
+  })
+
+  if (activeOrg?.org_id) {
+    // Fetch workspace_type from organizations table (not returned by RPC)
+    const { data: orgRow } = await supabase
+      .from('organizations')
+      .select('workspace_type')
+      .eq('id', activeOrg.org_id)
+      .maybeSingle()
+
+    orgContext = {
+      org_id: activeOrg.org_id,
+      org_role: activeOrg.org_role ?? 'MEMBER',
+      workspace_type: orgRow?.workspace_type ?? null,
+      effective_tier: activeOrg.tier ?? 'FREE',
+    }
+  }
+
   return NextResponse.json({
     cursor: makeCursor(),
     server_time: new Date().toISOString(),
@@ -75,15 +106,15 @@ export async function GET(request: NextRequest) {
       // Remap entity_type/entity_id → owner_type/owner_id for mobile
       subscription: subscription ? {
         ...subscription,
-        owner_type: subscription.entity_type.toLowerCase(),  // 'USER' → 'user'
+        owner_type: subscription.entity_type.toLowerCase(),
         owner_id:   subscription.entity_id,
-        status:     subscription.status.toLowerCase(),        // 'ACTIVE' → 'active'
-        tier:       subscription.tier,                        // already uppercase — mobile stores as-is
+        status:     subscription.status.toLowerCase(),
+        tier:       subscription.tier,
       } : null,
       spaces: spaces ?? [],
       rate_version: rateVersion ?? null,
       usage_counters: usageCounters ?? [],
+      org_context: orgContext,
     },
   })
 }
-
