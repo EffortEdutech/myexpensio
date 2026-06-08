@@ -14,6 +14,7 @@ import { SignatureModal } from "@/features/exports/components/SignatureModal";
 
 import type { ClaimDraft } from "@/features/claims/types";
 import { buildLocalPdf } from "@/features/exports/buildLocalPdf";
+import { buildLocalXlsx } from "@/features/exports/buildLocalXlsx";
 import { downloadCsvExport } from "@/features/exports/exportFiles";
 import { useCreateLocalExportJob } from "@/features/exports/hooks/useExportActions";
 import {
@@ -58,14 +59,11 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
   const limitReached =
     usage.data?.limit != null &&
     usage.data.exportsCreated >= usage.data.limit;
-  // PDF is now handled locally — never "needs backend"
-  const selectedFormatNeedsBackend = format === "XLSX";
   const primaryActionDisabled =
     selectedClaimIds.length === 0 ||
     createExport.isPending ||
     pdfGenerating ||
     limitReached ||
-    selectedFormatNeedsBackend ||
     (format === "PDF" && !canExportPdf);
 
   function toggleClaim(claimId: string) {
@@ -85,8 +83,8 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
         return;
       }
 
-      if (format !== "CSV") {
-        setDownloadNotice(`${format} export is not yet available.`);
+      if (format === "XLSX") {
+        await handleGenerateXlsx();
         return;
       }
 
@@ -137,6 +135,32 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
       setDownloadNotice("PDF ready — tap to save or share.");
     } catch (error) {
       setDownloadNotice(error instanceof Error ? error.message : "PDF generation failed.");
+    } finally {
+      setPdfGenerating(false);
+    }
+  }
+
+  async function handleGenerateXlsx() {
+    if (!preview.data?.payload) {
+      setDownloadNotice("No export data available. Select at least one claim.");
+      return;
+    }
+    setPdfGenerating(true);
+    setDownloadNotice(null);
+    try {
+      const result = await buildLocalXlsx(preview.data.payload, accessToken);
+      const canShare = await Sharing.isAvailableAsync();
+      if (!canShare) {
+        setDownloadNotice(`XLSX saved: ${result.uri}`);
+        return;
+      }
+      await Sharing.shareAsync(result.uri, {
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        dialogTitle: "Save or share your expense claim XLSX",
+      });
+      setDownloadNotice("XLSX ready — tap to save or share.");
+    } catch (error) {
+      setDownloadNotice(error instanceof Error ? error.message : "XLSX generation failed.");
     } finally {
       setPdfGenerating(false);
     }
@@ -281,13 +305,6 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
             On-device PDF export with TNG statement highlighting is available on PRO and PREMIUM plans.
           </Text>
         </View>
-      ) : format === "XLSX" ? (
-        <View style={styles.backendNotice}>
-          <Text style={styles.backendNoticeTitle}>XLSX coming soon</Text>
-          <Text style={styles.backendNoticeCopy}>
-            Excel export is planned for a future release. Use CSV for now — it opens directly in Excel.
-          </Text>
-        </View>
       ) : null}
 
       <View style={styles.section}>
@@ -402,16 +419,16 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
         <Text style={styles.generateText}>
           {format === "PDF" && !canExportPdf
             ? "PRO Required — Upgrade to Export PDF"
-            : format === "XLSX"
-              ? "XLSX — Coming Soon"
-              : limitReached
-                ? "Export Limit Reached"
-                : pdfGenerating
-                  ? "Generating PDF…"
-                  : createExport.isPending
-                    ? "Generating CSV…"
-                    : format === "PDF"
-                      ? "Generate PDF"
+            : limitReached
+              ? "Export Limit Reached"
+              : pdfGenerating
+                ? format === "XLSX" ? "Generating XLSX…" : "Generating PDF…"
+                : createExport.isPending
+                  ? "Generating CSV…"
+                  : format === "PDF"
+                    ? "Generate PDF"
+                    : format === "XLSX"
+                      ? "Download XLSX"
                       : "Download CSV"}
         </Text>
       </Pressable>

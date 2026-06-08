@@ -130,6 +130,59 @@ function buildPdfDataFromMobilePayload(
   }
 }
 
+/**
+ * Maps V2 mobile SQLite payload → ClaimForExport[] for buildExport (CSV/XLSX).
+ * Fields not present in the mobile payload are set to safe nulls.
+ */
+function buildClaimsFromMobilePayload(
+  payload: MobilePayload,
+  profile: { display_name?: string | null; email?: string | null } | null,
+): ClaimForExport[] {
+  const rowsByClaimId = new Map<string, MobileExportPreviewRow[]>()
+  for (const row of payload.rows) {
+    const arr = rowsByClaimId.get(row.claimId) ?? []
+    arr.push(row)
+    rowsByClaimId.set(row.claimId, arr)
+  }
+
+  return payload.claims.map((claim) => {
+    const rows = rowsByClaimId.get(claim.id) ?? []
+    return {
+      id: claim.id,
+      title: claim.title || mobilePeriodLabel(claim.periodStart, claim.periodEnd),
+      status: claim.status?.toUpperCase() ?? 'DRAFT',
+      period_start: claim.periodStart ?? null,
+      period_end: claim.periodEnd ?? null,
+      submitted_at: null,
+      total_amount: claim.totalAmountCents / 100,
+      currency: 'MYR',
+      user_name: profile?.display_name ?? null,
+      user_email: profile?.email ?? null,
+      items: rows.map((row): ItemForExport => ({
+        id: row.itemId,
+        type: row.itemType?.toUpperCase() ?? 'MISC',
+        amount: row.amountCents / 100,
+        currency: row.currency ?? 'MYR',
+        claim_date: row.itemDate ?? null,
+        merchant: null,
+        notes: row.notes ?? null,
+        receipt_url: null,
+        rate: null,
+        paid_via_tng: row.paidViaTng ?? false,
+        tng_transaction_id: null,
+        tng_trans_no: row.tngTransNo ?? null,
+        perdiem_days: null,
+        perdiem_rate_myr: null,
+        perdiem_destination: null,
+        meal_session: null,
+        lodging_check_in: null,
+        lodging_check_out: null,
+        trip: null,
+      })),
+    }
+  })
+}
+
 function mobilePeriodLabel(start: string | null | undefined, end: string | null | undefined): string {
   if (!start) return 'Untitled'
   const s = new Date(start)
@@ -197,6 +250,36 @@ export async function POST(request: NextRequest) {
   const { claim_ids, format, template_id, pdf_layout, signature_data_url, mobile_payload, mobile_tng_statements } = body
   if (!claim_ids?.length) return err('VALIDATION_ERROR', 'claim_ids is required', 400)
   if (!['CSV', 'XLSX', 'PDF'].includes(format)) return err('VALIDATION_ERROR', 'format must be CSV | XLSX | PDF', 400)
+
+  // ── Mobile XLSX fast path ────────────────────────────────────────────────
+  // Same mobile_payload approach as PDF — skips Supabase claims query.
+  if (format === 'XLSX' && mobile_payload) {
+    const { data: mobileProfile } = await supabase
+      .from('profiles')
+      .select('display_name, email')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    const shaped: ClaimForExport[] = buildClaimsFromMobilePayload(
+      mobile_payload,
+      mobileProfile,
+    )
+
+    const { buffer, contentType, extension } = await buildExport(shaped, 'XLSX', {
+      columns: PRESET_COLUMNS.STANDARD,
+    })
+
+    const filename = `myexpensio-claim-${new Date().toISOString().slice(0, 10)}.${extension}`
+    return new NextResponse(new Uint8Array(buffer), {
+      status: 200,
+      headers: {
+        'Content-Type': contentType,
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length': String(buffer.length),
+        'Cache-Control': 'no-store',
+      },
+    })
+  }
 
   // ── Mobile PDF fast path ──────────────────────────────────────────────────
   // V2 mobile sends its local SQLite data as mobile_payload so we never need
