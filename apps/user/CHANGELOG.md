@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.7.0](https://github.com/EffortEdutech/myexpensio/compare/v4.6.0...v4.7.0) (2026-06-08)
+
+
+### Features
+
+* signature modal with Draw (touchscreen) + Upload (gallery) tabs ([62f16e6](https://github.com/EffortEdutech/myexpensio/commit/62f16e60aa3452cd68595e8424625686d24cb8b7))
+
 ## [4.6.0](https://github.com/EffortEdutech/myexpensio/compare/v4.5.0...v4.6.0) (2026-06-07)
 
 
