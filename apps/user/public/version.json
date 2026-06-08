@@ -1,6 +1,6 @@
 {
-  "version": "4.8.0",
+  "version": "4.9.0",
   "changelog": [
-    "XLSX export for V2 mobile via mobile_payload fast path ()"
+    "sprint15: add rich metadata to claim_items — meal session, lodging, per diem, merchant ()"
   ]
 }
