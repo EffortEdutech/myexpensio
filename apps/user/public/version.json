@@ -1,6 +1,6 @@
 {
-  "version": "4.9.0",
+  "version": "4.10.0",
   "changelog": [
-    "sprint15: add rich metadata to claim_items — meal session, lodging, per diem, merchant ()"
+    "sprint16: bootstrap org context — role/tier aware V2 mobile ()"
   ]
 }
