@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.9.0](https://github.com/EffortEdutech/myexpensio/compare/v4.8.0...v4.9.0) (2026-06-08)
+
+
+### Features
+
+* **sprint15:** add rich metadata to claim_items — meal session, lodging, per diem, merchant ([c36c79a](https://github.com/EffortEdutech/myexpensio/commit/c36c79a33747403202eb1ac42f1bd7725be76453))
+
 ## [4.8.0](https://github.com/EffortEdutech/myexpensio/compare/v4.7.0...v4.8.0) (2026-06-08)
 
 
