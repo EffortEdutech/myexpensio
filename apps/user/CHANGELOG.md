@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.10.0](https://github.com/EffortEdutech/myexpensio/compare/v4.9.0...v4.10.0) (2026-06-08)
+
+
+### Features
+
+* **sprint16:** bootstrap org context — role/tier aware V2 mobile ([2bff950](https://github.com/EffortEdutech/myexpensio/commit/2bff950d2060c97a09c6aabcf8c580271be0d276))
+
 ## [4.9.0](https://github.com/EffortEdutech/myexpensio/compare/v4.8.0...v4.9.0) (2026-06-08)
 
 
