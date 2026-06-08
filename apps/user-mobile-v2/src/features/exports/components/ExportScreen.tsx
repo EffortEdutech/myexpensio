@@ -1,4 +1,3 @@
-import * as ImagePicker from "expo-image-picker";
 import * as Sharing from "expo-sharing";
 import { useMemo, useState } from "react";
 import {
@@ -10,6 +9,8 @@ import {
   Text,
   View
 } from "react-native";
+
+import { SignatureModal } from "@/features/exports/components/SignatureModal";
 
 import type { ClaimDraft } from "@/features/claims/types";
 import { buildLocalPdf } from "@/features/exports/buildLocalPdf";
@@ -35,7 +36,7 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
   const [selectedClaimIds, setSelectedClaimIds] = useState<string[]>([]);
   const [format, setFormat] = useState<ExportFormat>("CSV");
   const [pdfLayout, setPdfLayout] = useState<"BY_DATE" | "BY_CATEGORY">("BY_DATE");
-  const [signatureUri, setSignatureUri] = useState<string | null>(null);
+  const [signatureModalOpen, setSignatureModalOpen] = useState(false);
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
   const [pdfGenerating, setPdfGenerating] = useState(false);
@@ -141,33 +142,6 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
     }
   }
 
-  async function handlePickSignature() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setDownloadNotice("Gallery permission is required to pick a signature image.");
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      aspect: [3, 1],
-      quality: 0.8,
-      base64: true,
-    });
-    if (result.canceled || !result.assets?.[0]) return;
-    const asset = result.assets[0];
-    setSignatureUri(asset.uri);
-    if (asset.base64) {
-      const mime = asset.mimeType ?? "image/jpeg";
-      setSignatureDataUrl(`data:${mime};base64,${asset.base64}`);
-    }
-  }
-
-  function handleClearSignature() {
-    setSignatureUri(null);
-    setSignatureDataUrl(null);
-  }
-
   function handleDownloadHistory(job: ExportJob) {
     try {
       if (!job.previewPayload || job.format !== "CSV") {
@@ -267,16 +241,16 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
       {format === "PDF" && canExportPdf ? (
         <View style={styles.signatureSection}>
           <Text style={styles.layoutLabel}>Signature</Text>
-          {signatureUri ? (
+          {signatureDataUrl ? (
             <View style={styles.signaturePreview}>
               <Image
-                source={{ uri: signatureUri }}
+                source={{ uri: signatureDataUrl }}
                 style={styles.signatureImage}
                 resizeMode="contain"
               />
               <Pressable
                 accessibilityRole="button"
-                onPress={handleClearSignature}
+                onPress={() => setSignatureDataUrl(null)}
                 style={styles.signatureClear}
               >
                 <Text style={styles.signatureClearText}>Clear</Text>
@@ -285,14 +259,20 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
           ) : (
             <Pressable
               accessibilityRole="button"
-              onPress={() => void handlePickSignature()}
+              onPress={() => setSignatureModalOpen(true)}
               style={styles.signatureButton}
             >
-              <Text style={styles.signatureButtonText}>+ Add Signature Image</Text>
+              <Text style={styles.signatureButtonText}>+ Add Signature</Text>
             </Pressable>
           )}
         </View>
       ) : null}
+
+      <SignatureModal
+        visible={signatureModalOpen}
+        onConfirm={(dataUrl) => setSignatureDataUrl(dataUrl)}
+        onClose={() => setSignatureModalOpen(false)}
+      />
 
       {format === "PDF" && !canExportPdf ? (
         <View style={styles.proNotice}>
