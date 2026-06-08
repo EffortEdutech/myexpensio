@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.8.0](https://github.com/EffortEdutech/myexpensio/compare/v4.7.0...v4.8.0) (2026-06-08)
+
+
+### Features
+
+* XLSX export for V2 mobile via mobile_payload fast path ([91d2b0f](https://github.com/EffortEdutech/myexpensio/commit/91d2b0f208354056eb1eea3c4eeb2c3c3f33c239))
+
 ## [4.7.0](https://github.com/EffortEdutech/myexpensio/compare/v4.6.0...v4.7.0) (2026-06-08)
 
 
