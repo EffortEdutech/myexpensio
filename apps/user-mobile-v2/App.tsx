@@ -138,7 +138,6 @@ type DeepLinkParsed = DeepLinkResetPassword | null;
 
 function parseDeepLinkUrl(url: string): DeepLinkParsed {
   if (!url.startsWith("myexpensio://")) return null;
-  // Supabase recovery links carry tokens in the URL fragment: #access_token=...&type=recovery
   const hashIdx = url.indexOf("#");
   const paramStr = hashIdx >= 0 ? url.slice(hashIdx + 1) : url.slice(url.indexOf("?") + 1);
   const params = new URLSearchParams(paramStr);
@@ -167,14 +166,12 @@ function MobileV2Home() {
   const [deepLinkReset, setDeepLinkReset] = useState<DeepLinkResetPassword | null>(null);
 
   useEffect(() => {
-    // Handle cold-start deep link (app was closed when link was tapped)
     Linking.getInitialURL().then((url) => {
       if (url) {
         const parsed = parseDeepLinkUrl(url);
         if (parsed?.type === "reset-password") setDeepLinkReset(parsed);
       }
     });
-    // Handle warm deep link (app already open when link is tapped)
     const sub = Linking.addEventListener("url", ({ url }) => {
       const parsed = parseDeepLinkUrl(url);
       if (parsed?.type === "reset-password") setDeepLinkReset(parsed);
@@ -182,8 +179,6 @@ function MobileV2Home() {
     return () => sub.remove();
   }, []);
 
-  // Show ResetPasswordScreen whenever a valid recovery deep-link arrives,
-  // regardless of auth state (token carries its own session).
   if (deepLinkReset) {
     return (
       <ResetPasswordScreen
@@ -695,8 +690,8 @@ function SettingsPanel({
   const { canManageRates, orgRole, workspaceType } = useOrgContext();
   const [openSections, setOpenSections] = useState({
     billing: false,
-    profile: true,
-    rates: true,
+    profile: false,
+    rates: false,
     system: false
   });
   const [biometricEnabled, setBiometricEnabled] = useState(false);
@@ -1204,7 +1199,7 @@ function SettingsAccordion({
             </View>
           ) : null}
         </View>
-        <Text style={styles.accordionChevron}>{isOpen ? "⌄" : "›"}</Text>
+        <Text style={styles.accordionChevron}>{isOpen ? "-" : "+"}</Text>
       </Pressable>
       {isOpen ? <View style={styles.accordionBody}>{children}</View> : null}
     </View>
@@ -1368,14 +1363,22 @@ function ChangePasswordForm() {
         style={styles.input}
         value={confirmPassword}
       />
-      {error ? <Text style={{ color: colors.danger, fontSize: typography.caption, fontWeight: "700" }}>{error}</Text> : null}
-      {success ? <Text style={{ color: "#16a34a", fontSize: typography.caption, fontWeight: "700" }}>✅ Password updated successfully.</Text> : null}
+      {error ? (
+        <Text style={{ color: colors.danger, fontSize: typography.caption, fontWeight: "700" }}>
+          {error}
+        </Text>
+      ) : null}
+      {success ? (
+        <Text style={{ color: "#16a34a", fontSize: typography.caption, fontWeight: "700" }}>
+          ✅ Password updated successfully.
+        </Text>
+      ) : null}
       <Pressable
         disabled={isPending}
         onPress={handleChangePassword}
         style={({ pressed }) => [
           styles.settingsSecondaryButton,
-          pressed || isPending ? styles.primaryButtonPressed : null
+          pressed || isPending ? styles.primaryButtonPressed : null,
         ]}
       >
         <Text style={styles.settingsSecondaryText}>
@@ -2777,4 +2780,104 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10
   },
-  ratesLockedB
+  ratesLockedBannerText: {
+    color: "#92400e",
+    fontSize: 13,
+    lineHeight: 18
+  },
+  settingsActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm
+  },
+  settingsPrimaryButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: spacing.lg
+  },
+  settingsPrimaryText: {
+    color: colors.onPrimary,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  settingsSecondaryButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: spacing.lg
+  },
+  settingsSecondaryText: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  switchRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between"
+  },
+  switchCopy: {
+    flex: 1,
+    gap: 3
+  },
+  switchTitle: {
+    color: colors.text,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  switchSub: {
+    color: colors.muted,
+    fontSize: 11,
+    lineHeight: 16
+  },
+  aboutName: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  aboutText: {
+    color: "#475569",
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  aboutMuted: {
+    color: "#94a3b8",
+    fontSize: 11,
+    lineHeight: 16
+  },
+  legalLinks: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 2,
+    marginTop: 2
+  },
+  legalLinkText: {
+    color: "#3b82f6",
+    fontSize: 11,
+    textDecorationLine: "underline"
+  },
+  signOutButton: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "#dbeafe",
+    borderColor: "#93c5fd",
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 40,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md
+  },
+  signOutButtonText: {
+    color: "#1e3a8a",
+    fontSize: typography.caption,
+    fontWeight: "800"
+  }
+});
