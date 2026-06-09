@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.11.0](https://github.com/EffortEdutech/myexpensio/compare/v4.10.0...v4.11.0) (2026-06-09)
+
+
+### Features
+
+* **sprint17:** receipt attachment on Personal/Business expense entries ([40e8523](https://github.com/EffortEdutech/myexpensio/commit/40e8523ff343f9540d2217bcaa1af2bd41c70b54))
+
 ## [4.10.0](https://github.com/EffortEdutech/myexpensio/compare/v4.9.0...v4.10.0) (2026-06-08)
 
 
