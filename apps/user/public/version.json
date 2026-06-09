@@ -1,6 +1,6 @@
 {
-  "version": "4.10.0",
+  "version": "4.11.0",
   "changelog": [
-    "sprint16: bootstrap org context — role/tier aware V2 mobile ()"
+    "sprint17: receipt attachment on Personal/Business expense entries ()"
   ]
 }
