@@ -155,6 +155,7 @@ export async function updateLedgerEntry(input: UpdateLedgerEntryInput): Promise<
   if (input.taxCategory !== undefined) { fields.push("tax_category = ?");  values.push(input.taxCategory ?? null); }
   if (input.paymentMethod !== undefined) { fields.push("payment_method = ?"); values.push(input.paymentMethod ?? null); }
   if (input.incomeSource !== undefined)  { fields.push("income_source = ?");  values.push(input.incomeSource ?? null); }
+  if (input.receiptPath !== undefined)   { fields.push("receipt_path = ?");   values.push(input.receiptPath ?? null); }
 
   if (fields.length === 0) return;
   fields.push("updated_at = ?", "sync_status = 'pending'");

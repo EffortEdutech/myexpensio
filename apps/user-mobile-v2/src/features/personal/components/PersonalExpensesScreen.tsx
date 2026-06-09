@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -10,8 +12,8 @@ import {
   Text,
   TextInput,
   View,
-  Modal,
 } from "react-native";
+import { ReceiptPickerField } from "@/components/ReceiptPickerField";
 import { DatePickerField } from "@/components/DatePickerField";
 import {
   useCreateLedgerEntry,
@@ -132,7 +134,10 @@ export function PersonalExpensesScreen({ onBack, externalAddOpen, onExternalAddC
               </View>
               <View style={styles.rowRight}>
                 <Text style={styles.rowAmount}>RM {(entry.amountCents / 100).toFixed(2)}</Text>
-                {entry.isTaxDeductible ? <Text style={styles.taxChip}>Tax ✓</Text> : null}
+                <View style={{ flexDirection: "row", gap: 4, alignItems: "center" }}>
+                  {entry.isTaxDeductible ? <Text style={styles.taxChip}>Tax ✓</Text> : null}
+                  {entry.receiptPath ? <Text style={styles.receiptChip}>📎</Text> : null}
+                </View>
               </View>
               <Text style={styles.rowChevron}>›</Text>
             </Pressable>
@@ -168,6 +173,7 @@ function AddExpenseForm({ onClose, initialData }: { onClose: () => void; initial
   const [paymentMethod, setPaymentMethod] = useState(isEdit ? (initialData.paymentMethod ?? "") : "");
   const [isTaxDeductible, setIsTaxDeductible] = useState(isEdit ? initialData.isTaxDeductible : false);
   const [taxCategory, setTaxCategory] = useState(isEdit ? (initialData.taxCategory ?? "") : "");
+  const [receiptPath, setReceiptPath] = useState<string | null>(isEdit ? (initialData.receiptPath ?? null) : null);
   const [error, setError] = useState<string | null>(null);
 
   const create = useCreateLedgerEntry();
@@ -188,6 +194,7 @@ function AddExpenseForm({ onClose, initialData }: { onClose: () => void; initial
         paymentMethod: paymentMethod || null,
         isTaxDeductible,
         taxCategory: isTaxDeductible && taxCategory ? taxCategory : null,
+        receiptPath: receiptPath ?? null,
       }, { onSuccess: onClose });
     } else {
       create.mutate({
@@ -200,6 +207,7 @@ function AddExpenseForm({ onClose, initialData }: { onClose: () => void; initial
         paymentMethod: paymentMethod || null,
         isTaxDeductible,
         taxCategory: isTaxDeductible && taxCategory ? taxCategory : null,
+        receiptPath: receiptPath ?? null,
       }, { onSuccess: onClose });
     }
   }
@@ -275,6 +283,9 @@ function AddExpenseForm({ onClose, initialData }: { onClose: () => void; initial
           </ScrollView>
         </Field>
       )}
+      <Field label="Receipt (optional)">
+        <ReceiptPickerField value={receiptPath} onChange={setReceiptPath} />
+      </Field>
       <Pressable onPress={handleSave} disabled={isSaving}
         style={[styles.saveBtn, { opacity: isSaving ? 0.6 : 1 }]}>
         <Text style={styles.saveBtnText}>{isSaving ? "Saving…" : isEdit ? "Save Changes" : "Save Expense"}</Text>
@@ -326,6 +337,12 @@ function EntryDetailModal({ entry, onClose, onDeleted, onUpdated }: {
             {entry.isTaxDeductible ? (
               <View style={{ backgroundColor: "#f0fdf4", borderRadius: 8, padding: 10 }}>
                 <Text style={{ color: "#16a34a", fontSize: 13, fontWeight: "700" }}>✓ Tax Deductible{entry.taxCategory ? ` · ${entry.taxCategory}` : ""}</Text>
+              </View>
+            ) : null}
+            {entry.receiptPath ? (
+              <View style={{ gap: 6 }}>
+                <Text style={{ color: "#94a3b8", fontSize: 13 }}>Receipt</Text>
+                <Image source={{ uri: entry.receiptPath }} style={styles.receiptThumb} resizeMode="cover" />
               </View>
             ) : null}
           </View>
@@ -429,4 +446,6 @@ const styles = StyleSheet.create({
   toggleThumb: { width: 20, height: 20, borderRadius: 10, backgroundColor: "#fff", shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 2, elevation: 2 },
   saveBtn: { backgroundColor: colors.primary, borderRadius: 12, padding: 16, alignItems: "center", marginTop: spacing.sm },
   saveBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  receiptChip: { fontSize: 12, color: "#64748b" },
+  receiptThumb: { width: "100%", height: 180, borderRadius: 10, backgroundColor: "#e2e8f0" },
 });
