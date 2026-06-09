@@ -24,6 +24,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { DatePickerField } from "@/components/DatePickerField";
 import { LoginScreen } from "@/features/auth/components/LoginScreen";
+import { ResetPasswordScreen } from "@/features/auth/components/ResetPasswordScreen";
 import { nativeBiometricAuthAdapter } from "@/features/auth/biometricAuth";
 import { useSignOut } from "@/features/auth/hooks/useAuthActions";
 import { useOrgContext } from "@/features/auth/hooks/useOrgContext";
@@ -130,6 +131,27 @@ export default function App() {
   );
 }
 
+// ── Deep-link URL parser ──────────────────────────────────────────────────────
+
+type DeepLinkResetPassword = { type: "reset-password"; accessToken: string; refreshToken: string };
+type DeepLinkParsed = DeepLinkResetPassword | null;
+
+function parseDeepLinkUrl(url: string): DeepLinkParsed {
+  if (!url.startsWith("myexpensio://")) return null;
+  // Supabase recovery links carry tokens in the URL fragment: #access_token=...&type=recovery
+  const hashIdx = url.indexOf("#");
+  const paramStr = hashIdx >= 0 ? url.slice(hashIdx + 1) : url.slice(url.indexOf("?") + 1);
+  const params = new URLSearchParams(paramStr);
+  if (url.includes("reset-password") && params.get("type") === "recovery") {
+    const accessToken = params.get("access_token");
+    const refreshToken = params.get("refresh_token");
+    if (accessToken && refreshToken) {
+      return { type: "reset-password", accessToken, refreshToken };
+    }
+  }
+  return null;
+}
+
 function MobileV2Home() {
   const authStatus = useSessionRestore();
   const [activeSpace, setActiveSpace] = useState<AppSpace>("work");
@@ -140,6 +162,37 @@ function MobileV2Home() {
   const [businessAddOpen, setBusinessAddOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { tier: subscriptionTier } = useSubscription();
+
+  // ── Deep-link handler ──────────────────────────────────────────────────────
+  const [deepLinkReset, setDeepLinkReset] = useState<DeepLinkResetPassword | null>(null);
+
+  useEffect(() => {
+    // Handle cold-start deep link (app was closed when link was tapped)
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        const parsed = parseDeepLinkUrl(url);
+        if (parsed?.type === "reset-password") setDeepLinkReset(parsed);
+      }
+    });
+    // Handle warm deep link (app already open when link is tapped)
+    const sub = Linking.addEventListener("url", ({ url }) => {
+      const parsed = parseDeepLinkUrl(url);
+      if (parsed?.type === "reset-password") setDeepLinkReset(parsed);
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Show ResetPasswordScreen whenever a valid recovery deep-link arrives,
+  // regardless of auth state (token carries its own session).
+  if (deepLinkReset) {
+    return (
+      <ResetPasswordScreen
+        accessToken={deepLinkReset.accessToken}
+        refreshToken={deepLinkReset.refreshToken}
+        onComplete={() => setDeepLinkReset(null)}
+      />
+    );
+  }
 
   if (authStatus === "unknown") {
     return (
@@ -1065,13 +1118,10 @@ function SettingsPanel({
 
         <SettingsCard
           icon="🔑"
-          sub="Password changes will be handled by auth backend once sync API is connected."
+          sub="Update the password for your myexpensio account."
           title="Password"
         >
-          <SecondarySettingsButton
-            label="Change Password"
-            onPress={() => showSaved("Password change modal is queued for auth parity.")}
-          />
+          <ChangePasswordForm />
         </SettingsCard>
 
         <SettingsCard
@@ -1080,7 +1130,7 @@ function SettingsPanel({
           title="About myexpensio"
         >
           <Text style={styles.aboutName}>myexpensio</Text>
-          <Text style={styles.aboutText}>Version 0.1.0 mobile v2</Text>
+          <Text style={styles.aboutText}>Version 1.0.0</Text>
           <View style={styles.legalLinks}>
             <Pressable onPress={() => Linking.openURL("https://myexpensio.com/terms")}>
               <Text style={styles.legalLinkText}>Terms of Service</Text>
@@ -1267,6 +1317,72 @@ function PrimarySettingsButton({
     >
       <Text style={styles.settingsPrimaryText}>{label}</Text>
     </Pressable>
+  );
+}
+
+function ChangePasswordForm() {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  async function handleChangePassword() {
+    setError(null);
+    setSuccess(false);
+    if (!newPassword.trim()) { setError("Please enter a new password."); return; }
+    if (newPassword.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (newPassword !== confirmPassword) { setError("Passwords do not match."); return; }
+    setIsPending(true);
+    try {
+      const { supabase } = await import("@/lib/supabase");
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+      if (updateError) throw new Error(updateError.message);
+      setSuccess(true);
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update password.");
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  return (
+    <View style={{ gap: spacing.sm }}>
+      <TextInput
+        autoCapitalize="none"
+        autoCorrect={false}
+        onChangeText={setNewPassword}
+        placeholder="New password"
+        secureTextEntry
+        style={styles.input}
+        value={newPassword}
+      />
+      <TextInput
+        autoCapitalize="none"
+        autoCorrect={false}
+        onChangeText={setConfirmPassword}
+        placeholder="Confirm new password"
+        secureTextEntry
+        style={styles.input}
+        value={confirmPassword}
+      />
+      {error ? <Text style={{ color: colors.danger, fontSize: typography.caption, fontWeight: "700" }}>{error}</Text> : null}
+      {success ? <Text style={{ color: "#16a34a", fontSize: typography.caption, fontWeight: "700" }}>✅ Password updated successfully.</Text> : null}
+      <Pressable
+        disabled={isPending}
+        onPress={handleChangePassword}
+        style={({ pressed }) => [
+          styles.settingsSecondaryButton,
+          pressed || isPending ? styles.primaryButtonPressed : null
+        ]}
+      >
+        <Text style={styles.settingsSecondaryText}>
+          {isPending ? "Updating…" : "Update Password"}
+        </Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -2661,104 +2777,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10
   },
-  ratesLockedBannerText: {
-    color: "#92400e",
-    fontSize: 13,
-    lineHeight: 18
-  },
-  settingsActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm
-  },
-  settingsPrimaryButton: {
-    alignItems: "center",
-    backgroundColor: colors.primary,
-    borderRadius: 10,
-    minHeight: 44,
-    justifyContent: "center",
-    paddingHorizontal: spacing.lg
-  },
-  settingsPrimaryText: {
-    color: colors.onPrimary,
-    fontSize: typography.caption,
-    fontWeight: "900"
-  },
-  settingsSecondaryButton: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 10,
-    borderWidth: 1,
-    minHeight: 44,
-    justifyContent: "center",
-    paddingHorizontal: spacing.lg
-  },
-  settingsSecondaryText: {
-    color: colors.text,
-    fontSize: typography.caption,
-    fontWeight: "900"
-  },
-  switchRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.md,
-    justifyContent: "space-between"
-  },
-  switchCopy: {
-    flex: 1,
-    gap: 3
-  },
-  switchTitle: {
-    color: colors.text,
-    fontSize: typography.caption,
-    fontWeight: "900"
-  },
-  switchSub: {
-    color: colors.muted,
-    fontSize: 11,
-    lineHeight: 16
-  },
-  aboutName: {
-    color: colors.text,
-    fontSize: typography.body,
-    fontWeight: "900"
-  },
-  aboutText: {
-    color: "#475569",
-    fontSize: typography.caption,
-    fontWeight: "700"
-  },
-  aboutMuted: {
-    color: "#94a3b8",
-    fontSize: 11,
-    lineHeight: 16
-  },
-  legalLinks: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 2,
-    marginTop: 2
-  },
-  legalLinkText: {
-    color: "#3b82f6",
-    fontSize: 11,
-    textDecorationLine: "underline"
-  },
-  signOutButton: {
-    alignItems: "center",
-    alignSelf: "flex-start",
-    backgroundColor: "#dbeafe",
-    borderColor: "#93c5fd",
-    borderRadius: 8,
-    borderWidth: 1,
-    minHeight: 40,
-    justifyContent: "center",
-    paddingHorizontal: spacing.md
-  },
-  signOutButtonText: {
-    color: "#1e3a8a",
-    fontSize: typography.caption,
-    fontWeight: "800"
-  }
-});
+  ratesLockedB

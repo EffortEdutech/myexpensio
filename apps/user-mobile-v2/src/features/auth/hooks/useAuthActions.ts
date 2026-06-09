@@ -66,7 +66,9 @@ export function useForgotPassword() {
   return useMutation({
     mutationFn: async (email: string) => {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: "https://myexpensio.com/reset-password",
+        // Deep-link: Supabase appends access_token + refresh_token as hash params
+        // so the app can open ResetPasswordScreen directly without going to the web.
+        redirectTo: "myexpensio://reset-password",
       });
       if (error) throw new Error(error.message);
     },

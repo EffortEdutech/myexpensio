@@ -1,6 +1,6 @@
 # PWA vs Mobile V2 — Feature Parity Tracker
 
-Last updated: 2026-06-09 (Sprints 0–18 complete)
+Last updated: 2026-06-09 (Sprints 0–19 complete)
 
 This table tracks feature parity between the production PWA (`apps/user`) and the new
 local-first mobile app (`apps/user-mobile-v2`). Update the Mobile V2 column as sprints
@@ -17,9 +17,9 @@ Legend: ✅ Done · ⚠️ Partial / stub · ❌ Not yet built · 🚫 Deferred 
 | Login | ✅ | ✅ | |
 | Session restore | ✅ | ✅ | |
 | Biometric lock on resume | ✅ | ✅ | Sprint 15 ✅ — AppState-triggered lock overlay |
-| Forgot password | ✅ | 🚫 | Deferred — deep-link handling not implemented |
+| Forgot password | ✅ | ✅ | Sprint 19 — deep-link + ResetPasswordScreen |
 | Accept invite | ✅ | 🚫 | Deferred — requires deep-link + org onboarding flow |
-| Change password | ✅ | 🚫 | Deferred |
+| Change password | ✅ | ✅ | Sprint 19 — in-app ChangePasswordForm in Settings |
 | First-time setup page | ✅ | 🚫 | Deferred |
 
 ---
@@ -51,7 +51,7 @@ Legend: ✅ Done · ⚠️ Partial / stub · ❌ Not yet built · 🚫 Deferred 
 | TNG link from claim item | ✅ | ✅ | |
 | TNG unlink | ✅ | ✅ | |
 | Draft / Submit lock | ✅ | ✅ | |
-| Claim awaiting approval badge (EMPLOYEE) | ✅ | 🚫 | Deferred to Sprint 19 |
+| Claim awaiting approval badge (EMPLOYEE) | ✅ | ✅ | Sprint 19 — full status badges in WorkHomeScreen |
 
 ---
 
@@ -173,20 +173,18 @@ Legend: ✅ Done · ⚠️ Partial / stub · ❌ Not yet built · 🚫 Deferred 
 
 | Status | Count |
 |---|---|
-| ✅ Full parity | ~45 |
+| ✅ Full parity | ~48 |
 | ⚠️ Partial / stub | ~5 |
-| 🚫 Deferred to Sprint 19+ | ~12 |
+| 🚫 Deferred to Sprint 20+ | ~9 |
 
 ### Deferred gaps (documented, not blockers for launch)
 
 | Gap | Reason deferred |
 |---|---|
-| Forgot password / change password | Requires deep-link setup — Sprint 19 |
-| Accept invite flow | Requires deep-link + org onboarding — Sprint 19 |
-| Dashboard home stats | Low-priority UX — Sprint 19 |
+| Forgot password / change password | ✅ Done in Sprint 19 |
+| Accept invite flow | Deep-link stub wired; full flow deferred to Sprint 20 |
+| Dashboard home stats (Work space) | ✅ Done — WorkHomeScreen has trip/claim stats |
 | Unified transactions tab | Non-critical for launch — Sprint 19 |
 | GPS real point tracking | Works in draft mode; edge case for most users |
 | TNG backend PDF parsing | CSV import covers majority of users |
-| Claim awaiting approval badge | EMPLOYEE workflow UX polish — Sprint 19 |
-| Profile backend save | Form works locally; sync deferred — Sprint 19 |
-| Offline banner | Native OS handles offline indication adequately |
+| Claim awaiting approval badge |

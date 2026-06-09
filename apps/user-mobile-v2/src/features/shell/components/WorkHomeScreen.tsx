@@ -81,6 +81,17 @@ function sourceBadge(trip: TripDraft) {
   return { label: "Route", bg: "#eff6ff", color: "#2563eb" };
 }
 
+function claimBadge(status: string): { label: string; bg: string; color: string } {
+  switch (status) {
+    case "draft":     return { label: "Draft",             bg: "#fef9c3", color: "#a16207" };
+    case "submitted": return { label: "Awaiting Approval", bg: "#eff6ff", color: "#2563eb" };
+    case "approved":  return { label: "Approved",          bg: "#f0fdf4", color: "#16a34a" };
+    case "rejected":  return { label: "Rejected",          bg: "#fef2f2", color: "#dc2626" };
+    case "paid":      return { label: "Paid",              bg: "#f0fdfa", color: "#0d9488" };
+    default:          return { label: status,              bg: "#f1f5f9", color: "#64748b" };
+  }
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function WorkHomeScreen({ claims, displayName, onWorkTabChange, trips }: Props) {
@@ -247,7 +258,7 @@ export function WorkHomeScreen({ claims, displayName, onWorkTabChange, trips }: 
       ) : (
         <View style={styles.list}>
           {recentClaims.map((claim) => {
-            const isDraft = claim.status === "draft";
+            const cb = claimBadge(claim.status);
             return (
               <Pressable
                 accessibilityRole="button"
@@ -266,19 +277,9 @@ export function WorkHomeScreen({ claims, displayName, onWorkTabChange, trips }: 
                     <Text style={styles.cardMetric}>
                       {fmtMyr(claim.totalAmountCents)}
                     </Text>
-                    <View
-                      style={[
-                        styles.badge,
-                        { backgroundColor: isDraft ? "#fef9c3" : "#f0fdf4" }
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.badgeText,
-                          { color: isDraft ? "#a16207" : "#16a34a" }
-                        ]}
-                      >
-                        {isDraft ? "Draft" : "Submitted"}
+                    <View style={[styles.badge, { backgroundColor: cb.bg }]}>
+                      <Text style={[styles.badgeText, { color: cb.color }]}>
+                        {cb.label}
                       </Text>
                     </View>
                   </View>
