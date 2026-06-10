@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.12.0](https://github.com/EffortEdutech/myexpensio/compare/v4.11.4...v4.12.0) (2026-06-10)
+
+
+### Features
+
+* Sprint 20-A org invite deep-link + Sprint 20-B subscription gating ([1c7bd49](https://github.com/EffortEdutech/myexpensio/commit/1c7bd49fe94980e2149c8d19dc21fe2253ca6e7a))
+
 ### [4.11.4](https://github.com/EffortEdutech/myexpensio/compare/v4.11.3...v4.11.4) (2026-06-09)
 
 ### [4.11.3](https://github.com/EffortEdutech/myexpensio/compare/v4.11.2...v4.11.3) (2026-06-09)
