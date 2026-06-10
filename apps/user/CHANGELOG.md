@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.13.0](https://github.com/EffortEdutech/myexpensio/compare/v4.12.0...v4.13.0) (2026-06-10)
+
+
+### Features
+
+* **sprint-21:** unified transactions tab — merge TNG + claim items ([f9ff1d4](https://github.com/EffortEdutech/myexpensio/commit/f9ff1d4480e4d0362457a100eb9cfe37c939ba49))
+
 ## [4.12.0](https://github.com/EffortEdutech/myexpensio/compare/v4.11.4...v4.12.0) (2026-06-10)
 
 
