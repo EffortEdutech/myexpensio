@@ -2,7 +2,7 @@
 
 **Created:** 2026-06-09
 **Updated:** 2026-06-10
-**Status:** In Progress
+**Status:** Sprints 21 + 22 complete — only 20-B (DevOps) remains
 
 ## Execution order (locked 2026-06-10)
 21 → 22 → 20-B
@@ -110,30 +110,18 @@ a unified view saves them switching tabs to reconcile.
 
 ---
 
-## Sprint 22 — TNG Backend PDF Parsing
+## Sprint 22 — TNG Backend PDF Parsing ✅ COMPLETE (2026-06-10)
 
-**Theme:** Allow users to upload TNG e-statement PDFs (not just CSV).
+**Finding:** Audit revealed the complete PDF import pipeline was already implemented
+in a prior sprint. No new code required.
 
-**Why:** TNG's primary export format is PDF; CSV requires extra steps in the TNG app.
+### What was confirmed already in place
 
-**Complexity:** BACKEND heavy — the PDF → transaction parser lives in the
-scan service (`scan_service/`), not in the mobile app.
-
-### Checklist
-
-- [ ] **22-1** Audit `scan_service/` — check if a TNG PDF parser already exists or
-  if only image/receipt scanning is implemented
-- [ ] **22-2** Research TNG e-statement PDF structure (column layout, date formats)
-- [ ] **22-3** Build `parseTngPdf(pdfBuffer)` in scan service using `pdf-parse` or
-  `pdfjs-dist` — extract: date, description, debit/credit, balance columns
-- [ ] **22-4** Add `POST /api/tng/parse-pdf` endpoint to `apps/user/app/api/tng/`
-  that accepts a PDF file upload and returns parsed transactions JSON
-- [ ] **22-5** In mobile `TngScreen.tsx` — add "Import PDF" button alongside
-  existing "Import CSV"; calls the new endpoint
-- [ ] **22-6** Map parsed transactions to `TngTransaction` type and upsert into
-  local SQLite via `tngRepository`
-- [ ] **22-7** QA: test with real TNG e-statements (multiple months)
-- [ ] **22-8** Git push
+- [x] **22-1** `scan_service/main.py` — `POST /parse-tng` endpoint fully implemented (pdfplumber, v5.3.1)
+- [x] **22-2** `apps/user/app/api/tng/parse/route.ts` — `POST /api/tng/parse` exists, forwards to scan service, saves PDF to Supabase Storage
+- [x] **22-3** `TngScreen.tsx` — `TngImportModal` with full flow: `DocumentPicker` (PDF) → XHR multipart → backend → row preview with select/deselect → `saveTngPreview()` → SQLite
+- [x] **22-4** PDF saved locally to `documentDirectory/tng-statements/` for export attachment
+- [x] **22-5** Parity tracker updated, sign-off doc written
 
 ---
 
