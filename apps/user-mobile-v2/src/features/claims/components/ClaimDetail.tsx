@@ -24,6 +24,8 @@ import type {
 } from "@/features/claims/types";
 import { useReceiptDraft } from "@/features/receipts/hooks/useReceiptUploadSummary";
 import type { LocalReceiptFile, ReceiptDraft } from "@/features/receipts/types";
+import { canUseFeature } from "@/features/subscription/featureGates";
+import { useSubscription } from "@/features/subscription/hooks/useSubscription";
 import { matchTngToClaimItems, scorePair } from "@/features/tng/matcher";
 import type { TngTransaction } from "@/features/tng/types";
 import type { TripDraft } from "@/features/trips/types";
@@ -1762,19 +1764,30 @@ function ReceiptCaptureField({
   onChange: (receipt: LocalReceiptFile | null) => void;
   value: LocalReceiptFile | null;
 }) {
+  const { tier } = useSubscription();
+  const canScan = canUseFeature(tier, "receipt_scan");
+
+  function handleCameraPress() {
+    if (!canScan) {
+      Alert.alert(
+        "PRO Feature",
+        "Camera scanning requires a PRO subscription. Upgrade in Settings → Billing to unlock.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+    void openLocalReceiptPicker("camera").then((receipt) => {
+      if (receipt) onChange(receipt);
+    });
+  }
+
   return (
     <View style={styles.receiptCapture}>
       <ReceiptChoice
-        icon="📷"
-        onPress={() =>
-          void openLocalReceiptPicker("camera").then((receipt) => {
-            if (receipt) {
-              onChange(receipt);
-            }
-          })
-        }
+        icon={canScan ? "📷" : "🔒"}
+        onPress={handleCameraPress}
         selected={value?.source === "camera"}
-        sub="Camera - auto edge detect - perspective fix"
+        sub={canScan ? "Camera - auto edge detect - perspective fix" : "PRO feature — upgrade to unlock"}
         title="Scan Document"
       />
       <ReceiptChoice

@@ -10,6 +10,9 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 
+import { canUseFeature } from "@/features/subscription/featureGates";
+import { useSubscription } from "@/features/subscription/hooks/useSubscription";
+
 type Props = {
   value: string | null;
   onChange: (uri: string | null) => void;
@@ -45,13 +48,29 @@ async function pickFromGallery(): Promise<string | null> {
 }
 
 export function ReceiptPickerField({ value, onChange }: Props) {
+  const { tier } = useSubscription();
+  const canScan = canUseFeature(tier, "receipt_scan");
+
   function handlePress() {
     if (Platform.OS === "web") {
       pickFromGallery().then((uri) => { if (uri) onChange(uri); });
       return;
     }
     Alert.alert("Attach Receipt", "Choose a source", [
-      { text: "📷 Camera",       onPress: () => pickFromCamera().then((uri)  => { if (uri) onChange(uri); }) },
+      {
+        text: canScan ? "📷 Camera" : "📷 Camera (PRO)",
+        onPress: () => {
+          if (!canScan) {
+            Alert.alert(
+              "PRO Feature",
+              "Camera scanning requires a PRO subscription. Upgrade in Settings → Billing to unlock.",
+              [{ text: "OK" }]
+            );
+            return;
+          }
+          pickFromCamera().then((uri) => { if (uri) onChange(uri); });
+        }
+      },
       { text: "🖼  Photo Library", onPress: () => pickFromGallery().then((uri) => { if (uri) onChange(uri); }) },
       { text: "Cancel", style: "cancel" },
     ]);

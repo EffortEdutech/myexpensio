@@ -21,12 +21,16 @@ export function FeatureGate({ children, feature, tier }: FeatureGateProps) {
     return <>{children}</>;
   }
 
+  const required = getRequiredTier(feature);
+
   return (
     <View style={styles.gate}>
-      <Text style={styles.title}>{getRequiredTier(feature)} feature</Text>
+      <Text style={styles.lock}>🔒</Text>
+      <Text style={styles.title}>{required} Feature</Text>
       <Text style={styles.copy}>
-        This area is already reserved in mobile v2. The server will remain the
-        source of truth for subscription access.
+        This feature requires a <Text style={styles.bold}>{required}</Text>{" "}
+        subscription. To upgrade, go to{" "}
+        <Text style={styles.bold}>Settings → Billing</Text>.
       </Text>
     </View>
   );
@@ -34,6 +38,7 @@ export function FeatureGate({ children, feature, tier }: FeatureGateProps) {
 
 const styles = StyleSheet.create({
   gate: {
+    alignItems: "center",
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderRadius: 8,
@@ -41,15 +46,24 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.lg
   },
+  lock: {
+    fontSize: 28
+  },
   title: {
     color: colors.text,
     fontSize: typography.body,
-    fontWeight: "800"
+    fontWeight: "800",
+    textAlign: "center"
   },
   copy: {
     color: colors.muted,
     fontSize: typography.body,
-    lineHeight: 22
+    lineHeight: 22,
+    textAlign: "center"
+  },
+  bold: {
+    color: colors.text,
+    fontWeight: "700"
   }
 });
 

@@ -1,6 +1,6 @@
 # PWA vs Mobile V2 — Feature Parity Tracker
 
-Last updated: 2026-06-09 (Sprints 0–19 complete)
+Last updated: 2026-06-09 (Sprints 0–20A complete)
 
 This table tracks feature parity between the production PWA (`apps/user`) and the new
 local-first mobile app (`apps/user-mobile-v2`). Update the Mobile V2 column as sprints
@@ -18,7 +18,7 @@ Legend: ✅ Done · ⚠️ Partial / stub · ❌ Not yet built · 🚫 Deferred 
 | Session restore | ✅ | ✅ | |
 | Biometric lock on resume | ✅ | ✅ | Sprint 15 ✅ — AppState-triggered lock overlay |
 | Forgot password | ✅ | ✅ | Sprint 19 — deep-link + ResetPasswordScreen |
-| Accept invite | ✅ | 🚫 | Deferred — requires deep-link + org onboarding flow |
+| Accept invite | ✅ | ✅ | Sprint 20-A — deep-link myexpensio://invite + AcceptInviteScreen |
 | Change password | ✅ | ✅ | Sprint 19 — in-app ChangePasswordForm in Settings |
 | First-time setup page | ✅ | 🚫 | Deferred |
 
@@ -175,16 +175,16 @@ Legend: ✅ Done · ⚠️ Partial / stub · ❌ Not yet built · 🚫 Deferred 
 |---|---|
 | ✅ Full parity | ~48 |
 | ⚠️ Partial / stub | ~5 |
-| 🚫 Deferred to Sprint 20+ | ~9 |
+| 🚫 Deferred to Sprint 21+ | ~8 |
 
 ### Deferred gaps (documented, not blockers for launch)
 
 | Gap | Reason deferred |
 |---|---|
 | Forgot password / change password | ✅ Done in Sprint 19 |
-| Accept invite flow | Deep-link stub wired; full flow deferred to Sprint 20 |
+| Accept invite flow | ✅ Done in Sprint 20-A — full deep-link + AcceptInviteScreen |
 | Dashboard home stats (Work space) | ✅ Done — WorkHomeScreen has trip/claim stats |
-| Unified transactions tab | Non-critical for launch — Sprint 19 |
+| Unified transactions tab | Non-critical — Sprint 21 |
 | GPS real point tracking | Works in draft mode; edge case for most users |
 | TNG backend PDF parsing | CSV import covers majority of users |
 | Claim awaiting approval badge |

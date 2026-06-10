@@ -25,6 +25,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { DatePickerField } from "@/components/DatePickerField";
 import { LoginScreen } from "@/features/auth/components/LoginScreen";
 import { ResetPasswordScreen } from "@/features/auth/components/ResetPasswordScreen";
+import { AcceptInviteScreen } from "@/features/auth/components/AcceptInviteScreen";
 import { nativeBiometricAuthAdapter } from "@/features/auth/biometricAuth";
 import { useSignOut } from "@/features/auth/hooks/useAuthActions";
 import { useOrgContext } from "@/features/auth/hooks/useOrgContext";
@@ -134,20 +135,37 @@ export default function App() {
 // ── Deep-link URL parser ──────────────────────────────────────────────────────
 
 type DeepLinkResetPassword = { type: "reset-password"; accessToken: string; refreshToken: string };
-type DeepLinkParsed = DeepLinkResetPassword | null;
+type DeepLinkInvite = { type: "invite"; inviteId: string };
+type DeepLinkParsed = DeepLinkResetPassword | DeepLinkInvite | null;
 
 function parseDeepLinkUrl(url: string): DeepLinkParsed {
   if (!url.startsWith("myexpensio://")) return null;
+
+  // Extract path (between :// and ? or end)
+  const afterScheme = url.slice("myexpensio://".length);
+  const qIdx = afterScheme.indexOf("?");
+  const path = qIdx >= 0 ? afterScheme.slice(0, qIdx) : afterScheme.split("#")[0];
+
+  // Parse params — check hash first (Supabase auth uses hash fragments)
   const hashIdx = url.indexOf("#");
-  const paramStr = hashIdx >= 0 ? url.slice(hashIdx + 1) : url.slice(url.indexOf("?") + 1);
+  const paramStr = hashIdx >= 0 ? url.slice(hashIdx + 1) : (qIdx >= 0 ? afterScheme.slice(qIdx + 1) : "");
   const params = new URLSearchParams(paramStr);
-  if (url.includes("reset-password") && params.get("type") === "recovery") {
+
+  if (path === "reset-password" && params.get("type") === "recovery") {
     const accessToken = params.get("access_token");
     const refreshToken = params.get("refresh_token");
     if (accessToken && refreshToken) {
       return { type: "reset-password", accessToken, refreshToken };
     }
   }
+
+  if (path === "invite") {
+    // Query param: myexpensio://invite?invite_id=<uuid>
+    const qParams = new URLSearchParams(qIdx >= 0 ? afterScheme.slice(qIdx + 1) : "");
+    const inviteId = qParams.get("invite_id");
+    if (inviteId) return { type: "invite", inviteId };
+  }
+
   return null;
 }
 
@@ -164,17 +182,20 @@ function MobileV2Home() {
 
   // ── Deep-link handler ──────────────────────────────────────────────────────
   const [deepLinkReset, setDeepLinkReset] = useState<DeepLinkResetPassword | null>(null);
+  const [deepLinkInvite, setDeepLinkInvite] = useState<DeepLinkInvite | null>(null);
 
   useEffect(() => {
     Linking.getInitialURL().then((url) => {
       if (url) {
         const parsed = parseDeepLinkUrl(url);
         if (parsed?.type === "reset-password") setDeepLinkReset(parsed);
+        if (parsed?.type === "invite") setDeepLinkInvite(parsed);
       }
     });
     const sub = Linking.addEventListener("url", ({ url }) => {
       const parsed = parseDeepLinkUrl(url);
       if (parsed?.type === "reset-password") setDeepLinkReset(parsed);
+      if (parsed?.type === "invite") setDeepLinkInvite(parsed);
     });
     return () => sub.remove();
   }, []);
@@ -200,6 +221,16 @@ function MobileV2Home() {
 
   if (authStatus === "signed_out") {
     return <LoginScreen />;
+  }
+
+  // Invite deep-link: user is authenticated — show accept screen
+  if (deepLinkInvite) {
+    return (
+      <AcceptInviteScreen
+        inviteId={deepLinkInvite.inviteId}
+        onComplete={() => setDeepLinkInvite(null)}
+      />
+    );
   }
 
   return (

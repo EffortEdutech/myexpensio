@@ -21,6 +21,8 @@ import {
 import { DatePickerField } from "@/components/DatePickerField";
 import type { ClaimDraft } from "@/features/claims/types";
 import { ErrorState } from "@/components/ErrorState";
+import { canUseFeature } from "@/features/subscription/featureGates";
+import { useSubscription } from "@/features/subscription/hooks/useSubscription";
 import { SkeletonList } from "@/components/SkeletonRow";
 import {
   RouteMap,
@@ -2313,20 +2315,33 @@ function EvidenceCapture({
   onChange: (value: string) => void;
   value: string | null;
 }) {
+  const { tier } = useSubscription();
+  const canScan = canUseFeature(tier, "receipt_scan");
+
+  function handleCameraPress() {
+    if (!canScan) {
+      Alert.alert(
+        "PRO Feature",
+        "Camera scanning requires a PRO subscription. Upgrade in Settings → Billing to unlock.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+    void openEvidencePicker(label, "camera").then((uri) => {
+      if (uri) onChange(uri);
+    });
+  }
+
   return (
     <View style={styles.evidenceBlock}>
       <Text style={styles.evidenceTitle}>{label}</Text>
       <View style={styles.evidenceCapture}>
         <EvidenceChoice
-          icon="📷"
+          icon={canScan ? "📷" : "🔒"}
           title="Scan Document"
-          sub="Camera · auto edge detect · perspective fix"
+          sub={canScan ? "Camera · auto edge detect · perspective fix" : "PRO feature — upgrade to unlock"}
           selected={value?.includes("camera")}
-          onPress={() =>
-            void openEvidencePicker(label, "camera").then((uri) => {
-              if (uri) onChange(uri);
-            })
-          }
+          onPress={handleCameraPress}
         />
         <EvidenceChoice
           icon="📎"

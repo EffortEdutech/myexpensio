@@ -143,6 +143,7 @@ export function SignatureModal({ visible, onConfirm, onClose }: Props) {
               {!canvasReady ? (
                 <View style={styles.canvasLoading}>
                   <ActivityIndicator color={colors.primary} />
+                  <Text style={styles.loadingText}>Loading canvas…</Text>
                 </View>
               ) : null}
               <SignatureCanvas
@@ -155,8 +156,6 @@ export function SignatureModal({ visible, onConfirm, onClose }: Props) {
                 descriptionText=""
                 clearText="Clear"
                 confirmText="Confirm"
-                // Hide the built-in buttons — we use our own below
-                customHtml={canvasHtml}
               />
             </View>
             <View style={styles.actions}>
@@ -209,25 +208,6 @@ export function SignatureModal({ visible, onConfirm, onClose }: Props) {
     </Modal>
   );
 }
-
-// Minimal HTML passed to the WebView canvas — hides the default buttons
-const canvasHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #ffffff; }
-  .m-signature-pad { box-shadow: none; border: none; }
-  .m-signature-pad--body { border: none; }
-  .m-signature-pad--footer { display: none; }
-  canvas { width: 100%; height: 100%; }
-</style>
-</head>
-<body></body>
-</html>
-`;
 
 const webStyle = `
   .m-signature-pad { box-shadow: none; border: none; }
@@ -297,7 +277,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   drawArea: {
-    flex: 1,
     gap: spacing.md,
   },
   canvasWrapper: {
@@ -305,18 +284,24 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
-    flex: 1,
+    height: 160,
     marginHorizontal: spacing.lg,
     overflow: "hidden",
   },
   canvasLoading: {
     alignItems: "center",
     bottom: 0,
+    gap: 6,
     justifyContent: "center",
     left: 0,
     position: "absolute",
     right: 0,
     top: 0,
+  },
+  loadingText: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "700",
   },
   uploadArea: {
     flex: 1,

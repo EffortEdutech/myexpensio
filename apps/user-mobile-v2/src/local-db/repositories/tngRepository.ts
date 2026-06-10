@@ -174,16 +174,42 @@ export async function saveTngPreview(input: SaveTngPreviewInput, deviceId: strin
 
     for (const row of input.rows) {
       const dedupeKey = buildDedupeKey(row, batch.statementId, batch.label);
-      const existing = await database.getFirstAsync<{ id: string }>(
-        `SELECT id FROM tng_transactions
+
+      // Check ALL records with this dedupe_key — including soft-deleted ones.
+      // The previous check (AND deleted_at IS NULL) missed soft-deleted rows,
+      // causing INSERT to hit the UNIQUE constraint silently via OR IGNORE.
+      const existing = await database.getFirstAsync<{
+        id: string;
+        deleted_at: string | null;
+        amount_cents: number;
+      }>(
+        `SELECT id, deleted_at, amount_cents FROM tng_transactions
           WHERE dedupe_key = ?
-            AND deleted_at IS NULL
           LIMIT 1;`,
         [dedupeKey]
       );
 
       if (existing) {
-        skippedDuplicateCount += 1;
+        if (!existing.deleted_at) {
+          // Active duplicate — genuinely skip
+          skippedDuplicateCount += 1;
+          continue;
+        }
+
+        // Soft-deleted — restore it with the new batch association
+        await database.runAsync(
+          `UPDATE tng_transactions
+            SET deleted_at    = NULL,
+                upload_batch_id = ?,
+                statement_label = ?,
+                source_file_uri = ?,
+                sync_status     = 'pending',
+                updated_at      = ?
+            WHERE id = ?;`,
+          [batch.id, batch.label, batch.sourceFileUri, timestamp, existing.id]
+        );
+        savedCount += 1;
+        totalAmountCents += existing.amount_cents;
         continue;
       }
 

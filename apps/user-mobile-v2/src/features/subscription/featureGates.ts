@@ -1,7 +1,7 @@
 import type { FeatureKey, SubscriptionTier } from "@/features/subscription/types";
 
 const featureMinimumTier: Record<FeatureKey, SubscriptionTier> = {
-  business_space: "FREE",   // unlocked for testing — will restore to PREMIUM post-pilot
+  business_space: "PREMIUM",
   exports: "FREE",          // CSV export — all tiers
   exports_pdf: "PRO",       // on-device PDF + TNG highlight — PRO and above
   personal_tax: "FREE",

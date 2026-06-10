@@ -69,12 +69,24 @@ export async function POST(request: NextRequest) {
   )
 
   // ── 1. Authenticate ──────────────────────────────────────────────────────
-  const {
-    data: { user },
-    error: authError,
-  } = await authClient.auth.getUser()
+  // Supports both cookie-based auth (web) and Bearer token (mobile).
+  const admin = serviceClient()
+  let user: Awaited<ReturnType<typeof authClient.auth.getUser>>['data']['user'] = null
 
-  if (authError || !user) {
+  const authHeader = request.headers.get('Authorization')
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+
+  if (bearerToken) {
+    // Mobile: verify the JWT via service role (admin.auth.getUser validates signature + expiry)
+    const { data, error } = await admin.auth.getUser(bearerToken)
+    if (!error && data.user) user = data.user
+  } else {
+    // Web: cookie-based session
+    const { data: { user: cookieUser }, error: authError } = await authClient.auth.getUser()
+    if (!authError && cookieUser) user = cookieUser
+  }
+
+  if (!user) {
     return err('UNAUTHENTICATED', 'You must be logged in to accept an invitation.', 401)
   }
 
@@ -96,8 +108,6 @@ export async function POST(request: NextRequest) {
   if (!consent_terms) {
     return err('VALIDATION_ERROR', 'You must agree to the Terms of Service and Privacy Policy to continue.', 400)
   }
-
-  const admin = serviceClient()
 
   // ── 3. Fetch and validate invitation ────────────────────────────────────
   const { data: invite, error: inviteError } = await admin
