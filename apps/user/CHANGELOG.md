@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.14.0](https://github.com/EffortEdutech/myexpensio/compare/v4.13.0...v4.14.0) (2026-06-10)
+
+
+### Features
+
+* **sprint-22:** TNG PDF parsing confirmed complete — audit + parity update ([c72eff5](https://github.com/EffortEdutech/myexpensio/commit/c72eff5d48e0226dc90187793be82904ef4a7eef))
+
 ## [4.13.0](https://github.com/EffortEdutech/myexpensio/compare/v4.12.0...v4.13.0) (2026-06-10)
 
 
