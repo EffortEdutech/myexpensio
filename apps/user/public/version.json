@@ -1,6 +1,6 @@
 {
-  "version": "4.13.0",
+  "version": "4.14.0",
   "changelog": [
-    "sprint-21: unified transactions tab — merge TNG + claim items ()"
+    "sprint-22: TNG PDF parsing confirmed complete — audit + parity update ()"
   ]
 }
