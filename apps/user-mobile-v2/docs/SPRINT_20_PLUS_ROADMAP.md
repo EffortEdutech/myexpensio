@@ -1,7 +1,13 @@
 # Sprint 20+ Roadmap & Checklist
 
 **Created:** 2026-06-09
-**Status:** Planning
+**Updated:** 2026-06-10
+**Status:** In Progress
+
+## Execution order (locked 2026-06-10)
+21 → 22 → 20-B
+Rationale: clear all code/feature work before EAS build so the store submission
+reflects the complete app. 20-B is last because it requires human DevOps steps.
 
 ---
 
@@ -25,27 +31,17 @@ as "deferred" in the parity tracker:
 
 **Theme:** Complete the last HIGH-priority gap and ship to the Play Store.
 
-### 20-A — Accept Org Invite (code)
+### 20-A — Accept Org Invite (code) ✅ COMPLETE (2026-06-10)
 
-Backend is already built:
-- `GET /api/invite/validate?invite_id=` — returns org name, role, expiry ✅
-- `POST /api/invite/accept` — accepts invite, adds user to org ✅
+- [x] **20-A-1** Extend `parseDeepLinkUrl` — handles `myexpensio://invite?invite_id=`
+- [x] **20-A-2** `DeepLinkInvite` type + state in `MobileV2Home`
+- [x] **20-A-3** `AcceptInviteScreen.tsx` — full native UI, all error states
+- [x] **20-A-4** Wired into `MobileV2Home`
+- [x] **20-A-5** Pushed to main (commit `1c7bd49`)
 
-Mobile work needed:
-
-- [ ] **20-A-1** Extend `parseDeepLinkUrl` in `App.tsx` to handle
-  `myexpensio://invite?invite_id=<uuid>` → set `deepLinkInvite` state
-- [ ] **20-A-2** Add `DeepLinkInvite` type + `deepLinkInvite` state in `MobileV2Home`
-- [ ] **20-A-3** Create `AcceptInviteScreen.tsx`
-  (`src/features/auth/components/AcceptInviteScreen.tsx`):
-  - On mount: `GET /api/invite/validate?invite_id=` → show org name, role, expiry
-  - Error states: NOT_FOUND, INVITE_ALREADY_USED, INVITE_EXPIRED
-  - Confirm button: `POST /api/invite/accept` with `{ invite_id }`
-  - On success: clear deep-link state → trigger bootstrap sync → enter app
-  - On error: friendly message + "Go to app" fallback
-- [ ] **20-A-4** Wire `AcceptInviteScreen` into `MobileV2Home` (same pattern as
-  `ResetPasswordScreen`) — renders over any auth state
-- [ ] **20-A-5** Git push
+Also done (ad-hoc, 2026-06-10):
+- [x] Subscription gating bugs fixed: `business_space` → PREMIUM, `receipt_scan` enforced in ClaimDetail / ReceiptPickerField / TripsScreen, FeatureGate user-facing copy
+- [x] Agent 1 org subscription row inserted in Supabase (was missing — `tier=FREE, status=TRIALING`)
 
 ### 20-B — EAS Production Build & Play Store Submission (DevOps)
 

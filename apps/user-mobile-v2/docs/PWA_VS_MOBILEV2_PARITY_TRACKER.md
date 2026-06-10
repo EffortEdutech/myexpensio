@@ -1,6 +1,6 @@
 # PWA vs Mobile V2 — Feature Parity Tracker
 
-Last updated: 2026-06-09 (Sprints 0–20A complete)
+Last updated: 2026-06-10 (Sprints 0–21 complete)
 
 This table tracks feature parity between the production PWA (`apps/user`) and the new
 local-first mobile app (`apps/user-mobile-v2`). Update the Mobile V2 column as sprints
@@ -84,7 +84,7 @@ Legend: ✅ Done · ⚠️ Partial / stub · ❌ Not yet built · 🚫 Deferred 
 
 | Feature | PWA | Mobile V2 | Notes |
 |---|---|---|---|
-| Unified transactions tab (TNG + claim items) | ✅ | 🚫 | Deferred to Sprint 19 |
+| Unified transactions tab (TNG + claim items) | ✅ | ✅ | Sprint 21 ✅ — SectionList, search, date range, Import TNG button |
 
 ---
 
@@ -169,13 +169,13 @@ Legend: ✅ Done · ⚠️ Partial / stub · ❌ Not yet built · 🚫 Deferred 
 
 ---
 
-## Summary (as of Sprint 18)
+## Summary (as of Sprint 21)
 
 | Status | Count |
 |---|---|
-| ✅ Full parity | ~48 |
+| ✅ Full parity | ~49 |
 | ⚠️ Partial / stub | ~5 |
-| 🚫 Deferred to Sprint 21+ | ~8 |
+| 🚫 Deferred to Sprint 22+ | ~6 |
 
 ### Deferred gaps (documented, not blockers for launch)
 
@@ -184,7 +184,7 @@ Legend: ✅ Done · ⚠️ Partial / stub · ❌ Not yet built · 🚫 Deferred 
 | Forgot password / change password | ✅ Done in Sprint 19 |
 | Accept invite flow | ✅ Done in Sprint 20-A — full deep-link + AcceptInviteScreen |
 | Dashboard home stats (Work space) | ✅ Done — WorkHomeScreen has trip/claim stats |
-| Unified transactions tab | Non-critical — Sprint 21 |
+| Unified transactions tab | ✅ Done in Sprint 21 — UnifiedTransactionsScreen |
 | GPS real point tracking | Works in draft mode; edge case for most users |
-| TNG backend PDF parsing | CSV import covers majority of users |
+| TNG backend PDF parsing | CSV import covers majority of users — Sprint 22 |
 | Claim awaiting approval badge |

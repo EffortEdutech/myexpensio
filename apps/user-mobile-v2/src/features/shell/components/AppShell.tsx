@@ -7,7 +7,7 @@ import { appSpaces } from "@/features/shell/spaceConfig";
 import type { AppSpace } from "@/features/shell/types";
 import { colors, spacing, typography } from "@/theme/tokens";
 
-export type WorkTab = "claims" | "export" | "home" | "tng" | "trips";
+export type WorkTab = "claims" | "export" | "home" | "tng" | "transactions" | "trips";
 export type PersonalView = "home" | "expenses" | "bills" | "tax" | "add";
 export type BusinessView = "dashboard" | "income" | "expenses" | "reports" | "add";
 
@@ -347,7 +347,7 @@ function getFooterTabs(
     { active: activeWorkTab === "home", icon: "⌂", key: "work-home", label: "Home", space: "work", workTab: "home" },
     { active: activeWorkTab === "trips", icon: "⌖", key: "work-trips", label: "Trips", space: "work", workTab: "trips" },
     { active: activeWorkTab === "claims", icon: "□", key: "work-claims", label: "Claims", primary: true, space: "work", workTab: "claims" },
-    { active: activeWorkTab === "tng", icon: "$", key: "work-transactions", label: "TNG", space: "work", workTab: "tng" },
+    { active: activeWorkTab === "transactions" || activeWorkTab === "tng", icon: "≡", key: "work-transactions", label: "Txns", space: "work", workTab: "transactions" },
     { active: activeWorkTab === "export", icon: "↥", key: "work-export", label: "Export", space: "work", workTab: "export" }
   ];
 }

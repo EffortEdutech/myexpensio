@@ -91,10 +91,12 @@ function mapBackendRows(raw: BackendRow[]): TngParsedRow[] {
 
 export function TngScreen({
   claims = [],
-  onAddToClaim
+  onAddToClaim,
+  onBack
 }: {
   claims?: ClaimDraft[];
   onAddToClaim?: AddToClaim;
+  onBack?: () => void;
 }) {
   const [filters, setFilters] = useState<TngTransactionFilters>({
     claimed: "all",
@@ -142,6 +144,11 @@ export function TngScreen({
     <View style={styles.page}>
       {/* ── Compact header ── */}
       <View style={styles.header}>
+        {onBack ? (
+          <Pressable onPress={onBack} style={styles.backBtn} accessibilityRole="button">
+            <Text style={styles.backBtnText}>← Txns</Text>
+          </Pressable>
+        ) : null}
         <Text style={styles.title}>TNG Transactions</Text>
         <Pressable
           accessibilityRole="button"
@@ -1062,6 +1069,16 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: typography.title,
     fontWeight: "900"
+  },
+  backBtn: {
+    marginRight: spacing.sm,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
+  backBtnText: {
+    color: colors.primary,
+    fontSize: typography.caption,
+    fontWeight: "700",
   },
   importButton: {
     alignItems: "center",

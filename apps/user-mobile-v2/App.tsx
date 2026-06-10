@@ -75,6 +75,7 @@ import {
 } from "@/features/trips/hooks/useTripActions";
 import { useTrips } from "@/features/trips/hooks/useTrips";
 import { TngScreen } from "@/features/tng/components/TngScreen";
+import { UnifiedTransactionsScreen } from "@/features/transactions/components/UnifiedTransactionsScreen";
 import { WorkHomeScreen } from "@/features/shell/components/WorkHomeScreen";
 import { useTngTransactions } from "@/features/tng/hooks/useTngLibrary";
 import type { TngTransaction } from "@/features/tng/types";
@@ -621,9 +622,14 @@ function AuthenticatedHome({
             rates={settingsRates}
             trips={trips.data ?? []}
           />
+        ) : activeSpace === "work" && activeWorkTab === "transactions" ? (
+          <UnifiedTransactionsScreen
+            onOpenTngImport={() => onWorkTabChange("tng")}
+          />
         ) : activeSpace === "work" && activeWorkTab === "tng" ? (
           <TngScreen
             claims={claims.data ?? []}
+            onBack={() => onWorkTabChange("transactions")}
             onAddToClaim={async ({ claim, transaction }) => {
               const type =
                 transaction.sector === "TOLL" ? "toll" as const

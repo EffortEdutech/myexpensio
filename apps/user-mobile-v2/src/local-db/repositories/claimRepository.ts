@@ -88,6 +88,17 @@ export async function getClaimDraft(claimId: string) {
   return row ? mapClaimRow(row) : null;
 }
 
+export async function listAllClaimItems() {
+  const database = await getDatabase();
+  const rows = await database.getAllAsync<ClaimItemRow>(
+    `SELECT *
+      FROM claim_items
+      WHERE deleted_at IS NULL
+      ORDER BY item_date DESC, created_at DESC;`
+  );
+  return rows.map(mapClaimItemRow);
+}
+
 export async function listClaimItems(claimId: string) {
   const database = await getDatabase();
   const rows = await database.getAllAsync<ClaimItemRow>(
