@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=1024"/>
+  <title>MyExpensio — Feature Graphic (1024×500)</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0a0a; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .label { color: #888; font-size: 12px; margin-bottom: 8px; letter-spacing: 0.05em; }
+    .canvas { width: 1024px; height: 500px; overflow: hidden; flex-shrink: 0; }
+    .hint { color: #555; font-size: 11px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div class="label">FEATURE GRAPHIC — 1024 × 500 px — Google Play Store</div>
+  <div class="canvas">
+    <svg width="1024" height="500" viewBox="0 0 1024 500" xmlns="http://www.w3.org/2000/svg">
+      <!-- Background -->
+      <rect width="1024" height="500" fill="#0f766e"/>
+
+      <!-- Subtle grid texture -->
+      <defs>
+        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#0d6b63" stroke-width="0.8"/>
+        </pattern>
+      </defs>
+      <rect width="1024" height="500" fill="url(#grid)" opacity="0.5"/>
+
+      <!-- Decorative circles -->
+      <circle cx="920" cy="80" r="160" fill="#0d6b63" opacity="0.5"/>
+      <circle cx="950" cy="70" r="100" fill="#0b5e57" opacity="0.4"/>
+      <circle cx="100" cy="440" r="130" fill="#0d6b63" opacity="0.4"/>
+      <circle cx="70" cy="460" r="70" fill="#0b5e57" opacity="0.3"/>
+
+      <!-- Small accent dots -->
+      <circle cx="200" cy="80" r="6" fill="#14b8a6" opacity="0.7"/>
+      <circle cx="240" cy="110" r="4" fill="#14b8a6" opacity="0.5"/>
+      <circle cx="820" cy="390" r="5" fill="#14b8a6" opacity="0.6"/>
+      <circle cx="780" cy="420" r="3" fill="#14b8a6" opacity="0.4"/>
+      <circle cx="500" cy="50" r="4" fill="#5eead4" opacity="0.4"/>
+      <circle cx="530" cy="30" r="3" fill="#5eead4" opacity="0.3"/>
+
+      <!-- App icon card -->
+      <rect x="320" y="152" width="96" height="96" rx="22" fill="#ffffff" opacity="0.15"/>
+      <rect x="324" y="156" width="88" height="88" rx="18" fill="#115e59"/>
+      <!-- M lettermark -->
+      <text x="368" y="214" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="52" font-weight="800" fill="#ffffff" letter-spacing="-2">M</text>
+
+      <!-- App name -->
+      <text x="436" y="193" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="56" font-weight="800" fill="#ffffff" letter-spacing="-1">My</text>
+      <text x="502" y="193" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="56" font-weight="800" fill="#99f6e4" letter-spacing="-1">Expensio</text>
+
+      <!-- Tagline -->
+      <text x="436" y="238" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="26" font-weight="400" fill="#ccfbf1" letter-spacing="0.5">Track. Claim. Get Paid.</text>
+
+      <!-- Divider line -->
+      <rect x="436" y="258" width="360" height="2" rx="1" fill="#5eead4" opacity="0.5"/>
+
+      <!-- Feature pills -->
+      <rect x="436" y="276" width="148" height="34" rx="17" fill="#115e59"/>
+      <text x="510" y="298" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="600" fill="#ccfbf1">TNG PDF Import</text>
+
+      <rect x="594" y="276" width="120" height="34" rx="17" fill="#115e59"/>
+      <text x="654" y="298" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="600" fill="#ccfbf1">GPS Trips</text>
+
+      <rect x="724" y="276" width="140" height="34" rx="17" fill="#115e59"/>
+      <text x="794" y="298" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="600" fill="#ccfbf1">PDF Signature</text>
+
+      <!-- Sub-label -->
+      <text x="436" y="340" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="15" font-weight="400" fill="#5eead4" opacity="0.9">Expense &amp; reimbursement tracker for Malaysian professionals</text>
+
+      <!-- Badges -->
+      <rect x="436" y="360" width="116" height="28" rx="6" fill="#0f766e" stroke="#5eead4" stroke-width="1"/>
+      <text x="494" y="379" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" font-weight="600" fill="#99f6e4">🇲🇾 Malaysia</text>
+
+      <rect x="562" y="360" width="80" height="28" rx="6" fill="#0f766e" stroke="#5eead4" stroke-width="1"/>
+      <text x="602" y="379" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" font-weight="600" fill="#99f6e4">MYR First</text>
+
+      <rect x="652" y="360" width="96" height="28" rx="6" fill="#0f766e" stroke="#5eead4" stroke-width="1"/>
+      <text x="700" y="379" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" font-weight="600" fill="#99f6e4">Free to start</text>
+    </svg>
+  </div>
+  <div class="hint">Open in browser → right-click canvas → "Save image as…" or screenshot at 100% zoom for exact 1024×500 px</div>
+</body>
+</html>

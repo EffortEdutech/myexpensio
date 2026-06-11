@@ -89,11 +89,11 @@ android {
 
     namespace 'com.effortedutech.myexpensio.mobile.v2'
     defaultConfig {
-        applicationId 'com.effortedutech.myexpensio.mobile.v2'
+        applicationId 'com.effortedutech.myexpensio'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "0.1.0"
+        versionName "1.0.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
