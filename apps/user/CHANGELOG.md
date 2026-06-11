@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.14.2](https://github.com/EffortEdutech/myexpensio/compare/v4.14.1...v4.14.2) (2026-06-11)
+
+
+### Bug Fixes
+
+* upgrade packages to sdk-56 compatible versions (safe-area-context 5.7, webview 13.16) ([2f40059](https://github.com/EffortEdutech/myexpensio/commit/2f40059c71c67ad801a320db62bfe05374c5ac09))
+
 ### [4.14.1](https://github.com/EffortEdutech/myexpensio/compare/v4.14.0...v4.14.1) (2026-06-11)
 
 
