@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.14.1](https://github.com/EffortEdutech/myexpensio/compare/v4.14.0...v4.14.1) (2026-06-11)
+
+
+### Bug Fixes
+
+* edgeToEdgeEnabled=false, applicationId com.effortedutech.myexpensio, versionName 1.0.0 ([7b1c43d](https://github.com/EffortEdutech/myexpensio/commit/7b1c43dd3c9f8cf92ad6b4389cbf2d8a3dd8f212))
+
 ## [4.14.0](https://github.com/EffortEdutech/myexpensio/compare/v4.13.0...v4.14.0) (2026-06-10)
 
 
