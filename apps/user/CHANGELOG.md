@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.14.4](https://github.com/EffortEdutech/myexpensio/compare/v4.14.3...v4.14.4) (2026-06-11)
+
+
+### Bug Fixes
+
+* bump react-native-webview override to 13.16.1 in root pnpm overrides ([2fbfce9](https://github.com/EffortEdutech/myexpensio/commit/2fbfce9a54d2a431452ce55bd9dcc5bf91c8471f))
+
 ### [4.14.3](https://github.com/EffortEdutech/myexpensio/compare/v4.14.2...v4.14.3) (2026-06-11)
 
 ### [4.14.2](https://github.com/EffortEdutech/myexpensio/compare/v4.14.1...v4.14.2) (2026-06-11)
