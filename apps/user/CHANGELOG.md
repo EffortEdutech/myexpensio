@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.14.6](https://github.com/EffortEdutech/myexpensio/compare/v4.14.5...v4.14.6) (2026-06-12)
+
+
+### Bug Fixes
+
+* update lockfile to match regenerated expo-location pnpm10 patch ([527a4fd](https://github.com/EffortEdutech/myexpensio/commit/527a4fd13d42b64e5d81c677eb7f26479476672c))
+
 ### [4.14.5](https://github.com/EffortEdutech/myexpensio/compare/v4.14.4...v4.14.5) (2026-06-12)
 
 
