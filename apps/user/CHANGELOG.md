@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.14.5](https://github.com/EffortEdutech/myexpensio/compare/v4.14.4...v4.14.5) (2026-06-12)
+
+
+### Bug Fixes
+
+* android EAS build - gradle 8.8, pnpm hoisting, patches, eas node pin ([02c78be](https://github.com/EffortEdutech/myexpensio/commit/02c78bea9a4f89f3e4cdbb065b2c37bd69c77e6d))
+* regenerate expo-location patch with pnpm10 integrity headers + fix user-mobile-v2 package.json truncation ([df0c3cf](https://github.com/EffortEdutech/myexpensio/commit/df0c3cfa2d4c3d2d3f0f73f65668149efb291c41))
+* remove hoisted node-linker from root .npmrc (breaks Vercel - React version conflict) ([abe4214](https://github.com/EffortEdutech/myexpensio/commit/abe421492338a42dc6e097f4e28c319e25becf51))
+* remove unused safe-area patch (v5.7.0 installed, patch was for 4.14.1) ([b2412c8](https://github.com/EffortEdutech/myexpensio/commit/b2412c89390463f05f35f05e56735cd5c7733025))
+
 ### [4.14.4](https://github.com/EffortEdutech/myexpensio/compare/v4.14.3...v4.14.4) (2026-06-11)
 
 
