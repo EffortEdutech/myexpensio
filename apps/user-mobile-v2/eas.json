@@ -4,32 +4,44 @@
     "appVersionSource": "local"
   },
   "build": {
+    "base": {
+      "node": "22.0.0",
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://myexpensio-jade.vercel.app"
+      }
+    },
     "development": {
+      "extends": "base",
       "developmentClient": true,
       "distribution": "internal",
       "env": {
         "APP_ENV": "development"
       },
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug"
       }
     },
     "preview": {
+      "extends": "base",
       "distribution": "internal",
       "env": {
         "APP_ENV": "preview"
       },
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease"
       }
     },
     "production": {
+      "extends": "base",
       "distribution": "store",
       "env": {
         "APP_ENV": "production"
       },
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "gradleCommand": ":app:bundleRelease"
       },
       "autoIncrement": true
     }
