@@ -8,6 +8,11 @@ overrides:
   expo-location: 18.0.7
   react-native-webview: 13.16.1
 
+patchedDependencies:
+  expo-location@18.0.7:
+    hash: dad23dc9e42422eeb2f8a8b85ea4c64cbc0250692f505c8e965d8e31fbb9da83
+    path: patches/expo-location@18.0.7.patch
+
 importers:
 
   .:
@@ -246,7 +251,7 @@ importers:
         version: 56.0.4(expo@56.0.11)
       expo-location:
         specifier: 18.0.7
-        version: 18.0.7(expo@56.0.11)
+        version: 18.0.7(patch_hash=dad23dc9e42422eeb2f8a8b85ea4c64cbc0250692f505c8e965d8e31fbb9da83)(expo@56.0.11)
       expo-print:
         specifier: ~56.0.4
         version: 56.0.4(expo@56.0.11)(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.15)(react@19.2.3))
@@ -8190,7 +8195,7 @@ snapshots:
       expo: 56.0.11(@babel/core@7.29.0)(@expo/dom-webview@56.0.5)(@expo/metro-runtime@56.0.15)(react-dom@19.2.3(react@19.2.3))(react-native-web@0.21.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-native-webview@13.16.1(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.15)(react@19.2.3))(react@19.2.3))(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.15)(react@19.2.3))(react@19.2.3)(typescript@5.9.3)
       invariant: 2.2.4
 
-  expo-location@18.0.7(expo@56.0.11):
+  expo-location@18.0.7(patch_hash=dad23dc9e42422eeb2f8a8b85ea4c64cbc0250692f505c8e965d8e31fbb9da83)(expo@56.0.11):
     dependencies:
       expo: 56.0.11(@babel/core@7.29.0)(@expo/dom-webview@56.0.5)(@expo/metro-runtime@56.0.15)(react-dom@19.2.3(react@19.2.3))(react-native-web@0.21.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-native-webview@13.16.1(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.15)(react@19.2.3))(react@19.2.3))(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.15)(react@19.2.3))(react@19.2.3)(typescript@5.9.3)
 
