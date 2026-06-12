@@ -1,40 +1,47 @@
 diff --git a/android/src/main/java/expo/modules/location/LocationHelpers.kt b/android/src/main/java/expo/modules/location/LocationHelpers.kt
+index 37dbd3b65e431efd44676124fa83a11a84730cdf..81a28247d5efd82f6f04cb98d432db84d0339ad5 100644
 --- a/android/src/main/java/expo/modules/location/LocationHelpers.kt
 +++ b/android/src/main/java/expo/modules/location/LocationHelpers.kt
-@@ -188,7 +188,7 @@
-             override fun resolve(value: Any?) {
-               continuation.resume(value as? Bundle ?: Bundle())
+@@ -188,7 +188,7 @@ class LocationHelpers {
+               continuation.resume(PermissionRequestResponse(result))
              }
+ 
 -            override fun reject(code: String, message: String?, cause: Throwable?) {
 +            override fun reject(code: String?, message: String?, cause: Throwable?) {
                continuation.resumeWithException(CodedException(code, message, cause))
              }
            },
-@@ -210,7 +210,7 @@
-             override fun resolve(value: Any?) {
-               it.resume(value as? Bundle ?: Bundle())
+@@ -210,7 +210,7 @@ class LocationHelpers {
+               )
              }
+ 
 -            override fun reject(code: String, message: String?, cause: Throwable?) {
 +            override fun reject(code: String?, message: String?, cause: Throwable?) {
                it.resumeWithException(CodedException(code, message, cause))
              }
            },
 diff --git a/android/src/main/java/expo/modules/location/taskConsumers/LocationTaskConsumer.kt b/android/src/main/java/expo/modules/location/taskConsumers/LocationTaskConsumer.kt
+index e6592852ba2fcd97dcceee0ebd525fb5e5d68c7f..72472300f39e60be1fb374563083d5d4349ec9b9 100644
 --- a/android/src/main/java/expo/modules/location/taskConsumers/LocationTaskConsumer.kt
 +++ b/android/src/main/java/expo/modules/location/taskConsumers/LocationTaskConsumer.kt
-@@ -17,7 +17,6 @@
+@@ -17,7 +17,6 @@ import com.google.android.gms.location.FusedLocationProviderClient
+ import com.google.android.gms.location.LocationRequest
  import com.google.android.gms.location.LocationResult
  import com.google.android.gms.location.LocationServices
 -import expo.modules.core.MapHelper
  import expo.modules.core.arguments.MapArguments
  import expo.modules.core.arguments.ReadableArguments
-@@ -278,7 +278,7 @@
+ import expo.modules.core.interfaces.Arguments
+@@ -278,9 +277,9 @@ class LocationTaskConsumer(context: Context, taskManagerUtils: TaskManagerUtilsI
+     }
      val oldestLocation = mLastReportedLocation ?: mDeferredLocations[0]
      val newestLocation = mDeferredLocations[mDeferredLocations.size - 1]
--    val options: Arguments = MapArguments(task.options)
+-    val options: Arguments = MapHelper(task.options)
 -    val distance = options.getDouble("deferredUpdatesDistance")
 -    val interval = options.getLong("deferredUpdatesInterval")
 +    val taskOpts = task.options
 +    val distance = (taskOpts["deferredUpdatesDistance"] as? Number)?.toDouble() ?: 0.0
 +    val interval = (taskOpts["deferredUpdatesInterval"] as? Number)?.toLong() ?: 0L
-     val distance = options.getDouble("deferredUpdatesDistance")
+     return newestLocation.time - oldestLocation.time >= interval && mDeferredDistance >= distance
+   }
+ 
