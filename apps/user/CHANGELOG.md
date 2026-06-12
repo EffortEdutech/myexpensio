@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.14.7](https://github.com/EffortEdutech/myexpensio/compare/v4.14.6...v4.14.7) (2026-06-12)
+
+
+### Bug Fixes
+
+* revert Gradle to 8.13 - expo-modules-autolinking@56 requires Gradle 8.10+ CC API ([bc21259](https://github.com/EffortEdutech/myexpensio/commit/bc21259e8f935251518ee49ea976ae57ec991ed6))
+
 ### [4.14.6](https://github.com/EffortEdutech/myexpensio/compare/v4.14.5...v4.14.6) (2026-06-12)
 
 
