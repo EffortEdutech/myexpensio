@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.14.8](https://github.com/EffortEdutech/myexpensio/compare/v4.14.7...v4.14.8) (2026-06-13)
+
+
+### Bug Fixes
+
+* **android:** hoist babel/metro packages for EAS pnpm build ([1292778](https://github.com/EffortEdutech/myexpensio/commit/12927785fb414baba02779475e335bfb7035f6b2))
+
 ### [4.14.7](https://github.com/EffortEdutech/myexpensio/compare/v4.14.6...v4.14.7) (2026-06-12)
 
 
