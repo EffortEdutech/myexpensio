@@ -1,6 +1,11 @@
 {
-  "version": "4.14.9",
+  "version": "4.15.0",
   "changelog": [
-    "sprint-22: TNG PDF parsing confirmed complete — audit + parity update ()"
+    "PWA web support — platform stubs, manifest, vercel config ()",
+    "android: hoist babel/metro packages for EAS pnpm build ()",
+    "revert Gradle to 8.13 - expo-modules-autolinking@56 requires Gradle 8.10+ CC API ()",
+    "update lockfile to match regenerated expo-location pnpm10 patch ()",
+    "android EAS build - gradle 8.8, pnpm hoisting, patches, eas node pin ()",
+    "regenerate expo-location patch with pnpm10 integrity headers + fix user-mobile-v2 package.json truncation ()"
   ]
 }
