@@ -12,7 +12,7 @@ import * as FileSystem from "expo-file-system/legacy";
 
 import type { ExportPreviewPayload } from "@/features/exports/types";
 
-const API_BASE_URL = (process.env as Record<string, string | undefined>)["EXPO_PUBLIC_API_BASE_URL"] ?? "";
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "";
 
 export type BuildLocalXlsxResult = {
   uri: string;

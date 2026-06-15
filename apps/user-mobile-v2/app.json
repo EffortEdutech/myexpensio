@@ -44,7 +44,14 @@
     },
     "web": {
       "bundler": "metro",
-      "output": "single"
+      "output": "single",
+      "name": "MyExpensio",
+      "shortName": "MyExpensio",
+      "description": "Track expenses, claims, and trips — on Android and iPhone.",
+      "themeColor": "#0f766e",
+      "backgroundColor": "#0f766e",
+      "lang": "en",
+      "favicon": "./assets/icon.png"
     },
     "plugins": [
       "expo-sqlite",

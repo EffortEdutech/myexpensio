@@ -7,7 +7,11 @@
     "base": {
       "node": "22.0.0",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://myexpensio-jade.vercel.app"
+        "EXPO_PUBLIC_API_BASE_URL": "https://myexpensio-jade.vercel.app",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://bzpmrcfxkawkuhyocemu.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6cG1yY2Z4a2F3a3VoeW9jZW11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MjAwMDEsImV4cCI6MjA4ODQ5NjAwMX0.5X3qdKYM_UI2OLBOGdcFaf0DxITQzJaRYr0CcoAxqSY",
+        "EXPO_PUBLIC_SCAN_API_URL": "https://myexpensio-scan.onrender.com",
+        "EXPO_PUBLIC_SCAN_API_SECRET": "e01e04f78e0d3103c6e5f0a5abd3b32c"
       }
     },
     "development": {

@@ -1,5 +1,6 @@
 import * as Sharing from "expo-sharing";
 import { useMemo, useState } from "react";
+import { Platform } from "react-native";
 import {
   ActivityIndicator,
   Image,
@@ -120,6 +121,11 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
         accessToken
       );
 
+      if (Platform.OS === "web") {
+        setDownloadNotice("PDF downloaded — check your browser's downloads.");
+        return;
+      }
+
       const canShare = await Sharing.isAvailableAsync();
       if (!canShare) {
         setDownloadNotice(`PDF saved: ${result.uri}`);
@@ -149,6 +155,12 @@ export function ExportScreen({ claims, isLoadingClaims }: ExportScreenProps) {
     setDownloadNotice(null);
     try {
       const result = await buildLocalXlsx(preview.data.payload, accessToken);
+
+      if (Platform.OS === "web") {
+        setDownloadNotice("XLSX downloaded — check your browser's downloads.");
+        return;
+      }
+
       const canShare = await Sharing.isAvailableAsync();
       if (!canShare) {
         setDownloadNotice(`XLSX saved: ${result.uri}`);

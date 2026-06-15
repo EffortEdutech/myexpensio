@@ -12,8 +12,8 @@ import { createClient } from "@supabase/supabase-js";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
-const supabaseUrl = (process.env as Record<string, string | undefined>)["EXPO_PUBLIC_SUPABASE_URL"] ?? "";
-const supabaseAnonKey = (process.env as Record<string, string | undefined>)["EXPO_PUBLIC_SUPABASE_ANON_KEY"] ?? "";
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn(
@@ -29,9 +29,16 @@ const ExpoSecureStoreAdapter = {
   removeItem: (key: string) => SecureStore.deleteItemAsync(key),
 };
 
+// localStorage adapter for web — persists session across page reloads
+const WebLocalStorageAdapter = {
+  getItem: (key: string) => Promise.resolve(localStorage.getItem(key)),
+  setItem: (key: string, value: string) => Promise.resolve(localStorage.setItem(key, value)),
+  removeItem: (key: string) => Promise.resolve(localStorage.removeItem(key)),
+};
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: Platform.OS === "web" ? undefined : ExpoSecureStoreAdapter,
+    storage: Platform.OS === "web" ? WebLocalStorageAdapter : ExpoSecureStoreAdapter,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
