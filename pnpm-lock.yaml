@@ -234,6 +234,12 @@ importers:
       '@types/leaflet':
         specifier: 1.9.21
         version: 1.9.21
+      babel-plugin-module-resolver:
+        specifier: ^5.0.2
+        version: 5.0.3
+      babel-preset-expo:
+        specifier: ~56.0.11
+        version: 56.0.15(@babel/core@7.29.0)(@babel/runtime@7.29.2)(expo@56.0.11)(react-refresh@0.14.2)
       expo:
         specifier: ~56.0.11
         version: 56.0.11(@babel/core@7.29.0)(@expo/dom-webview@56.0.5)(@expo/metro-runtime@56.0.15)(react-dom@19.2.3(react@19.2.3))(react-native-web@0.21.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-native-webview@13.16.1(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.15)(react@19.2.3))(react@19.2.3))(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.15)(react@19.2.3))(react@19.2.3)(typescript@5.9.3)
@@ -304,9 +310,6 @@ importers:
       '@types/react':
         specifier: ~19.2.15
         version: 19.2.15
-      babel-plugin-module-resolver:
-        specifier: ^5.0.2
-        version: 5.0.3
       typescript:
         specifier: ~5.9.0
         version: 5.9.3
