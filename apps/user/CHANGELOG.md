@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.15.0](https://github.com/EffortEdutech/myexpensio/compare/v4.14.9...v4.15.0) (2026-06-15)
+
+
+### Features
+
+* PWA web support — platform stubs, manifest, vercel config ([afc771e](https://github.com/EffortEdutech/myexpensio/commit/afc771ed7c5ddacf9acf63e0dfe9b9d7e88038c6))
+
 ### [4.14.9](https://github.com/EffortEdutech/myexpensio/compare/v4.14.8...v4.14.9) (2026-06-15)
 
 ### [4.14.8](https://github.com/EffortEdutech/myexpensio/compare/v4.14.7...v4.14.8) (2026-06-13)
