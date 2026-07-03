@@ -13,6 +13,17 @@ import { saveAuthSession, clearAuthSession } from "@/features/auth/sessionStorag
 import { useAuthStore } from "@/state/authStore";
 import { useDeviceStore } from "@/state/deviceStore";
 import type { AuthSession } from "@/features/auth/types";
+import {
+  registerDevice,
+  getOtherActiveSessions,
+  type DeviceSession,
+} from "@/features/auth/deviceSessionApi";
+
+export type SignInResult = {
+  session: AuthSession;
+  /** Non-empty when another device is currently active — show conflict modal */
+  otherActiveSessions: DeviceSession[];
+};
 
 // ── Sign In ──────────────────────────────────────────────────────────────────
 
@@ -21,7 +32,7 @@ export function useSignIn() {
   const deviceId = useDeviceStore((s) => s.deviceId);
 
   return useMutation({
-    mutationFn: async ({ email, password }: { email: string; password: string }) => {
+    mutationFn: async ({ email, password }: { email: string; password: string }): Promise<SignInResult> => {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw new Error(error.message);
       if (!data.session) throw new Error("No session returned.");
@@ -38,9 +49,25 @@ export function useSignIn() {
 
       await saveAuthSession(session);
       await bootstrapLocalUserShell(session, deviceId);
-      return session;
+
+      // Check for other active sessions BEFORE registering this device.
+      // If there are conflicts, LoginScreen shows the modal first.
+      const otherActiveSessions = await getOtherActiveSessions(
+        session.userId,
+        deviceId
+      );
+
+      return { session, otherActiveSessions };
     },
-    onSuccess: (session) => setSession(session),
+    onSuccess: ({ session, otherActiveSessions }) => {
+      // If there are other active sessions, don't activate the session yet —
+      // LoginScreen will show the conflict modal and call setSession after the
+      // user confirms (or cancel and stay on the login screen).
+      if (otherActiveSessions.length === 0) {
+        void registerDevice(session.userId, deviceId);
+        setSession(session);
+      }
+    },
   });
 }
 

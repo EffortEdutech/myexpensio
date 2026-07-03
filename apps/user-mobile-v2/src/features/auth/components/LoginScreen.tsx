@@ -11,6 +11,15 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useSignIn, useForgotPassword } from "@/features/auth/hooks/useAuthActions";
+import { ActiveSessionModal } from "@/features/auth/components/ActiveSessionModal";
+import {
+  registerDevice,
+  revokeOtherSessions,
+  type DeviceSession,
+} from "@/features/auth/deviceSessionApi";
+import { useAuthStore } from "@/state/authStore";
+import { useDeviceStore } from "@/state/deviceStore";
+import type { AuthSession } from "@/features/auth/types";
 import { colors, spacing, typography } from "@/theme/tokens";
 
 export function LoginScreen() {
@@ -19,12 +28,59 @@ export function LoginScreen() {
   const [forgotMode, setForgotMode] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
 
+  // Session conflict state — set when another device is active after login
+  const [sessionConflict, setSessionConflict] = useState<{
+    session: AuthSession;
+    otherSession: DeviceSession;
+  } | null>(null);
+  const [isRevoking, setIsRevoking] = useState(false);
+
+  const setSession = useAuthStore((s) => s.setSession);
+  const deviceId = useDeviceStore((s) => s.deviceId);
+
   const signIn = useSignIn();
   const forgotPassword = useForgotPassword();
 
   function handleSignIn() {
     if (!email.trim() || !password.trim()) return;
-    signIn.mutate({ email: email.trim().toLowerCase(), password });
+    signIn.mutate(
+      { email: email.trim().toLowerCase(), password },
+      {
+        onSuccess: ({ session, otherActiveSessions }) => {
+          if (otherActiveSessions.length > 0) {
+            // Show conflict modal — don't activate session yet
+            setSessionConflict({
+              session,
+              otherSession: otherActiveSessions[0],
+            });
+          }
+          // If no conflict, useSignIn's onSuccess already called setSession
+        },
+      }
+    );
+  }
+
+  async function handleConfirmKick() {
+    if (!sessionConflict) return;
+    setIsRevoking(true);
+    try {
+      await revokeOtherSessions(sessionConflict.session.userId, deviceId);
+      await registerDevice(sessionConflict.session.userId, deviceId);
+      setSession(sessionConflict.session);
+      setSessionConflict(null);
+    } catch {
+      // Fail-open: still let the user in even if revoke had an error
+      await registerDevice(sessionConflict.session.userId, deviceId).catch(() => {});
+      setSession(sessionConflict.session);
+      setSessionConflict(null);
+    } finally {
+      setIsRevoking(false);
+    }
+  }
+
+  function handleCancelKick() {
+    setSessionConflict(null);
+    // Leave form values intact so the user can try again or pick a different account
   }
 
   async function handleForgotPassword() {
@@ -152,6 +208,14 @@ export function LoginScreen() {
           <Text style={styles.linkMuted}>Don't have an account? Sign up</Text>
         </Pressable>
       </View>
+
+      <ActiveSessionModal
+        isRevoking={isRevoking}
+        onCancel={handleCancelKick}
+        onConfirm={handleConfirmKick}
+        otherSession={sessionConflict?.otherSession ?? null}
+        visible={sessionConflict !== null}
+      />
     </SafeAreaView>
   );
 }

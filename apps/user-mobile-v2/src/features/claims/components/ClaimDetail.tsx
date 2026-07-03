@@ -23,6 +23,7 @@ import type {
   ClaimItemType
 } from "@/features/claims/types";
 import { useReceiptDraft } from "@/features/receipts/hooks/useReceiptUploadSummary";
+import { useReceiptDisplayUri } from "@/features/receipts/hooks/useReceiptDisplayUri";
 import type { LocalReceiptFile, ReceiptDraft } from "@/features/receipts/types";
 import { canUseFeature } from "@/features/subscription/featureGates";
 import { useSubscription } from "@/features/subscription/hooks/useSubscription";
@@ -1844,9 +1845,18 @@ function ReceiptViewerModal({
   receipt: ReceiptDraft | null;
   visible: boolean;
 }) {
+  const { uri: displayUri, loading: uriLoading, deviceOnly } = useReceiptDisplayUri(
+    receipt?.localUri,
+    receipt?.remotePath
+  );
+
   if (!visible) {
     return null;
   }
+
+  const showImage = !!displayUri && !deviceOnly;
+  const showDeviceOnly = deviceOnly && Platform.OS === "web";
+  const showLoading = uriLoading && Platform.OS === "web";
 
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible>
@@ -1864,10 +1874,24 @@ function ReceiptViewerModal({
             </Pressable>
           </View>
           <View style={styles.receiptViewerBody}>
-            {receipt?.localUri ? (
+            {showLoading ? (
+              <View style={styles.receiptImageFrame}>
+                <ActivityIndicator size="large" />
+                <Text style={styles.receiptViewerCopy}>Loading receipt…</Text>
+              </View>
+            ) : showDeviceOnly ? (
+              <View style={styles.receiptImageFrame}>
+                <Text style={styles.receiptViewerIcon}>📱</Text>
+                <Text style={styles.receiptViewerTitle}>Receipt on device only</Text>
+                <Text style={styles.receiptViewerCopy}>
+                  This receipt was saved locally on your Android device and has not been
+                  uploaded to the cloud. Open the Android app to view it.
+                </Text>
+              </View>
+            ) : showImage ? (
               <View style={styles.receiptImageFrame}>
                 <Image
-                  source={{ uri: receipt.localUri }}
+                  source={{ uri: displayUri }}
                   style={styles.receiptFullImage}
                   resizeMode="contain"
                   onError={() => {/* silently fall through */}}

@@ -60,6 +60,8 @@ import { useReceiptUploadSummary } from "@/features/receipts/hooks/useReceiptUpl
 import type { LocalReceiptFile } from "@/features/receipts/types";
 import { AppShell } from "@/features/shell/components/AppShell";
 import type { WorkTab, PersonalView, BusinessView } from "@/features/shell/components/AppShell";
+import { SyncLoadingGate } from "@/features/shell/components/SyncLoadingGate";
+import { WebSyncEmptyState } from "@/features/shell/components/WebSyncEmptyState";
 import type { AppSpace } from "@/features/shell/types";
 import { FeatureGate } from "@/features/subscription/components/FeatureGate";
 import { useSubscription } from "@/features/subscription/hooks/useSubscription";
@@ -397,6 +399,8 @@ function AuthenticatedHome({
     attachReceiptMetadata.error;
 
   return (
+    <SyncLoadingGate syncReady={syncEngine.syncReady} syncStatus={syncEngine.status}>
+    <WebSyncEmptyState syncDisabled={syncEngine.syncDisabled}>
     <>
     <AppShell
       activeSpace={activeSpace}
@@ -705,6 +709,8 @@ function AuthenticatedHome({
       </SafeAreaView>
     </Modal>
     </>
+    </WebSyncEmptyState>
+    </SyncLoadingGate>
   );
 }
 
@@ -1090,10 +1096,21 @@ function SettingsPanel({
                 : "Manage invoices, plan changes, and cancellation from billing when backend billing is connected."}
             </Text>
           </View>
-          <PrimarySettingsButton
-            label={isFree ? "See pricing" : "Manage billing"}
-            onPress={handleBillingPress}
-          />
+          {/* iOS: no purchase/manage-billing flow in-app (App Store 3.1.1 —
+              subscriptions are managed via the myexpensio website/PWA instead).
+              Android and web keep the Stripe checkout/portal handoff below. */}
+          {Platform.OS === "ios" ? (
+            <View style={styles.infoBox}>
+              <Text style={styles.infoText}>
+                Manage your subscription at myexpensio.com/settings/billing.
+              </Text>
+            </View>
+          ) : (
+            <PrimarySettingsButton
+              label={isFree ? "See pricing" : "Manage billing"}
+              onPress={handleBillingPress}
+            />
+          )}
         </SettingsCard>
       </SettingsAccordion>
 
@@ -1541,6 +1558,8 @@ type WorkClaimsSliceProps = {
     pending: number;
     synced: number;
     syncing: number;
+    /** Failed items that exhausted SYNC_MAX_RETRIES — won't auto-retry, needs manual attention. */
+    deadLetter?: number;
   };
   receiptUploadSummary: {
     failed: number;
@@ -1653,6 +1672,11 @@ function WorkClaimsSlice({
       <View style={styles.listToolbar}>
         <Text style={styles.listToolbarText}>
           {visibleClaims.length} shown · {pendingSyncCount} pending sync
+          {syncQueueSummary.deadLetter ? (
+            <Text style={styles.errorText}>
+              {" "}· {syncQueueSummary.deadLetter} need attention
+            </Text>
+          ) : null}
         </Text>
         <View style={styles.toolbarActions}>
           <Pressable

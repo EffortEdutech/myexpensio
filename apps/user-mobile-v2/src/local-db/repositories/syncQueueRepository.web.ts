@@ -1,3 +1,14 @@
+/**
+ * Web-only override for syncQueueRepository.
+ * Metro automatically resolves this file on web instead of syncQueueRepository.ts.
+ *
+ * Identical SQL to the native version (runs against the in-memory DB via getDatabase),
+ * with one critical addition: the pending queue is mirrored to localStorage so that
+ * items survive a page close before the push cycle runs.
+ *
+ * On next page load, call `rehydrateFromLocalStorage()` (invoked by useSyncEngine
+ * in its startup effect) to drain saved items back into the in-memory DB before push.
+ */
 import type * as SQLite from "expo-sqlite";
 
 import { getDatabase } from "@/local-db/database";
@@ -10,6 +21,63 @@ import type {
 import { SYNC_MAX_RETRIES } from "@/sync/syncConfig";
 import { createId } from "@/utils/ids";
 import { nowIso } from "@/utils/time";
+
+// ── localStorage helpers ──────────────────────────────────────────────────────
+
+const QUEUE_STORAGE_KEY = "myexpensio:pending_sync_queue";
+
+type StoredQueueItem = {
+  id: string;
+  entity_type: SyncEntityType;
+  entity_id: string;
+  operation: SyncOperation;
+  payload: string;
+  created_at: string;
+  updated_at: string;
+};
+
+function readStoredQueue(): StoredQueueItem[] {
+  try {
+    const raw = localStorage.getItem(QUEUE_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as StoredQueueItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredQueue(items: StoredQueueItem[]): void {
+  try {
+    if (items.length === 0) {
+      localStorage.removeItem(QUEUE_STORAGE_KEY);
+    } else {
+      localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(items));
+    }
+  } catch {
+    // Silently fail — sync will retry next session
+  }
+}
+
+/** Add or update an item in the localStorage mirror */
+function upsertStoredItem(item: StoredQueueItem): void {
+  const existing = readStoredQueue();
+  const idx = existing.findIndex((e) => e.id === item.id);
+  if (idx >= 0) {
+    existing[idx] = item;
+  } else {
+    existing.push(item);
+  }
+  writeStoredQueue(existing);
+}
+
+/** Remove an item from the localStorage mirror (it was synced or permanently failed) */
+function removeStoredItem(queueId: string): void {
+  const existing = readStoredQueue().filter((e) => e.id !== queueId);
+  writeStoredQueue(existing);
+}
+
+// ── Row type (matches native version) ────────────────────────────────────────
 
 type SyncQueueRow = {
   id: string;
@@ -30,6 +98,8 @@ type EnqueueSyncItemInput = {
   operation: SyncOperation;
   payload: string;
 };
+
+// ── Public API (same shape as native syncQueueRepository.ts) ─────────────────
 
 export async function enqueueSyncItem(
   input: EnqueueSyncItemInput,
@@ -76,6 +146,17 @@ export async function enqueueSyncItem(
       item.lastError
     ]
   );
+
+  // Mirror to localStorage so this item survives a page close
+  upsertStoredItem({
+    id: item.id,
+    entity_type: item.entityType,
+    entity_id: item.entityId,
+    operation: item.operation,
+    payload: item.payload,
+    created_at: item.createdAt,
+    updated_at: item.updatedAt
+  });
 
   return item;
 }
@@ -144,12 +225,16 @@ export async function getSyncQueueSummary() {
 
   // Dead-lettered items are a subset of "failed" — permanently stuck (retry_count
   // has hit SYNC_MAX_RETRIES) and excluded from retryFailedSyncItems() below.
-  const deadLetterRow = await database.getFirstAsync<{ total: number }>(
-    `SELECT COUNT(*) AS total
-      FROM sync_queue
-      WHERE sync_status = 'failed' AND retry_count >= ?;`,
-    [SYNC_MAX_RETRIES]
+  // NOTE: computed in JS rather than "WHERE retry_count >= ?" — the web mock SQL
+  // engine (database.web.ts) only supports =, IS [NOT] NULL, IN, LIKE in WHERE
+  // clauses, not >=, so we fetch failed rows with the supported `=` filter and
+  // filter/count client-side instead of relying on unsupported SQL syntax.
+  const failedRows = await database.getAllAsync<{ retry_count: number }>(
+    `SELECT retry_count FROM sync_queue WHERE sync_status = 'failed';`
   );
+  const deadLetterCount = failedRows.filter(
+    (row) => row.retry_count >= SYNC_MAX_RETRIES
+  ).length;
 
   return {
     failed: rows.find((row) => row.sync_status === "failed")?.total ?? 0,
@@ -158,7 +243,7 @@ export async function getSyncQueueSummary() {
     syncing: rows.find((row) => row.sync_status === "syncing")?.total ?? 0,
     /** Failed items that have exhausted SYNC_MAX_RETRIES — need manual attention,
      *  will not be touched by retryFailedSyncItems(). */
-    deadLetter: deadLetterRow?.total ?? 0
+    deadLetter: deadLetterCount
   };
 }
 
@@ -182,6 +267,7 @@ export async function markSyncItemsSyncing(queueIds: string[]) {
       );
     }
   });
+  // Items still in localStorage during syncing — will be removed on synced/failed
 }
 
 export async function markSyncItemSynced(queueId: string) {
@@ -195,6 +281,9 @@ export async function markSyncItemSynced(queueId: string) {
       WHERE id = ?;`,
     [nowIso(), queueId]
   );
+
+  // Remove from localStorage — safely pushed to server
+  removeStoredItem(queueId);
 }
 
 export async function markSyncItemFailed(queueId: string, errorMessage: string) {
@@ -209,6 +298,8 @@ export async function markSyncItemFailed(queueId: string, errorMessage: string) 
       WHERE id = ?;`,
     [nowIso(), errorMessage, queueId]
   );
+
+  // Keep in localStorage on failure — retry it next session
 }
 
 /**
@@ -243,6 +334,62 @@ export async function retryFailedSyncItems(limit = 25) {
   return failedItems.length;
 }
 
+// ── Web-only: rehydrate from localStorage ─────────────────────────────────────
+
+/**
+ * Called by useSyncEngine on web BEFORE the first push cycle.
+ * Reads any items that survived a page close from localStorage and inserts them
+ * into the in-memory DB so they're picked up by the normal push mechanism.
+ *
+ * Items already present in the DB (same id) are skipped silently.
+ */
+export async function rehydrateFromLocalStorage(): Promise<number> {
+  const stored = readStoredQueue();
+  if (stored.length === 0) return 0;
+
+  const database = await getDatabase();
+  const now = nowIso();
+  let restored = 0;
+
+  for (const item of stored) {
+    try {
+      // Check if already in the DB (e.g. from a previous rehydration this session)
+      const existing = await database.getFirstAsync<{ id: string }>(
+        "SELECT id FROM sync_queue WHERE id = ?;",
+        [item.id]
+      );
+      if (existing) continue;
+
+      await database.runAsync(
+        `INSERT INTO sync_queue (
+          id, entity_type, entity_id, operation, payload,
+          sync_status, retry_count, created_at, updated_at, last_error
+        ) VALUES (?, ?, ?, ?, ?, 'pending', 0, ?, ?, NULL);`,
+        [
+          item.id,
+          item.entity_type,
+          item.entity_id,
+          item.operation,
+          item.payload,
+          item.created_at,
+          now
+        ]
+      );
+      restored++;
+    } catch {
+      // Skip malformed items
+    }
+  }
+
+  if (restored > 0) {
+    console.log(`[sync-web] Rehydrated ${restored} pending item(s) from localStorage.`);
+  }
+
+  return restored;
+}
+
+// ── Mapper ────────────────────────────────────────────────────────────────────
+
 function mapSyncQueueRow(row: SyncQueueRow): SyncQueueItem {
   return {
     id: row.id,
@@ -257,12 +404,3 @@ function mapSyncQueueRow(row: SyncQueueRow): SyncQueueItem {
     lastError: row.last_error
   };
 }
-
-/**
- * No-op on native — data lives in SQLite and survives app restarts.
- * Web override in syncQueueRepository.web.ts provides the real implementation.
- */
-export async function rehydrateFromLocalStorage(): Promise<number> {
-  return 0;
-}
-
