@@ -1,5 +1,5 @@
 {
-  "version": "4.16.0",
+  "version": "4.16.1",
   "changelog": [
     "mobile: Sprint 24/25 sync hardening + billing gating ()",
     "web: rewrite database.web.ts with real in-memory SQL engine ()"
