@@ -1,11 +1,7 @@
 {
-  "version": "4.15.1",
+  "version": "4.16.0",
   "changelog": [
-    "PWA web support — platform stubs, manifest, vercel config ()",
-    "android: hoist babel/metro packages for EAS pnpm build ()",
-    "revert Gradle to 8.13 - expo-modules-autolinking@56 requires Gradle 8.10+ CC API ()",
-    "update lockfile to match regenerated expo-location pnpm10 patch ()",
-    "android EAS build - gradle 8.8, pnpm hoisting, patches, eas node pin ()",
-    "regenerate expo-location patch with pnpm10 integrity headers + fix user-mobile-v2 package.json truncation ()"
+    "mobile: Sprint 24/25 sync hardening + billing gating ()",
+    "web: rewrite database.web.ts with real in-memory SQL engine ()"
   ]
 }
