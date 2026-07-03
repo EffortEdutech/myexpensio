@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.16.0](https://github.com/EffortEdutech/myexpensio/compare/v4.15.1...v4.16.0) (2026-07-03)
+
+
+### Features
+
+* **mobile:** Sprint 24/25 sync hardening + billing gating ([99367c3](https://github.com/EffortEdutech/myexpensio/commit/99367c3fcdca0986de05652c341372eca3a66020))
+
 ### [4.15.1](https://github.com/EffortEdutech/myexpensio/compare/v4.15.0...v4.15.1) (2026-06-15)
 
 
