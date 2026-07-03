@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.15.1](https://github.com/EffortEdutech/myexpensio/compare/v4.15.0...v4.15.1) (2026-06-15)
+
+
+### Bug Fixes
+
+* **web:** rewrite database.web.ts with real in-memory SQL engine ([b469107](https://github.com/EffortEdutech/myexpensio/commit/b4691075f3f5e8a366bb2eead3bc8369f678202a))
+
 ## [4.15.0](https://github.com/EffortEdutech/myexpensio/compare/v4.14.9...v4.15.0) (2026-06-15)
 
 
