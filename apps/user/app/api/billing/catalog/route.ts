@@ -1,5 +1,16 @@
 // apps/user/app/api/billing/catalog/route.ts
 //
+// ⚠️ UNUSED / ORPHANED — confirmed 2026-07-02 (Sprint 25) that nothing in the
+// codebase calls this route. The live billing page
+// (apps/user/app/(app)/settings/billing/page.tsx) hardcodes its own PRO/PREMIUM
+// plan data and calls /api/billing/checkout directly — it never fetches this
+// catalog. This route also only defines PRO (no PREMIUM) and reads different
+// env var names (STRIPE_PRO_MONTHLY_PRICE_ID / STRIPE_PRO_YEARLY_PRICE_ID) than
+// what checkout/route.ts actually reads (STRIPE_PRICE_PRO / STRIPE_PRICE_PREMIUM).
+// Safe to delete this whole route directory — kept only because file deletion
+// in this session requires manual confirmation. See
+// docs/SHIP_READINESS_ACTION_PLAN.md §1.2.
+//
 // GET /api/billing/catalog?plan_code=PRO_MONTHLY&provider=STRIPE
 //
 // Returns a plan + price object for the given plan_code and provider.

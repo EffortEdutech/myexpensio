@@ -2,6 +2,14 @@
 //
 // Resolves org entitlements for usage gating.
 //
+// ⭐ SOURCE OF TRUTH: this file defines the actual FREE/PRO/PREMIUM tier limits.
+// If any doc, memory, or prior spec disagrees with the numbers below, THIS FILE
+// WINS — update the doc, not this file, unless you are deliberately changing the
+// baseline. As of 2026-07-02: FREE = unlimited routes + trips, 0 exports/month
+// (the only paid gate). PRO/PREMIUM = unlimited everything. There is no
+// per-month cap on route calculations — that idea is stale, see
+// docs/SHIP_READINESS_ACTION_PLAN.md and docs/archive/subscription_matrix_SUPERSEDED.html.
+//
 // CHANGE LOG:
 //   2026-04-21 — Removed platform_settings (dropped in R1).
 //                Added platform_config read for admin-configurable Free tier limits.

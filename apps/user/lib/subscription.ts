@@ -4,6 +4,13 @@
 // Import ONLY in Server Components, Route Handlers, and Server Actions.
 // Never import in 'use client' files — use /api/subscription for client-side checks.
 //
+// NOTE (2026-07-02): tier/status resolution lives here, but actual USAGE LIMITS
+// (routes/trips/exports per month) are resolved in apps/user/lib/entitlements.ts,
+// which is the single source of truth for those numbers. If any other doc in this
+// repo (including docs/archive/subscription_matrix_SUPERSEDED.html) disagrees with
+// entitlements.ts, entitlements.ts wins — that doc describes a pre-2026-05-15
+// architecture that no longer exists.
+//
 // Two entity types:
 //   USER — individual user (Agent Subscriber, solo user)
 //   ORG  — workspace subscription (Team / Agent workspace, paid by company)

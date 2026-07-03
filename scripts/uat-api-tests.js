@@ -270,13 +270,11 @@ async function testClaims(tripId) {
 async function testBilling() {
   section('User App — Billing')
 
-  // Billing catalog
-  const r1 = await req(USER_APP, '/api/billing/catalog', { token: USER_TOKEN })
-  if (r1.status === 200 && r1.json?.plans) {
-    pass('GET /api/billing/catalog → 200', `plans=${Object.keys(r1.json.plans ?? {}).join(', ')}`)
-  } else {
-    fail('GET /api/billing/catalog → 200', `got ${r1.status} — ${r1.text?.slice(0, 100)}`)
-  }
+  // NOTE (2026-07-02, Sprint 25): /api/billing/catalog is confirmed unused/orphaned
+  // — the live billing page hardcodes its own plan data and never calls it. Removed
+  // this test block rather than testing a route nothing in the app actually uses.
+  // See docs/SHIP_READINESS_ACTION_PLAN.md §1.2. Route file itself still exists
+  // (marked with an "unused" banner) pending manual deletion.
 
   // Billing summary
   const r2 = await req(USER_APP, '/api/billing/summary', { token: USER_TOKEN })

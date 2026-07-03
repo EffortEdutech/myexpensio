@@ -4,6 +4,12 @@
 // Forwards to the unified /api/billing/checkout endpoint.
 // Remove this file once all callers are updated to POST /api/billing/checkout
 // with body { tier: 'PREMIUM', entity_type: 'USER' }.
+//
+// ⚠️ CONFIRMED UNUSED 2026-07-02 (Sprint 25): repo-wide search found zero
+// callers — the web billing page and the mobile app both call
+// /api/billing/checkout directly with { tier, entity_type } already. Safe to
+// delete this whole route directory. Kept only because file deletion in this
+// session requires manual confirmation. See docs/SHIP_READINESS_ACTION_PLAN.md §1.2.
 
 import { NextResponse } from 'next/server'
 
