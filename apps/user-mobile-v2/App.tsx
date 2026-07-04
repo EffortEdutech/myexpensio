@@ -62,6 +62,8 @@ import { AppShell } from "@/features/shell/components/AppShell";
 import type { WorkTab, PersonalView, BusinessView } from "@/features/shell/components/AppShell";
 import { SyncLoadingGate } from "@/features/shell/components/SyncLoadingGate";
 import { WebSyncEmptyState } from "@/features/shell/components/WebSyncEmptyState";
+import { DeadLetterRecoveryModal } from "@/sync/components/DeadLetterRecoveryModal";
+import { formatRelativeTime } from "@/utils/time";
 import type { AppSpace } from "@/features/shell/types";
 import { FeatureGate } from "@/features/subscription/components/FeatureGate";
 import { useSubscription } from "@/features/subscription/hooks/useSubscription";
@@ -569,6 +571,7 @@ function AuthenticatedHome({
                 });
               }
             }}
+            lastSyncedAt={syncEngine.lastSyncedAt}
             pendingSyncCount={pendingSyncItems.data?.length ?? 0}
             rates={settingsRates}
             showNewClaimModal={newClaimOpen}
@@ -1547,6 +1550,7 @@ type WorkClaimsSliceProps = {
       type: ClaimItemType;
     }
   ) => Promise<void>;
+  lastSyncedAt: string | null;
   pendingSyncCount: number;
   rates: ClaimRates;
   showNewClaimModal: boolean;
@@ -1597,6 +1601,7 @@ function WorkClaimsSlice({
   onSubmitClaim,
   onUpdateClaim,
   onUpdateClaimItem,
+  lastSyncedAt,
   pendingSyncCount,
   rates,
   showNewClaimModal,
@@ -1612,6 +1617,7 @@ function WorkClaimsSlice({
   const [claimSort, setClaimSort] = useState<ClaimSortKey>("updated_desc");
   const [claimSortOpen, setClaimSortOpen] = useState(false);
   const [claimFilterOpen, setClaimFilterOpen] = useState(false);
+  const [deadLetterModalOpen, setDeadLetterModalOpen] = useState(false);
   const draftClaimCount = claims.filter((claim) => claim.status === "draft").length;
   const submittedClaimCount = claims.filter(
     (claim) => claim.status === "submitted"
@@ -1670,14 +1676,23 @@ function WorkClaimsSlice({
       </View>
 
       <View style={styles.listToolbar}>
-        <Text style={styles.listToolbarText}>
-          {visibleClaims.length} shown · {pendingSyncCount} pending sync
-          {syncQueueSummary.deadLetter ? (
-            <Text style={styles.errorText}>
-              {" "}· {syncQueueSummary.deadLetter} need attention
-            </Text>
-          ) : null}
-        </Text>
+        <View>
+          <Text style={styles.listToolbarText}>
+            {visibleClaims.length} shown · {pendingSyncCount} pending sync
+            {syncQueueSummary.deadLetter ? (
+              <Text
+                accessibilityRole="button"
+                onPress={() => setDeadLetterModalOpen(true)}
+                style={styles.errorText}
+              >
+                {" "}· {syncQueueSummary.deadLetter} need attention (tap to review)
+              </Text>
+            ) : null}
+          </Text>
+          <Text style={styles.syncStalenessText}>
+            Last synced {formatRelativeTime(lastSyncedAt)}
+          </Text>
+        </View>
         <View style={styles.toolbarActions}>
           <Pressable
             accessibilityRole="button"
@@ -1740,6 +1755,10 @@ function WorkClaimsSlice({
           setClaimSort(value);
           setClaimSortOpen(false);
         }}
+      />
+      <DeadLetterRecoveryModal
+        onClose={() => setDeadLetterModalOpen(false)}
+        visible={deadLetterModalOpen}
       />
     </View>
   );
@@ -2162,6 +2181,12 @@ const styles = StyleSheet.create({
   toolbarActions: {
     flexDirection: "row",
     gap: 6
+  },
+  syncStalenessText: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    marginTop: 2,
+    opacity: 0.8
   },
   listToolbarText: {
     color: colors.muted,

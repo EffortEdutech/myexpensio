@@ -243,6 +243,59 @@ export async function retryFailedSyncItems(limit = 25) {
   return failedItems.length;
 }
 
+/**
+ * Lists dead-lettered items only — failed items that have exhausted
+ * SYNC_MAX_RETRIES and will never be picked up by retryFailedSyncItems().
+ * Used by the Dead Letter Recovery UI so the user can see exactly what's stuck.
+ */
+export async function listDeadLetterItems(limit = 50) {
+  const database = await getDatabase();
+  const rows = await database.getAllAsync<SyncQueueRow>(
+    `SELECT *
+      FROM sync_queue
+      WHERE sync_status = 'failed' AND retry_count >= ?
+      ORDER BY updated_at DESC
+      LIMIT ?;`,
+    [SYNC_MAX_RETRIES, limit]
+  );
+
+  return rows.map(mapSyncQueueRow);
+}
+
+/**
+ * Forces a single dead-letter item back to 'pending' with retry_count reset to 0,
+ * bypassing the SYNC_MAX_RETRIES guard that retryFailedSyncItems() respects. This
+ * is only called from an explicit user action in the Dead Letter Recovery UI — the
+ * user has seen the error and chosen to try again, so resetting the counter here
+ * does not reintroduce the "retries forever automatically" problem the cap exists
+ * to prevent.
+ */
+export async function retryDeadLetterItem(queueId: string) {
+  const database = await getDatabase();
+
+  await database.runAsync(
+    `UPDATE sync_queue
+      SET sync_status = 'pending',
+          retry_count = 0,
+          updated_at = ?,
+          last_error = NULL
+      WHERE id = ?;`,
+    [nowIso(), queueId]
+  );
+}
+
+/**
+ * Permanently removes a queued mutation the user has chosen to give up on.
+ * Only deletes the sync_queue row — the underlying entity (claim/item/etc.) in
+ * local SQLite is untouched, so the user's local data still reflects their last
+ * edit, it just will never be pushed to the server.
+ */
+export async function discardSyncItem(queueId: string) {
+  const database = await getDatabase();
+
+  await database.runAsync(`DELETE FROM sync_queue WHERE id = ?;`, [queueId]);
+}
+
 function mapSyncQueueRow(row: SyncQueueRow): SyncQueueItem {
   return {
     id: row.id,

@@ -334,6 +334,63 @@ export async function retryFailedSyncItems(limit = 25) {
   return failedItems.length;
 }
 
+/**
+ * Lists dead-lettered items only — failed items that have exhausted
+ * SYNC_MAX_RETRIES and will never be picked up by retryFailedSyncItems().
+ * Used by the Dead Letter Recovery UI so the user can see exactly what's stuck.
+ *
+ * Same >= limitation as getSyncQueueSummary() above: the web mock SQL engine only
+ * supports =, IS [NOT] NULL, IN, LIKE in WHERE clauses, so we fetch all 'failed'
+ * rows and filter/slice client-side instead.
+ */
+export async function listDeadLetterItems(limit = 50) {
+  const database = await getDatabase();
+  const rows = await database.getAllAsync<SyncQueueRow>(
+    `SELECT * FROM sync_queue WHERE sync_status = 'failed' ORDER BY updated_at DESC;`
+  );
+
+  return rows
+    .filter((row) => row.retry_count >= SYNC_MAX_RETRIES)
+    .slice(0, limit)
+    .map(mapSyncQueueRow);
+}
+
+/**
+ * Forces a single dead-letter item back to 'pending' with retry_count reset to 0,
+ * bypassing the SYNC_MAX_RETRIES guard that retryFailedSyncItems() respects. Only
+ * called from an explicit user action in the Dead Letter Recovery UI.
+ *
+ * No localStorage bookkeeping needed here — markSyncItemFailed() never removes a
+ * failed item from the localStorage mirror (see comment there), so it's already
+ * present and will be cleared normally by markSyncItemSynced()/discardSyncItem()
+ * once this retry resolves.
+ */
+export async function retryDeadLetterItem(queueId: string) {
+  const database = await getDatabase();
+
+  await database.runAsync(
+    `UPDATE sync_queue
+      SET sync_status = 'pending',
+          retry_count = 0,
+          updated_at = ?,
+          last_error = NULL
+      WHERE id = ?;`,
+    [nowIso(), queueId]
+  );
+}
+
+/**
+ * Permanently removes a queued mutation the user has chosen to give up on, both
+ * from the in-memory DB and its localStorage mirror. The underlying entity in
+ * local SQLite is untouched — only the queued mutation is discarded.
+ */
+export async function discardSyncItem(queueId: string) {
+  const database = await getDatabase();
+
+  await database.runAsync(`DELETE FROM sync_queue WHERE id = ?;`, [queueId]);
+  removeStoredItem(queueId);
+}
+
 // ── Web-only: rehydrate from localStorage ─────────────────────────────────────
 
 /**
