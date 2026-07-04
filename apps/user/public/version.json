@@ -1,7 +1,7 @@
 {
-  "version": "4.16.2",
+  "version": "4.17.0",
   "changelog": [
-    "mobile: Sprint 24/25 sync hardening + billing gating ()",
-    "web: rewrite database.web.ts with real in-memory SQL engine ()"
+    "mobile: dead-letter recovery UI + sync staleness indicator ()",
+    "ci: remove redundant pnpm version pin, let action-setup read packageManager field ()"
   ]
 }
