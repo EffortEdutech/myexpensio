@@ -54,3 +54,4 @@ Thumbs.db
 *.pem
 *.tmp
 _tmp_6_*
+.idea/

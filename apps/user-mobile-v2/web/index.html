@@ -13,15 +13,39 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="MyExpensio" />
-    <link rel="apple-touch-icon" href="/assets/icon.png" />
-    <link rel="apple-touch-startup-image" href="/assets/splash.png" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+    <link rel="apple-touch-startup-image" href="/splash.png" />
 
     <!-- General -->
     <title>MyExpensio</title>
     <meta name="description" content="Track expenses, claims, and trips — on Android and iPhone." />
-    <link rel="icon" type="image/png" href="/assets/favicon.png" />
+    <link rel="icon" type="image/png" href="/icon-192.png" />
   </head>
   <body>
     <noscript>You need to enable JavaScript to run MyExpensio.</noscript>
+    <script>
+      // Register the service worker so the app shell keeps working offline
+      // and repeat visits load instantly from cache. Non-fatal if it fails —
+      // the app still works fully online without it.
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", function () {
+          navigator.serviceWorker.register("/sw.js").catch(function () {});
+        });
+      }
+
+      // Capture the browser's native "install this app" prompt (Chrome/
+      // Android/desktop Chrome only — iOS Safari never fires this event).
+      // Stashed on window so InstallPromptBanner (React, mounted later) can
+      // trigger it on demand instead of the browser's own default UI.
+      window.__myexpensioInstallPrompt = null;
+      window.addEventListener("beforeinstallprompt", function (event) {
+        event.preventDefault();
+        window.__myexpensioInstallPrompt = event;
+        window.dispatchEvent(new CustomEvent("myexpensio:install-available"));
+      });
+      window.addEventListener("appinstalled", function () {
+        window.__myexpensioInstallPrompt = null;
+      });
+    </script>
   </body>
 </html>

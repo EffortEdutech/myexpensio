@@ -60,6 +60,7 @@ import { useReceiptUploadSummary } from "@/features/receipts/hooks/useReceiptUpl
 import type { LocalReceiptFile } from "@/features/receipts/types";
 import { AppShell } from "@/features/shell/components/AppShell";
 import type { WorkTab, PersonalView, BusinessView } from "@/features/shell/components/AppShell";
+import { InstallPromptBanner } from "@/features/shell/components/InstallPromptBanner";
 import { SyncLoadingGate } from "@/features/shell/components/SyncLoadingGate";
 import { WebSyncEmptyState } from "@/features/shell/components/WebSyncEmptyState";
 import { DeadLetterRecoveryModal } from "@/sync/components/DeadLetterRecoveryModal";
@@ -131,6 +132,7 @@ export default function App() {
         ) : (
           <MobileV2Home />
         )}
+        <InstallPromptBanner />
         <StatusBar style="dark" />
       </QueryClientProvider>
     </SafeAreaProvider>
