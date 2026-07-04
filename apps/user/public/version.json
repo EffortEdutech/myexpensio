@@ -1,7 +1,6 @@
 {
-  "version": "4.17.0",
+  "version": "4.18.0",
   "changelog": [
-    "mobile: dead-letter recovery UI + sync staleness indicator ()",
-    "ci: remove redundant pnpm version pin, let action-setup read packageManager field ()"
+    "pwa: fix broken manifest/icon links, add service worker (B-5), add install prompt (B-8); gitignore .idea/ ()"
   ]
 }
