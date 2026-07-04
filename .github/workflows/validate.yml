@@ -16,6 +16,7 @@ jobs:
         app:
           - user
           - admin
+          - cs
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
@@ -32,6 +33,12 @@ jobs:
       TOYYIBPAY_CATEGORY_CODE: dummy-category
       TOYYIBPAY_BASE_URL: https://dev.toyyibpay.com
       TOYYIBPAY_CALLBACK_URL: http://localhost:3101/api/admin/webhooks/billing/toyyibpay
+      NEXT_PUBLIC_CS_APP_URL: http://localhost:3102
+      NEXT_PUBLIC_USER_APP_URL: http://localhost:3100
+      NEXT_PUBLIC_WORKSPACE_APP_URL: http://localhost:3101
+      CS_APP_LOGIN_URL: http://localhost:3102/login
+      USER_APP_LOGIN_URL: http://localhost:3100/login
+      WORKSPACE_APP_LOGIN_URL: http://localhost:3101/login
 
     steps:
       - name: Checkout
