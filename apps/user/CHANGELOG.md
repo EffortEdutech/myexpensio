@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.18.1](https://github.com/EffortEdutech/myexpensio/compare/v4.18.0...v4.18.1) (2026-07-04)
+
+
+### Bug Fixes
+
+* **pwa:** revert web.output to single — static triggers expo-router SSG which this app doesn't use ([3a1caa8](https://github.com/EffortEdutech/myexpensio/commit/3a1caa85414ef133d25fc8931458279ee1eb6175))
+
 ## [4.18.0](https://github.com/EffortEdutech/myexpensio/compare/v4.17.0...v4.18.0) (2026-07-04)
 
 
