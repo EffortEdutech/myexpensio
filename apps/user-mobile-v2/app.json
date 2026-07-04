@@ -44,7 +44,7 @@
     },
     "web": {
       "bundler": "metro",
-      "output": "static",
+      "output": "single",
       "name": "MyExpensio",
       "shortName": "MyExpensio",
       "description": "Track expenses, claims, and trips — on Android and iPhone.",
