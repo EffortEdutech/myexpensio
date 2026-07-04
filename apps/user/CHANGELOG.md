@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.18.0](https://github.com/EffortEdutech/myexpensio/compare/v4.17.0...v4.18.0) (2026-07-04)
+
+
+### Features
+
+* **pwa:** fix broken manifest/icon links, add service worker (B-5), add install prompt (B-8); gitignore .idea/ ([4224e02](https://github.com/EffortEdutech/myexpensio/commit/4224e02bbe33edf3dcf4b980b68b0dcd1104ddac))
+
 ## [4.17.0](https://github.com/EffortEdutech/myexpensio/compare/v4.16.2...v4.17.0) (2026-07-04)
 
 
