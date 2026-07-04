@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.16.1](https://github.com/EffortEdutech/myexpensio/compare/v4.16.0...v4.16.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* **ci:** remove redundant pnpm version pin, let action-setup read packageManager field ([96a8bcb](https://github.com/EffortEdutech/myexpensio/commit/96a8bcb2f6cdadc08e1adb1c254a6cc416786a14))
+
 ## [4.16.0](https://github.com/EffortEdutech/myexpensio/compare/v4.15.1...v4.16.0) (2026-07-03)
 
 
