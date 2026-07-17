@@ -16,14 +16,17 @@ Start here if you're new to the project:
 Reference docs on how the system is put together — not sprint plans, not feature specs.
 - `01_PLATFORM_ROLES_REFERENCE.md` — the two parallel role systems (`profiles.role` platform-level vs `org_members.org_role` workspace-level) and their DB tables.
 - `02_MOBILE_V2_LOCAL_FIRST_DECISION.md` — the decision record for why `apps/user-mobile-v2` was built as a separate local-first (SQLite + offline queue) app instead of modifying `apps/user`.
+- `03_BACKEND_API_HOME_DECISION.md` — where the shared `/api/*` backend lives given the eventual retirement of `apps/user`, and why that isn't urgent yet (2026-07-17). Set a calendar note for 2026-08-08 — the checkpoint this doc points back to.
 
 ### `02-product-specs/`
 Feature specifications — what a feature is and who it's for, not how/when it gets built.
 - `01_PREMIUM_ACCOUNTING_SPEC.md` — the Premium Accounting (business bookkeeping) feature spec.
+- `02_AI_ASSISTANT_AUTOMATION_SPEC.md` — AI-assisted receipt/odometer/voice capture spec (Gemini free tier + BYOK + on-device fallback). Draft, 2026-07-17.
 
 ### `03-sprint-plans/`
-How and when features got built. Two tracks:
+How and when features got built. Three tracks:
 - `accounting/01_SPRINT_PLAN_ACCOUNTING.md` — sprint-by-sprint plan for the Premium Accounting spec above.
+- `ai-capture/01_SPRINT_PLAN_AI_CAPTURE.md` — sprint-by-sprint plan for the AI capture spec above (S0–S7, planning stage).
 - `mobile-v2/` — the original four founding planning docs for the `user-mobile-v2` rewrite, in chronological order:
   1. `01_COMPREHENSIVE_SPRINT_PLAN.md` — the first concrete sprint (local-first architecture foundation)
   2. `02_FULL_DELIVERY_ROADMAP.md` — the umbrella roadmap through production launch (doc #1 explicitly points here for "the complete roadmap")

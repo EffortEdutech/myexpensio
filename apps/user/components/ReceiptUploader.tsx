@@ -22,7 +22,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DocumentScanner }  from '@/components/DocumentScanner'
-import { ScanPreviewModal } from '@/components/ScanPreviewModal'
+import { ScanPreviewModal, type AiExtractedFields } from '@/components/ScanPreviewModal'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -35,6 +35,15 @@ type Props = {
   purpose?:    'RECEIPT' | 'ODOMETER'
   label?:      string
   enableScan?: boolean
+  // AI Capture Sprint 1 — fires once, right after a scanned receipt is
+  // confirmed, with whatever /api/ai/extract-receipt proposed (or nothing,
+  // on failure/gate/quota — the parent should treat this as best-effort).
+  // Only relevant when enableScan + purpose === 'RECEIPT'.
+  onExtracted?: (fields: AiExtractedFields) => void
+  // Fires instead of onExtracted when AI was attempted but returned no
+  // fields — surfaces WHY (upgrade required, rate limited, server error,
+  // etc.) instead of just silently doing nothing.
+  onAiError?: (message: string) => void
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -80,6 +89,8 @@ export function ReceiptUploader({
   purpose     = 'RECEIPT',
   label,
   enableScan  = false,
+  onExtracted,
+  onAiError,
 }: Props) {
   const [state,       setState]      = useState<UploadState>(storagePath ? 'DONE' : 'IDLE')
   const [progress,    setProgress]   = useState(0)
@@ -189,8 +200,10 @@ export function ReceiptUploader({
     setPreviewBlob(safeBlob)
   }
 
-  async function handlePreviewConfirm(blob: Blob) {
+  async function handlePreviewConfirm(blob: Blob, aiFields?: AiExtractedFields, aiError?: string) {
     setPreviewBlob(null)
+    if (aiFields) onExtracted?.(aiFields)
+    else if (aiError) onAiError?.(aiError)
     const file = new File([blob], `scan_${Date.now()}.jpg`, { type: 'image/jpeg' })
     await handleFile(file)
   }

@@ -146,11 +146,16 @@ export function matchTngToClaimItems(input: {
 
   for (const item of eligibleItems) {
     for (const txn of eligibleTng) {
-      // Gate: sector must match type
-      const sectorMatch =
-        (item.type === 'TOLL'    && txn.sector === 'TOLL') ||
-        (item.type === 'PARKING' && txn.sector === 'PARKING')
-      if (!sectorMatch) continue
+      // Gate: sector must be compatible with claim item type.
+      // BUG FIX (2026-07-17): this used to be an inline check for TOLL/PARKING
+      // only, which meant TAXI/GRAB/TRAIN/BUS items paid via TNG (mode='TNG')
+      // could never match their RETAIL-sector TNG transaction — even though
+      // /api/claims/[id]/tng-suggestions/route.ts explicitly fetches those
+      // item types for exactly this purpose. isCompatiblePair() already had
+      // the correct rule but was never wired in here. See
+      // lib/__tests__/tng-matcher.test.ts "matches a TAXI/GRAB item paid via
+      // TNG against a RETAIL sector row" for the regression test.
+      if (!isCompatiblePair(item.type, txn.sector)) continue
 
       const { score, breakdown } = scorePair(item, txn)
       if (score >= 30) {

@@ -55,3 +55,7 @@ Thumbs.db
 *.tmp
 _tmp_6_*
 .idea/
+
+# Graphify generated graph output
+graphify-out/
+.graphify-work/

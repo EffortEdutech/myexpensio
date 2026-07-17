@@ -14,6 +14,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ReceiptUploader } from "@/components/ReceiptUploader";
+import type { AiExtractedFields } from "@/components/ScanPreviewModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -660,6 +661,33 @@ function ExpenseModal({
   const [lodgingRate, setLodgingRate] = useState(120);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // AI Capture S1 follow-up (2026-07-17) — same pattern as TollParkingModal/
+  // TransportModal below. Pre-fills only fields the user hasn't already
+  // typed into; date only pre-fills if still at its untouched `today` default.
+  const [aiFilled, setAiFilled] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  function handleAiExtracted(fields: AiExtractedFields) {
+    setAiError(null);
+    if (fields.confidence === "LOW" && fields.amount == null && !fields.merchant) {
+      setAiError("AI couldn't read this receipt clearly — please enter the details manually.");
+      return;
+    }
+    let filled = false;
+    if (fields.amount != null && !amount) { setAmount(String(fields.amount)); filled = true; }
+    if (fields.merchant && !merchant) { setMerchant(fields.merchant); filled = true; }
+    // Date: only for MEAL (RECEIPT mode) — LODGING's date is check-in, which
+    // a receipt's printed date doesn't reliably represent (could be checkout/
+    // folio date), so we leave check-in/check-out alone.
+    if (type === "MEAL" && fields.date && claimDate === today) { setClaimDate(fields.date); filled = true; }
+    if (filled) setAiFilled(true);
+    else setAiError("AI read the receipt but had nothing new to fill in.");
+  }
+
+  function handleAiError(message: string) {
+    setAiFilled(false);
+    setAiError(message);
+  }
 
   // PATCH: canonical rates endpoint from ae99090 — /api/settings/rates (not /api/rates/current)
   useEffect(() => {
@@ -1012,6 +1040,12 @@ function ExpenseModal({
 
       {mode === "RECEIPT" && (
         <>
+          {aiFilled && (
+            <div style={S.aiHint}>✨ AI-suggested from your receipt — review before saving</div>
+          )}
+          {aiError && (
+            <div style={S.aiErrorHint}>🤖 {aiError}</div>
+          )}
           <div style={S.field}>
             <label style={S.label}>
               Amount (MYR) <span style={{ color: "#dc2626" }}>*</span>
@@ -1032,6 +1066,8 @@ function ExpenseModal({
             <ReceiptUploader
               storagePath={receiptPath || null}
               onUploaded={(path) => setReceiptPath(path)}
+              onExtracted={handleAiExtracted}
+              onAiError={handleAiError}
               enableScan={true}
             />
           </div>
@@ -1094,6 +1130,29 @@ function TollParkingModal({
   const [receiptPath, setReceiptPath] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // AI Capture S1 follow-up (2026-07-17)
+  const [aiFilled, setAiFilled] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  function handleAiExtracted(fields: AiExtractedFields) {
+    setAiError(null);
+    if (fields.confidence === "LOW" && fields.amount == null && !fields.merchant) {
+      setAiError("AI couldn't read this receipt clearly — please enter the details manually.");
+      return;
+    }
+    let filled = false;
+    if (fields.amount != null && !amount) { setAmount(String(fields.amount)); filled = true; }
+    if (claimDate === today && fields.date) { setClaimDate(fields.date); filled = true; }
+    if (type === "TOLL" && fields.merchant && !entryLocation) { setEntryLocation(fields.merchant); filled = true; }
+    if (type === "PARKING" && fields.merchant && !location) { setLocation(fields.merchant); filled = true; }
+    if (filled) setAiFilled(true);
+    else setAiError("AI read the receipt but had nothing new to fill in.");
+  }
+
+  function handleAiError(message: string) {
+    setAiFilled(false);
+    setAiError(message);
+  }
 
   async function handleAdd() {
     setError(null);
@@ -1255,6 +1314,12 @@ function TollParkingModal({
       {/* TNG OFF: manual amount + receipt */}
       {!tngMode && (
         <>
+          {aiFilled && (
+            <div style={S.aiHint}>✨ AI-suggested from your receipt — review before saving</div>
+          )}
+          {aiError && (
+            <div style={S.aiErrorHint}>🤖 {aiError}</div>
+          )}
           <div style={S.field}>
             <label style={S.label}>
               Amount (MYR) <span style={{ color: "#dc2626" }}>*</span>
@@ -1277,6 +1342,8 @@ function TollParkingModal({
             <ReceiptUploader
               storagePath={receiptPath || null}
               onUploaded={(path) => setReceiptPath(path)}
+              onExtracted={handleAiExtracted}
+              onAiError={handleAiError}
               enableScan={true}
             />
           </div>
@@ -1360,6 +1427,28 @@ function TransportModal({
   const [receiptPath, setReceiptPath] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // AI Capture S1 follow-up (2026-07-17)
+  const [aiFilled, setAiFilled] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  function handleAiExtracted(fields: AiExtractedFields) {
+    setAiError(null);
+    if (fields.confidence === "LOW" && fields.amount == null && !fields.merchant) {
+      setAiError("AI couldn't read this receipt clearly — please enter the details manually.");
+      return;
+    }
+    let filled = false;
+    if (fields.amount != null && !amount) { setAmount(String(fields.amount)); filled = true; }
+    if (claimDate === today && fields.date) { setClaimDate(fields.date); filled = true; }
+    if (fields.merchant && !merchant) { setMerchant(fields.merchant); filled = true; }
+    if (filled) setAiFilled(true);
+    else setAiError("AI read the receipt but had nothing new to fill in.");
+  }
+
+  function handleAiError(message: string) {
+    setAiFilled(false);
+    setAiError(message);
+  }
 
   // When switching to FLIGHT, clear the TNG flag (FLIGHT can't be paid via TNG)
   function handleTypeChange(t: TransportType) {
@@ -1637,11 +1726,19 @@ function TransportModal({
       {/* ── Receipt ───────────────────────────────────────────────── */}
       {!isTngPending && (
         <div style={S.field}>
+          {aiFilled && (
+            <div style={S.aiHint}>✨ AI-suggested from your receipt — review before saving</div>
+          )}
+          {aiError && (
+            <div style={S.aiErrorHint}>🤖 {aiError}</div>
+          )}
           <label style={S.label}>Receipt (optional)</label>
           {/* PATCH: ae99090 ReceiptUploader API */}
           <ReceiptUploader
             storagePath={receiptPath || null}
             onUploaded={(path) => setReceiptPath(path)}
+            onExtracted={handleAiExtracted}
+            onAiError={handleAiError}
             enableScan={true}
           />
         </div>
@@ -2565,6 +2662,32 @@ function MiscModal({
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // AI Capture S1 follow-up (2026-07-17)
+  const [aiFilled, setAiFilled] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  function handleAiExtracted(fields: AiExtractedFields) {
+    setAiError(null);
+    if (fields.confidence === "LOW" && fields.amount == null && !fields.merchant) {
+      setAiError("AI couldn't read this receipt clearly — please enter the details manually.");
+      return;
+    }
+    let filled = false;
+    if (fields.amount != null && !amount) { setAmount(String(fields.amount)); filled = true; }
+    if (claimDate === today && fields.date) { setClaimDate(fields.date); filled = true; }
+    // Misc has no separate "merchant" field, only free-text "description" —
+    // only pre-fill if the user hasn't typed one, and label it clearly as a
+    // suggestion since AI's merchant name may need editing into a proper
+    // expense description.
+    if (fields.merchant && !description) { setDescription(fields.merchant); filled = true; }
+    if (filled) setAiFilled(true);
+    else setAiError("AI read the receipt but had nothing new to fill in.");
+  }
+
+  function handleAiError(message: string) {
+    setAiFilled(false);
+    setAiError(message);
+  }
 
   async function handleAdd() {
     setError(null);
@@ -2654,6 +2777,12 @@ function MiscModal({
       </div>
 
       <div style={S.field}>
+        {aiFilled && (
+          <div style={S.aiHint}>✨ AI-suggested from your receipt — review before saving</div>
+        )}
+        {aiError && (
+          <div style={S.aiErrorHint}>🤖 {aiError}</div>
+        )}
         <label style={S.label}>
           Receipt{" "}
           <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 400 }}>
@@ -2663,6 +2792,8 @@ function MiscModal({
         <ReceiptUploader
           storagePath={receiptPath || null}
           onUploaded={(path) => setReceiptPath(path)}
+          onExtracted={handleAiExtracted}
+          onAiError={handleAiError}
           enableScan={true}
         />
       </div>
@@ -2696,6 +2827,26 @@ const S: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     gap: 14,
     paddingBottom: 60,
+  },
+  // AI Capture S1 follow-up (2026-07-17) — shared hint bars used by
+  // ExpenseModal, TollParkingModal, TransportModal, and MiscModal.
+  aiHint: {
+    padding: "9px 14px",
+    backgroundColor: "#f0f9ff",
+    border: "1px solid #bae6fd",
+    borderRadius: 8,
+    fontSize: 12,
+    fontWeight: 600,
+    color: "#0369a1",
+  },
+  aiErrorHint: {
+    padding: "9px 14px",
+    backgroundColor: "#fffbeb",
+    border: "1px solid #fde68a",
+    borderRadius: 8,
+    fontSize: 12,
+    fontWeight: 600,
+    color: "#b45309",
   },
   section: {
     backgroundColor: "#fff",

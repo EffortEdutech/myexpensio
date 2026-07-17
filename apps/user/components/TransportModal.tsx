@@ -16,6 +16,7 @@
 
 import { useState } from 'react'
 import { ReceiptUploader } from '@/components/ReceiptUploader'
+import type { AiExtractedFields } from '@/components/ScanPreviewModal'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -114,6 +115,32 @@ export function TransportModal({ type, onAdd, onClose }: Props) {
   const [location,      setLocation]      = useState('')
   const [saving,        setSaving]        = useState(false)
   const [error,         setError]         = useState<string | null>(null)
+  const [aiFilled,      setAiFilled]      = useState(false)   // AI Capture Sprint 1 — shows the review hint
+  const [aiError,       setAiError]       = useState<string | null>(null)   // shows why AI didn't fill anything
+
+  // AI Capture Sprint 1 — pre-fill only fields the user hasn't already typed
+  // into. Never overwrites something they entered, and every field this
+  // touches stays a normal editable input — the existing "Add" tap below is
+  // still the only thing that actually saves anything.
+  function handleAiExtracted(fields: AiExtractedFields) {
+    setAiError(null)
+    if (fields.confidence === 'LOW' && fields.amount == null && !fields.merchant) {
+      setAiError("AI couldn't read this receipt clearly — please enter the details manually.")
+      return
+    }
+    let filled = false
+    if (fields.amount != null && !amount) { setAmount(String(fields.amount)); filled = true }
+    if (fields.date && !claimDate) { setClaimDate(fields.date); filled = true }
+    if (cfg.showMerchant && fields.merchant && !merchant) { setMerchant(fields.merchant); filled = true }
+    if (cfg.showLoc && fields.merchant && !location) { setLocation(fields.merchant); filled = true }
+    if (filled) setAiFilled(true)
+    else setAiError('AI read the receipt but had nothing new to fill in.')
+  }
+
+  function handleAiError(message: string) {
+    setAiFilled(false)
+    setAiError(message)
+  }
 
   async function handleSave() {
     // Validate
@@ -176,6 +203,17 @@ export function TransportModal({ type, onAdd, onClose }: Props) {
         <div style={S.body}>
           {error && (
             <div style={S.errorBox}>{error}</div>
+          )}
+
+          {aiFilled && (
+            <div style={S.aiHint}>
+              ✨ AI-suggested from your receipt — review before saving
+            </div>
+          )}
+          {aiError && (
+            <div style={S.aiErrorHint}>
+              🤖 {aiError}
+            </div>
           )}
 
           {/* Amount */}
@@ -285,6 +323,8 @@ export function TransportModal({ type, onAdd, onClose }: Props) {
               <ReceiptUploader
                 storagePath={receiptUrl}
                 onUploaded={path => setReceiptUrl(path)}
+                onExtracted={handleAiExtracted}
+                onAiError={handleAiError}
                 purpose="RECEIPT"
                 label={
                   type === 'FLIGHT' ? 'Upload e-Ticket' :
@@ -366,6 +406,20 @@ const S: Record<string, React.CSSProperties> = {
     border: '1px solid #fecaca',
     borderRadius: 8,
     fontSize: 13, color: '#dc2626',
+  },
+  aiHint: {
+    padding: '9px 14px',
+    backgroundColor: '#f0f9ff',
+    border: '1px solid #bae6fd',
+    borderRadius: 8,
+    fontSize: 12, fontWeight: 600, color: '#0369a1',
+  },
+  aiErrorHint: {
+    padding: '9px 14px',
+    backgroundColor: '#fffbeb',
+    border: '1px solid #fde68a',
+    borderRadius: 8,
+    fontSize: 12, fontWeight: 600, color: '#b45309',
   },
   field: {
     display: 'flex', flexDirection: 'column', gap: 5,

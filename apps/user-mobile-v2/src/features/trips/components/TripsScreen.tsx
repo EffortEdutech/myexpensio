@@ -2836,7 +2836,7 @@ async function openEvidencePicker(
       result = await ImagePicker.launchImageLibraryAsync(options);
     }
 
-    if (result.canceled || result.assets.length === 0) return null;
+    if (result.canceled || !result.assets?.[0]) return null;
 
     const asset = result.assets[0];
     const mimeType = asset.mimeType ?? "image/jpeg";

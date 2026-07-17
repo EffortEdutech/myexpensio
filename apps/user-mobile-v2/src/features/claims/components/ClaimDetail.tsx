@@ -30,7 +30,9 @@ import { useSubscription } from "@/features/subscription/hooks/useSubscription";
 import { matchTngToClaimItems, scorePair } from "@/features/tng/matcher";
 import type { TngTransaction } from "@/features/tng/types";
 import type { TripDraft } from "@/features/trips/types";
+import { useAuthStore } from "@/state/authStore";
 import type { ClaimRates } from "@/state/settingsStore";
+import { getSyncBaseUrl } from "@/sync/syncConfig";
 import { colors, spacing, typography } from "@/theme/tokens";
 
 type ClaimDetailProps = {
@@ -866,6 +868,37 @@ function AddClaimItemModal({
   const [parkingLocation, setParkingLocation] = useState("");
   const [perDiemDays, setPerDiemDays] = useState("1");
   const [perDiemRate, setPerDiemRate] = useState(rates.perDiemRate);
+  // AI Capture S1 (mobile) — 2026-07-17
+  const [aiFilled, setAiFilled] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  function handleAiExtracted(fields: AiExtractedFields) {
+    setAiError(null);
+    if (fields.confidence === "LOW" && fields.amount == null && !fields.merchant) {
+      setAiError("AI couldn't read this receipt clearly — please enter the details manually.");
+      return;
+    }
+    let filled = false;
+    if (fields.amount != null && !amount) {
+      setAmount(String(fields.amount));
+      filled = true;
+    }
+    if (fields.date && date === todayInput()) {
+      setDate(fields.date);
+      filled = true;
+    }
+    if (fields.merchant && !description) {
+      setDescription(fields.merchant);
+      filled = true;
+    }
+    if (filled) setAiFilled(true);
+    else setAiError("AI read the receipt but had nothing new to fill in.");
+  }
+
+  function handleAiError(message: string) {
+    setAiFilled(false);
+    setAiError(message);
+  }
 
   if (!kind) {
     return null;
@@ -1086,6 +1119,8 @@ function AddClaimItemModal({
     setMealFullDay(false);
     setCheckInDate(todayInput());
     setCheckOutDate(tomorrowInput());
+    setAiFilled(false);
+    setAiError(null);
     setPerDiemDays("1");
     setPerDiemRate(rates.perDiemRate);
     setEntryLocation("");
@@ -1377,7 +1412,24 @@ function AddClaimItemModal({
                 <Field label="Notes (optional)" value={notes} onChangeText={setNotes} />
                 <View style={styles.field}>
                   <Text style={styles.label}>Receipt (optional)</Text>
-                  <ReceiptCaptureField onChange={setReceipt} value={receipt} />
+                  {aiFilled ? (
+                    <View style={styles.aiHint}>
+                      <Text style={styles.aiHintText}>
+                        ✨ AI-suggested from your receipt — review before saving
+                      </Text>
+                    </View>
+                  ) : null}
+                  {aiError ? (
+                    <View style={styles.aiErrorHint}>
+                      <Text style={styles.aiErrorHintText}>🤖 {aiError}</Text>
+                    </View>
+                  ) : null}
+                  <ReceiptCaptureField
+                    onChange={setReceipt}
+                    value={receipt}
+                    onExtracted={handleAiExtracted}
+                    onAiError={handleAiError}
+                  />
                 </View>
               </>
             ) : null}
@@ -1629,6 +1681,11 @@ function EditClaimItemModal({
   const [title, setTitle] = useState(item?.title ?? "");
   const [notes, setNotes] = useState(item?.notes ?? "");
   const [receipt, setReceipt] = useState<LocalReceiptFile | null>(null);
+  // AI Capture S1 (mobile) — 2026-07-17. Edit mode is more conservative than
+  // Add: the item already has a real date, so AI never touches it here —
+  // only amount/title, and only if the user hasn't already typed something.
+  const [aiFilled, setAiFilled] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!item) return;
@@ -1637,7 +1694,33 @@ function EditClaimItemModal({
     setTitle(item.title);
     setNotes(item.notes ?? "");
     setReceipt(null);
+    setAiFilled(false);
+    setAiError(null);
   }, [item?.id]);
+
+  function handleAiExtracted(fields: AiExtractedFields) {
+    setAiError(null);
+    if (fields.confidence === "LOW" && fields.amount == null && !fields.merchant) {
+      setAiError("AI couldn't read this receipt clearly — please enter the details manually.");
+      return;
+    }
+    let filled = false;
+    if (fields.amount != null && !amount) {
+      setAmount(String(fields.amount));
+      filled = true;
+    }
+    if (fields.merchant && !title) {
+      setTitle(fields.merchant);
+      filled = true;
+    }
+    if (filled) setAiFilled(true);
+    else setAiError("AI read the receipt but had nothing new to fill in.");
+  }
+
+  function handleAiError(message: string) {
+    setAiFilled(false);
+    setAiError(message);
+  }
 
   if (!item) {
     return null;
@@ -1694,9 +1777,23 @@ function EditClaimItemModal({
                   </Pressable>
                 </View>
               ) : null}
+              {aiFilled ? (
+                <View style={styles.aiHint}>
+                  <Text style={styles.aiHintText}>
+                    ✨ AI-suggested from your receipt — review before saving
+                  </Text>
+                </View>
+              ) : null}
+              {aiError ? (
+                <View style={styles.aiErrorHint}>
+                  <Text style={styles.aiErrorHintText}>🤖 {aiError}</Text>
+                </View>
+              ) : null}
               <ReceiptCaptureField
                 onChange={setReceipt}
                 value={receipt?.localUri === "" ? null : receipt}
+                onExtracted={handleAiExtracted}
+                onAiError={handleAiError}
               />
             </View>
           </ScrollView>
@@ -1760,13 +1857,35 @@ function ReceiptChoice({
 
 function ReceiptCaptureField({
   onChange,
-  value
+  value,
+  onExtracted,
+  onAiError
 }: {
   onChange: (receipt: LocalReceiptFile | null) => void;
   value: LocalReceiptFile | null;
+  // AI Capture S1 (mobile) — fires once, right after a receipt is picked
+  // (camera or gallery), with whatever /api/ai/extract-receipt proposed.
+  // Only attempted at all when the account can actually use the feature
+  // (canScan below) — unlike the web version, we know the tier client-side
+  // here, so there's no point calling out just to get a 403 back.
+  onExtracted?: (fields: AiExtractedFields) => void;
+  onAiError?: (message: string) => void;
 }) {
   const { tier } = useSubscription();
   const canScan = canUseFeature(tier, "receipt_scan");
+  const accessToken = useAuthStore((s) => s.session?.accessToken ?? null);
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+
+  async function handlePicked(receipt: LocalReceiptFile | null) {
+    if (!receipt) return;
+    onChange(receipt);
+    if (!canScan || !accessToken) return; // manual entry, no AI attempted
+    setAiAnalyzing(true);
+    const { fields, error } = await extractReceiptFields(receipt, accessToken);
+    setAiAnalyzing(false);
+    if (fields) onExtracted?.(fields);
+    else if (error) onAiError?.(error);
+  }
 
   function handleCameraPress() {
     if (!canScan) {
@@ -1777,9 +1896,7 @@ function ReceiptCaptureField({
       );
       return;
     }
-    void openLocalReceiptPicker("camera").then((receipt) => {
-      if (receipt) onChange(receipt);
-    });
+    void openLocalReceiptPicker("camera").then(handlePicked);
   }
 
   return (
@@ -1793,17 +1910,17 @@ function ReceiptCaptureField({
       />
       <ReceiptChoice
         icon="📎"
-        onPress={() =>
-          void openLocalReceiptPicker("gallery").then((receipt) => {
-            if (receipt) {
-              onChange(receipt);
-            }
-          })
-        }
+        onPress={() => void openLocalReceiptPicker("gallery").then(handlePicked)}
         selected={value?.source === "gallery"}
         sub="JPEG - PNG - WebP - Max 5 MB"
         title="Attach from Gallery"
       />
+      {aiAnalyzing ? (
+        <View style={styles.aiAnalyzingRow}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={styles.aiAnalyzingText}>🤖 Reading receipt…</Text>
+        </View>
+      ) : null}
       {value ? (
         <View style={styles.receiptPreview}>
           {value.localUri ? (
@@ -2336,6 +2453,74 @@ function moneyToCents(value: string) {
   return Math.round(amount * 100);
 }
 
+// ── AI Capture S1 (mobile) — 2026-07-17 ──────────────────────────────────────
+// Calls the same /api/ai/extract-receipt endpoint apps/user's web pages use.
+// Mirrors apps/user/components/ScanPreviewModal.tsx's extractReceiptFields,
+// adapted for a local file URI (expo-file-system) instead of a Blob, and for
+// the mobile app's Bearer-token auth (session.accessToken) instead of cookies.
+export type AiExtractedFields = {
+  amount: number | null;
+  currency: string;
+  date: string | null;
+  merchant: string | null;
+  category_guess: string | null;
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+};
+
+async function extractReceiptFields(
+  file: LocalReceiptFile,
+  accessToken: string
+): Promise<{ fields?: AiExtractedFields; error?: string }> {
+  try {
+    const base64 = await FileSystem.readAsStringAsync(file.localUri, {
+      encoding: FileSystem.EncodingType.Base64
+    });
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25_000);
+
+    let response: Response;
+    try {
+      response = await fetch(`${getSyncBaseUrl()}/api/ai/extract-receipt`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ image: base64 }),
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const rawText = await response.text();
+    let json: Record<string, unknown>;
+    try {
+      json = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {};
+    } catch {
+      json = {};
+    }
+
+    if (!response.ok) {
+      const message =
+        (json?.error as { message?: string } | undefined)?.message ??
+        `AI extraction failed (HTTP ${response.status}).`;
+      console.warn("[ReceiptCaptureField] AI extraction declined:", response.status, json);
+      return { error: message };
+    }
+
+    return { fields: json as unknown as AiExtractedFields };
+  } catch (e: unknown) {
+    const message =
+      e instanceof Error && e.name === "AbortError"
+        ? "AI extraction timed out. Please try again or enter this receipt manually."
+        : (e as Error)?.message ?? "AI extraction failed.";
+    console.warn("[ReceiptCaptureField] AI extraction error:", message);
+    return { error: message };
+  }
+}
+
 async function openLocalReceiptPicker(
   source: LocalReceiptFile["source"]
 ): Promise<LocalReceiptFile | null> {
@@ -2373,7 +2558,7 @@ async function openLocalReceiptPicker(
       result = await ImagePicker.launchImageLibraryAsync(options);
     }
 
-    if (result.canceled || result.assets.length === 0) return null;
+    if (result.canceled || !result.assets?.[0]) return null;
 
     const asset = result.assets[0];
     const srcUri = asset.uri;
@@ -3480,6 +3665,44 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontSize: typography.caption,
     fontWeight: "800"
+  },
+  // AI Capture S1 (mobile) — 2026-07-17
+  aiHint: {
+    backgroundColor: "#f0f9ff",
+    borderColor: "#bae6fd",
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: spacing.sm,
+    padding: spacing.sm
+  },
+  aiHintText: {
+    color: "#0369a1",
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  aiErrorHint: {
+    backgroundColor: "#fffbeb",
+    borderColor: "#fde68a",
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: spacing.sm,
+    padding: spacing.sm
+  },
+  aiErrorHintText: {
+    color: "#b45309",
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  aiAnalyzingRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+    paddingVertical: spacing.xs
+  },
+  aiAnalyzingText: {
+    color: colors.primary,
+    fontSize: typography.caption,
+    fontWeight: "700"
   },
   label: {
     color: "#374151",

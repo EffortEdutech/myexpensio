@@ -15,10 +15,27 @@ type Corner    = [number, number]   // [x, y] in original image px
 type EnhState  = 'IDLE' | 'PROCESSING' | 'DONE' | 'FAILED'
 type ViewMode  = 'ORIGINAL' | 'ENHANCED'
 
+// AI Capture Sprint 1 — see docs/03-sprint-plans/ai-capture/01_SPRINT_PLAN_AI_CAPTURE.md
+// Fields proposed by /api/ai/extract-receipt. Always a suggestion, never
+// auto-saved — the parent form pre-fills its (still-editable) inputs with
+// these and the user's existing "Add" tap remains the real save action.
+export type AiExtractedFields = {
+  amount:         number | null
+  currency:       string
+  date:           string | null
+  merchant:       string | null
+  category_guess: string | null
+  confidence:     'HIGH' | 'MEDIUM' | 'LOW'
+}
+
 type Props = {
   blob:      Blob
   purpose?:  'RECEIPT' | 'ODOMETER'
-  onConfirm: (blob: Blob) => void
+  // aiError is set whenever extraction was attempted but did not return
+  // fields — distinguishes "AI declined/failed" from "AI wasn't run at all"
+  // (ODOMETER purpose, or purpose=RECEIPT with nothing wrong). Debug-visible
+  // by design; see console.warn below too.
+  onConfirm: (blob: Blob, aiFields?: AiExtractedFields, aiError?: string) => void
   onRetake:  () => void
   onClose:   () => void
 }
@@ -90,6 +107,11 @@ export function ScanPreviewModal({
   const [enhancedBlob, setEnhancedBlob] = useState<Blob | null>(null)
   const [enhancedUrl,  setEnhancedUrl]  = useState<string | null>(null)
   const [appliedOps,   setAppliedOps]   = useState<string[]>([])
+
+  // AI Capture Sprint 1 — extraction runs on confirm, RECEIPT only, never
+  // blocks the user longer than its own timeout; failure just means no
+  // pre-fill, not a broken flow.
+  const [aiAnalyzing,  setAiAnalyzing]  = useState(false)
 
   const isReceipt = purpose === 'RECEIPT'
   const mode      = isReceipt ? 'RECEIPT' : 'ODOMETER'
@@ -409,9 +431,59 @@ export function ScanPreviewModal({
     }
   }, [blob, mode, isReceipt])
 
+  // ── AI extraction — never blocks the confirm flow, but always reports why
+  // it didn't return fields when it doesn't. Logged to console either way so
+  // this is debuggable from DevTools without needing UI changes.
+  async function extractReceiptFields(
+    finalBlob: Blob
+  ): Promise<{ fields?: AiExtractedFields; error?: string }> {
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader   = new FileReader()
+        reader.onload  = () => resolve((reader.result as string).split(',')[1] ?? '')
+        reader.onerror = () => reject(new Error('Could not read image.'))
+        reader.readAsDataURL(finalBlob)
+      })
+
+      const res = await fetch('/api/ai/extract-receipt', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ image: base64 }),
+        signal:  AbortSignal.timeout(25_000),
+      })
+
+      const rawText = await res.text()
+      let json: Record<string, unknown>
+      try { json = JSON.parse(rawText) } catch { json = {} }
+
+      if (!res.ok) {
+        const message =
+          (json?.error as { message?: string; code?: string } | undefined)?.message
+          ?? `AI extraction failed (HTTP ${res.status}).`
+        console.warn('[ScanPreviewModal] AI extraction declined:', res.status, json)
+        return { error: message }
+      }
+      return { fields: json as unknown as AiExtractedFields }
+    } catch (e: unknown) {
+      const message = (e as Error).message ?? 'AI extraction failed.'
+      console.warn('[ScanPreviewModal] AI extraction error:', message)
+      return { error: message }
+    }
+  }
+
   // ── Confirm ───────────────────────────────────────────────────────────────
-  function handleConfirm() {
-    onConfirm((viewMode === 'ENHANCED' && enhancedBlob) ? enhancedBlob : blob)
+  async function handleConfirm() {
+    const finalBlob = (viewMode === 'ENHANCED' && enhancedBlob) ? enhancedBlob : blob
+
+    if (!isReceipt) {
+      onConfirm(finalBlob)
+      return
+    }
+
+    setAiAnalyzing(true)
+    const { fields, error } = await extractReceiptFields(finalBlob)
+    setAiAnalyzing(false)
+    onConfirm(finalBlob, fields, error)
   }
 
   // ── Ops label map ─────────────────────────────────────────────────────────
@@ -538,7 +610,7 @@ export function ScanPreviewModal({
           <button
             onClick={onRetake}
             style={S.btnRetake}
-            disabled={enhState === 'PROCESSING'}
+            disabled={enhState === 'PROCESSING' || aiAnalyzing}
           >
             ↩ Retake
           </button>
@@ -550,7 +622,7 @@ export function ScanPreviewModal({
                 ...S.btnEnhance,
                 opacity: enhState === 'PROCESSING' ? 0.7 : 1,
               }}
-              disabled={enhState === 'PROCESSING'}
+              disabled={enhState === 'PROCESSING' || aiAnalyzing}
             >
               {enhState === 'PROCESSING' ? '⚙ Processing…'
                 : enhState === 'FAILED'  ? '↺ Retry'
@@ -560,12 +632,14 @@ export function ScanPreviewModal({
 
           <button
             onClick={handleConfirm}
-            style={S.btnConfirm}
-            disabled={enhState === 'PROCESSING'}
+            style={{ ...S.btnConfirm, opacity: aiAnalyzing ? 0.7 : 1 }}
+            disabled={enhState === 'PROCESSING' || aiAnalyzing}
           >
-            {viewMode === 'ENHANCED' && enhancedBlob
-              ? '✓ Use Enhanced'
-              : '✓ Use Photo'}
+            {aiAnalyzing
+              ? '🤖 Reading receipt…'
+              : viewMode === 'ENHANCED' && enhancedBlob
+                ? '✓ Use Enhanced'
+                : '✓ Use Photo'}
           </button>
         </div>
 

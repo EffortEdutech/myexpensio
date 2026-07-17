@@ -203,7 +203,18 @@ describe('matchTngToClaimItems', () => {
     expect(result.unmatched_claim_items).toHaveLength(1)
   })
 
-  it('excludes RETAIL sector TNG rows from matching', () => {
+  it('does not match RETAIL sector TNG rows against TOLL/PARKING claim items', () => {
+    // CORRECTED 2026-07-17: this test originally asserted RETAIL rows never
+    // appear in unmatched_tng_rows at all. That was true only because of a
+    // bug — the matcher's sector gate silently dropped RETAIL from ever being
+    // considered, for any claim item type. RETAIL rows ARE meant to match
+    // TAXI/GRAB/TRAIN/BUS items paid via TNG (see isCompatiblePair() and the
+    // next test below). With no compatible claim item in this fixture (only
+    // a TOLL item is passed), the RETAIL row correctly has no match and is
+    // genuinely unmatched — that's the reconciliation feature working as
+    // intended (it tells the user "you have an unclaimed TNG transaction"),
+    // not a leak. What this test actually guards: a TOLL item must never
+    // cross-match a RETAIL row.
     const retailRow: MatchableTngRow = {
       id:             'tng-retail-1',
       sector:         'RETAIL',
@@ -220,8 +231,49 @@ describe('matchTngToClaimItems', () => {
       tngRows:    [TNG_TOLL, retailRow],
     })
 
-    // RETAIL should not appear in unmatched_tng_rows either
-    expect(result.unmatched_tng_rows.find(r => r.id === 'tng-retail-1')).toBeUndefined()
+    // TOLL_ITEM must still match TNG_TOLL, not the RETAIL row
+    expect(result.matches).toHaveLength(1)
+    expect(result.matches[0].tng_transaction_id).toBe('tng-toll-1')
+
+    // RETAIL row has no compatible claim item here, so it's correctly
+    // surfaced as unmatched — not silently dropped
+    expect(result.unmatched_tng_rows.find(r => r.id === 'tng-retail-1')).toBeDefined()
+  })
+
+  it('matches a TAXI item paid via TNG against a RETAIL sector row', () => {
+    // Regression test for the 2026-07-17 fix: /api/claims/[id]/tng-suggestions
+    // fetches TAXI/GRAB/TRAIN/BUS items with mode='TNG' specifically so they
+    // can be matched here, but the sector gate previously only recognised
+    // TOLL↔TOLL and PARKING↔PARKING — meaning this pairing could never
+    // succeed in production despite the API route wiring it up.
+    const taxiItem: MatchableClaimItem = {
+      id:         'item-taxi-1',
+      type:       'TAXI',
+      claim_date: '2026-02-26',
+      amount:     0,           // TNG-pending: amount not yet known
+      merchant:   'MYDIN',
+      mode:       'TNG',
+    }
+    const retailRow: MatchableTngRow = {
+      id:             'tng-retail-1',
+      sector:         'RETAIL',
+      exit_datetime:  '2026-02-26T03:30:00Z',
+      entry_datetime: null,
+      entry_location: 'MYDIN MITC',
+      exit_location:  null,
+      amount:         25.00,
+      trans_no:       'R001',
+    }
+
+    const result = matchTngToClaimItems({
+      claimItems: [taxiItem],
+      tngRows:    [retailRow],
+    })
+
+    expect(result.matches).toHaveLength(1)
+    expect(result.matches[0].claim_item_id).toBe('item-taxi-1')
+    expect(result.matches[0].tng_transaction_id).toBe('tng-retail-1')
+    expect(result.unmatched_tng_rows).toHaveLength(0)
   })
 
   it('does not cross-match TOLL items with PARKING TNG rows', () => {
