@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.20.0](https://github.com/EffortEdutech/myexpensio/compare/v4.19.4...v4.20.0) (2026-07-17)
+
+
+### Features
+
+* **ai:** BYOK Gemini key for receipt scanning (S5) ([fa5befd](https://github.com/EffortEdutech/myexpensio/commit/fa5befd8082e1e8c93535bf54f1f638518ffc254))
+
 ### [4.19.4](https://github.com/EffortEdutech/myexpensio/compare/v4.19.3...v4.19.4) (2026-07-17)
 
 
