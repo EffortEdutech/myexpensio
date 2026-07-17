@@ -1,6 +1,7 @@
 {
-  "version": "4.18.1",
+  "version": "4.19.0",
   "changelog": [
-    "pwa: fix broken manifest/icon links, add service worker (B-5), add install prompt (B-8); gitignore .idea/ ()"
+    "upgrade with Ai receipt ()",
+    "pwa: revert web.output to single — static triggers expo-router SSG which this app doesn't use ()"
   ]
 }
