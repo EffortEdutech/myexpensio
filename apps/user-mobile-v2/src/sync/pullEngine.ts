@@ -39,7 +39,12 @@ export async function pullAndApplyChanges(pull: PullFn): Promise<PullResult> {
     };
   }
 
-  if (response.changes.length === 0) {
+  // Defensive: response.changes should always be an array per PullSyncResponse,
+  // but a malformed/non-JSON response (e.g. an unexpected redirect returning
+  // HTML) must never crash the app — degrade to "nothing to apply" instead.
+  const changes = Array.isArray(response.changes) ? response.changes : [];
+
+  if (changes.length === 0) {
     await upsertSyncState(SYNC_PULL_SCOPE, response.cursor, nowIso());
     return { applied: 0, cursor: response.cursor };
   }
@@ -47,7 +52,7 @@ export async function pullAndApplyChanges(pull: PullFn): Promise<PullResult> {
   const db = await getDatabase();
   let applied = 0;
 
-  for (const change of response.changes) {
+  for (const change of changes) {
     try {
       await applyChange(db, change);
       applied++;

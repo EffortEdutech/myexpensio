@@ -61,15 +61,24 @@ export function createSyncApi(options: ApiClientOptions) {
 
   return {
     bootstrap() {
-      return api.request<BootstrapSyncResponse>("/sync/bootstrap");
+      // 2026-07-17: these were missing the /api prefix — the actual route
+      // handlers live at apps/user/app/api/sync/{bootstrap,pull,push}/route.ts.
+      // The old path (e.g. "/sync/pull") doesn't match any route, so
+      // apps/user's auth middleware (proxy.ts -> updateSession) treated it as
+      // an unauthenticated page request and 307-redirected it to a login
+      // page. fetch follows redirects by default, so the sync client got a
+      // 200 back with an HTML body instead of JSON — response.changes was
+      // then undefined, crashing pullEngine.ts with "Cannot read property
+      // 'length' of undefined" on every single app launch once tier >= PRO.
+      return api.request<BootstrapSyncResponse>("/api/sync/bootstrap");
     },
     pull(cursor: string | null) {
       const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
 
-      return api.request<PullSyncResponse>(`/sync/pull${query}`);
+      return api.request<PullSyncResponse>(`/api/sync/pull${query}`);
     },
     push(request: PushSyncRequest) {
-      return api.request<PushSyncResponse>("/sync/push", {
+      return api.request<PushSyncResponse>("/api/sync/push", {
         method: "POST",
         body: request
       });
