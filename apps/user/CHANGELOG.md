@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.19.0](https://github.com/EffortEdutech/myexpensio/compare/v4.18.1...v4.19.0) (2026-07-17)
+
+
+### Features
+
+* upgrade with Ai receipt ([88d695f](https://github.com/EffortEdutech/myexpensio/commit/88d695f2c9fea043b64c5051441040d4d7fbdd2f))
+
 ### [4.18.1](https://github.com/EffortEdutech/myexpensio/compare/v4.18.0...v4.18.1) (2026-07-04)
 
 
