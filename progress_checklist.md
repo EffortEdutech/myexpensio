@@ -110,7 +110,7 @@ Full detail: `docs/02-product-specs/02_AI_ASSISTANT_AUTOMATION_SPEC.md` (spec) a
 - [ ] S2 — Receipt auto-fill (mobile + tier gate)
 - [ ] S3 — Odometer AI reading
 - [ ] S4 — Voice claim entry (cloud)
-- [ ] S5 — Bring-your-own-key (BYOK)
+- [x] S5 — Bring-your-own-key (BYOK) — built 2026-07-18 for receipt scanning (mobile-v2 only; odometer/voice BYOK deferred until S3/S4 exist). Client-side only — key stored via expo-secure-store/localStorage, calls Gemini directly from device, never touches myexpensio's servers. Settings → AI Receipt Scanning. Not yet manually tested by Eff — see S5 testing checklist in the sprint plan.
 - [ ] S6 — On-device fast path (Android)
 - [ ] S7 — Audit trail, compliance polish, `scan_service` decision
 

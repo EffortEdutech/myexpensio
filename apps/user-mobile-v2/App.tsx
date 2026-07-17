@@ -98,6 +98,9 @@ import {
   useUserSettingsStore
 } from "@/state/settingsStore";
 import { colors, spacing, typography } from "@/theme/tokens";
+import { clearGeminiKey, maskGeminiKey, saveGeminiKey } from "@/features/ai/byokKeyStore";
+import { testGeminiKey } from "@/features/ai/geminiDirectClient";
+import { useByokGeminiKey, useInvalidateByokGeminiKey } from "@/features/ai/hooks/useByokGeminiKey";
 
 export default function App() {
   const queryClient = useMemo(() => new QueryClient(), []);
@@ -737,6 +740,7 @@ function SettingsPanel({
   const profileSave = useProfileSave();
   const { canManageRates, orgRole, workspaceType } = useOrgContext();
   const [openSections, setOpenSections] = useState({
+    ai: false,
     billing: false,
     profile: false,
     rates: false,
@@ -1120,6 +1124,17 @@ function SettingsPanel({
       </SettingsAccordion>
 
       <SettingsAccordion
+        description="Bring your own free Google Gemini key to unlock unlimited AI receipt scanning on any plan, including Free."
+        icon="🤖"
+        isOpen={openSections.ai}
+        onToggle={() => toggleSection("ai")}
+        previews={["AI Receipt Scanning", "Bring your own key"]}
+        title="AI Receipt Scanning"
+      >
+        <AiByokCard showSaved={showSaved} />
+      </SettingsAccordion>
+
+      <SettingsAccordion
         description="Device setup and account access controls for install, biometrics, password, and app details."
         icon="⚙️"
         isOpen={openSections.system}
@@ -1295,22 +1310,27 @@ function SettingsTextField({
   label,
   multiline,
   onChangeText,
+  secureTextEntry,
   value
 }: {
   editable?: boolean;
   label: string;
   multiline?: boolean;
   onChangeText: (value: string) => void;
+  secureTextEntry?: boolean;
   value: string;
 }) {
   return (
     <View style={styles.settingsField}>
       <Text style={styles.settingsLabel}>{label}</Text>
       <TextInput
+        autoCapitalize="none"
+        autoCorrect={false}
         editable={editable}
         multiline={multiline}
         onChangeText={onChangeText}
         placeholderTextColor="#94a3b8"
+        secureTextEntry={secureTextEntry}
         style={[
           styles.settingsInput,
           multiline ? styles.settingsTextarea : null,
@@ -1371,6 +1391,80 @@ function PrimarySettingsButton({
     >
       <Text style={styles.settingsPrimaryText}>{label}</Text>
     </Pressable>
+  );
+}
+
+function AiByokCard({ showSaved }: { showSaved: (message: string) => void }) {
+  const byokKey = useByokGeminiKey();
+  const invalidateByokKey = useInvalidateByokGeminiKey();
+  const [inputValue, setInputValue] = useState("");
+  const [isChecking, setIsChecking] = useState(false);
+  const [testError, setTestError] = useState<string | null>(null);
+
+  const savedKey = byokKey.data ?? null;
+
+  async function handleTestAndSave() {
+    setTestError(null);
+    if (!inputValue.trim()) {
+      setTestError("Paste your Gemini API key first.");
+      return;
+    }
+    setIsChecking(true);
+    const result = await testGeminiKey(inputValue);
+    if (!result.ok) {
+      setIsChecking(false);
+      setTestError(result.message);
+      return;
+    }
+    await saveGeminiKey(inputValue);
+    invalidateByokKey();
+    setInputValue("");
+    setIsChecking(false);
+    showSaved("✅ Gemini key verified and saved on this device.");
+  }
+
+  async function handleRemove() {
+    await clearGeminiKey();
+    invalidateByokKey();
+    showSaved("Gemini key removed. AI scanning reverts to your plan's normal access.");
+  }
+
+  return (
+    <SettingsCard
+      icon="🔑"
+      sub="The key is stored only on this device — it is never sent to or stored by myexpensio's servers. When set, receipt scanning calls Gemini directly using your key and no longer counts against myexpensio's shared quota."
+      title="Your Gemini API Key"
+    >
+      {savedKey ? (
+        <>
+          <View style={styles.infoBox}>
+            <Text style={styles.infoText}>Saved: {maskGeminiKey(savedKey)}</Text>
+          </View>
+          <SecondarySettingsButton label="Remove Key" onPress={handleRemove} />
+        </>
+      ) : (
+        <>
+          <Pressable onPress={() => Linking.openURL("https://aistudio.google.com/apikey")}>
+            <Text style={styles.legalLinkText}>Get a free key at Google AI Studio (~2 min, no card required)</Text>
+          </Pressable>
+          <SettingsTextField
+            label="Gemini API Key"
+            onChangeText={setInputValue}
+            secureTextEntry
+            value={inputValue}
+          />
+          {testError ? (
+            <Text style={{ color: colors.danger, fontSize: typography.caption, fontWeight: "700", marginBottom: spacing.sm }}>
+              {testError}
+            </Text>
+          ) : null}
+          <PrimarySettingsButton
+            label={isChecking ? "Checking key…" : "Test & Save Key"}
+            onPress={handleTestAndSave}
+          />
+        </>
+      )}
+    </SettingsCard>
   );
 }
 

@@ -184,21 +184,23 @@ Two separate verification passes now done:
 
 **Goal:** Settings lets a user paste their own free Gemini key; client calls Gemini directly with it, bypassing `/api/ai/*` and myexpensio's quota entirely. Opens AI capture to FREE tier when a key is set.
 **Version bump:** user `4.21.0` → `4.22.0`, mobile `0.4.0` → `0.5.0`
+**Built 2026-07-18** — receipt scanning only (S1 is the only shipped AI feature so far; odometer/voice BYOK wiring is deferred to when S3/S4 are actually built, per the note below).
 
 ### Tasks
-- [ ] Settings field: "Use your own free Google Gemini key," link to Google AI Studio signup, help text explaining it's optional and stored only on-device
-- [ ] **Test key** button — one lightweight validation call before saving
-- [ ] Storage: `expo-secure-store` on mobile, secure browser storage on web — key never transmitted to or stored by myexpensio's servers
-- [ ] Client-side Gemini call path (same `responseSchema` prompts as S1/S3/S4) used whenever a user key is present; falls back to the existing `/api/ai/*` shared-key path otherwise
-- [ ] Update feature gates: `ai_receipt_scan` / `ai_odometer_scan` / `ai_voice_claim` become available on FREE tier **only** when a user key is set; otherwise still PRO/PREMIUM-gated via the shared key
-- [ ] No new DB table needed for the key itself (by design — it never leaves the device)
+- [x] Settings field: "Use your own free Google Gemini key," link to Google AI Studio signup, help text explaining it's optional and stored only on-device — `App.tsx`'s `AiByokCard` in the new "AI Receipt Scanning" accordion
+- [x] **Test key** button — one lightweight validation call before saving — `testGeminiKey()` in `geminiDirectClient.ts` hits Gemini's `models` list endpoint (cheap, no image tokens spent) before the key is stored
+- [x] Storage: `expo-secure-store` on mobile, `localStorage` on web — key never transmitted to or stored by myexpensio's servers — `byokKeyStore.ts`
+- [x] Client-side Gemini call path (same `responseSchema`/prompt/model as S1) used whenever a user key is present; falls back to the existing `/api/ai/*` shared-key path otherwise — `extractReceiptFieldsDirect()` in `geminiDirectClient.ts`, branched in `ReceiptCaptureField.handlePicked()` (`ClaimDetail.tsx`)
+- [x] Update feature gate: `receipt_scan` becomes available on FREE tier when a user key is set (`canScan = canUseFeature(tier, "receipt_scan") || !!byokKey`); otherwise still PRO/PREMIUM-gated via the shared key. `ai_odometer_scan`/`ai_voice_claim` don't exist yet (S3/S4 not built) — apply the same `|| !!byokKey` pattern to their gates when those sprints land.
+- [x] No new DB table needed for the key itself (by design — it never leaves the device) — confirmed, no migration added
 
 ### Testing checklist
 - [ ] Valid key saves and passes Test-key check
 - [ ] Invalid/expired key fails Test-key check with a clear message, doesn't silently break capture
-- [ ] FREE-tier user with a valid key can use all three AI features
+- [ ] FREE-tier user with a valid key can scan receipts (odometer/voice N/A — not built yet)
 - [ ] FREE-tier user without a key still sees the normal upgrade prompt
 - [ ] Removing a saved key reverts cleanly to the shared-key/manual fallback chain
+- [ ] `pnpm --filter user-mobile-v2 tsc --noEmit` clean (not yet run — sandbox can't verify, needs Eff to confirm)
 
 ---
 

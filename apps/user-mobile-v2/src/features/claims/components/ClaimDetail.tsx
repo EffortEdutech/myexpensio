@@ -27,6 +27,8 @@ import { useReceiptDisplayUri } from "@/features/receipts/hooks/useReceiptDispla
 import type { LocalReceiptFile, ReceiptDraft } from "@/features/receipts/types";
 import { canUseFeature } from "@/features/subscription/featureGates";
 import { useSubscription } from "@/features/subscription/hooks/useSubscription";
+import { useByokGeminiKey } from "@/features/ai/hooks/useByokGeminiKey";
+import { extractReceiptFieldsDirect } from "@/features/ai/geminiDirectClient";
 import { matchTngToClaimItems, scorePair } from "@/features/tng/matcher";
 import type { TngTransaction } from "@/features/tng/types";
 import type { TripDraft } from "@/features/trips/types";
@@ -1872,14 +1874,32 @@ function ReceiptCaptureField({
   onAiError?: (message: string) => void;
 }) {
   const { tier } = useSubscription();
-  const canScan = canUseFeature(tier, "receipt_scan");
+  // AI Capture S5 (BYOK) — a saved personal Gemini key unlocks scanning on
+  // any tier, including FREE, and routes the call directly to Gemini from
+  // the device instead of through myexpensio's shared-key /api/ai/* route.
+  const { data: byokKey } = useByokGeminiKey();
+  const canScan = canUseFeature(tier, "receipt_scan") || !!byokKey;
   const accessToken = useAuthStore((s) => s.session?.accessToken ?? null);
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
 
   async function handlePicked(receipt: LocalReceiptFile | null) {
     if (!receipt) return;
     onChange(receipt);
-    if (!canScan || !accessToken) return; // manual entry, no AI attempted
+    if (!canScan) return; // manual entry, no AI attempted
+
+    if (byokKey) {
+      setAiAnalyzing(true);
+      const base64 = await FileSystem.readAsStringAsync(receipt.localUri, {
+        encoding: FileSystem.EncodingType.Base64
+      });
+      const { fields, error } = await extractReceiptFieldsDirect(base64, byokKey);
+      setAiAnalyzing(false);
+      if (fields) onExtracted?.(fields);
+      else if (error) onAiError?.(error);
+      return;
+    }
+
+    if (!accessToken) return; // shared-key path needs a signed-in session
     setAiAnalyzing(true);
     const { fields, error } = await extractReceiptFields(receipt, accessToken);
     setAiAnalyzing(false);
@@ -1891,7 +1911,7 @@ function ReceiptCaptureField({
     if (!canScan) {
       Alert.alert(
         "PRO Feature",
-        "Camera scanning requires a PRO subscription. Upgrade in Settings → Billing to unlock.",
+        "Camera scanning requires a PRO subscription — or add your own free Gemini key in Settings → AI Receipt Scanning to unlock it on any plan.",
         [{ text: "OK" }]
       );
       return;
@@ -1905,7 +1925,13 @@ function ReceiptCaptureField({
         icon={canScan ? "📷" : "🔒"}
         onPress={handleCameraPress}
         selected={value?.source === "camera"}
-        sub={canScan ? "Camera - auto edge detect - perspective fix" : "PRO feature — upgrade to unlock"}
+        sub={
+          canScan
+            ? byokKey
+              ? "Camera - scanned with your own Gemini key"
+              : "Camera - auto edge detect - perspective fix"
+            : "PRO feature — upgrade to unlock, or add your own key in Settings"
+        }
         title="Scan Document"
       />
       <ReceiptChoice
