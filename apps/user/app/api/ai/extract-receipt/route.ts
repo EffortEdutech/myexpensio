@@ -21,6 +21,13 @@
 // without approval." Model is pinned to a named stable release (not a
 // "-latest" alias) so behavior doesn't shift under us; override via
 // GEMINI_MODEL if Eff wants to bump it later.
+//
+// 2026-07-17: gemini-2.5-flash started 404ing ("no longer available to new
+// users") — confirmed via Vercel runtime logs on a real device test. Google
+// shut this model's new-user access down 2026-07-09, ahead of its official
+// Oct 16 2026 retirement date. Bumped default to gemini-3.5-flash (current
+// GA model). If this 404s again in future, check
+// https://ai.google.dev/gemini-api/docs/models for the current model name.
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { createClientForRequest } from '@/lib/supabase/api-client'
@@ -28,7 +35,7 @@ import { loadTierAndEntitlements } from '@/lib/usage-limits'
 
 export const runtime = 'nodejs'
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash'
 const GEMINI_URL = (key: string) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`
 
