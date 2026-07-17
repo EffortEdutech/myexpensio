@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.19.1](https://github.com/EffortEdutech/myexpensio/compare/v4.19.0...v4.19.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* sync pnpm-lock.yaml with jest devDependencies ([b5f0982](https://github.com/EffortEdutech/myexpensio/commit/b5f0982e0e6387ef9c8d4da0ef73adf296b886ff))
+
 ## [4.19.0](https://github.com/EffortEdutech/myexpensio/compare/v4.18.1...v4.19.0) (2026-07-17)
 
 
