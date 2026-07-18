@@ -12,16 +12,8 @@
  *
  * Built for AI Capture Sprint 4. Uses expo-audio — Expo's current,
  * non-deprecated recording API (expo-av's Audio module is deprecated).
- *
- * SETUP REQUIRED before this compiles: run `npx expo install expo-audio`
- * once (adds the correct SDK-56-compatible version to package.json and
- * installs it — do not hand-pin a version, expo install resolves the right
- * one). Not run in this session — no way to verify the exact installed
- * API surface here, so if `pnpm tsc --noEmit` flags anything in this file
- * after installing, it's almost certainly a minor expo-audio API-shape
- * mismatch (e.g. a renamed method) rather than a logic error — check
- * expo-audio's docs for the installed version and adjust the few calls
- * marked below.
+ * Installed via `npx expo install expo-audio --pnpm` (2026-07-18),
+ * confirmed compiling clean.
  *
  * Deliberately no playback-preview in this first version (reduces reliance
  * on the less-certain parts of the API surface) — record / stop / re-record
@@ -30,7 +22,8 @@
  * playback doesn't weaken the "review before anything is saved" rule.
  */
 import { useEffect, useRef, useState } from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import * as FileSystem from "expo-file-system/legacy";
 import {
   AudioModule,
   RecordingPresets,
@@ -43,7 +36,30 @@ import { colors, spacing, typography } from "@/theme/tokens";
 
 const MAX_DURATION_MS = 60_000; // 60s cap — short voice note, keeps upload small
 
-type RecorderPhase = "idle" | "recording" | "recorded";
+// Android-specific gotcha (found on-device 2026-07-18): recorder.stop()
+// resolves before the MediaRecorder container (m4a) is fully flushed/closed
+// on disk. Reading the file immediately after stop() can hit
+// "Location ... isn't readable" (ExponentFileSystem IOException) if the user
+// taps "Use This Recording" fast. Poll for the file to actually exist with
+// non-zero size before allowing confirm, instead of trusting stop()'s promise
+// alone.
+const FILE_READY_ATTEMPTS = 10;
+const FILE_READY_DELAY_MS = 250;
+
+async function waitForFileReady(uri: string): Promise<boolean> {
+  for (let i = 0; i < FILE_READY_ATTEMPTS; i++) {
+    try {
+      const info = await FileSystem.getInfoAsync(uri);
+      if (info.exists && (info.size ?? 0) > 0) return true;
+    } catch {
+      // not ready yet — fall through to retry
+    }
+    await new Promise((resolve) => setTimeout(resolve, FILE_READY_DELAY_MS));
+  }
+  return false;
+}
+
+type RecorderPhase = "idle" | "recording" | "finalizing" | "recorded" | "error";
 
 type Props = {
   onAudioReady: (localUri: string, mimeType: string) => void;
@@ -100,7 +116,10 @@ export function VoiceRecorderModal({
       autoStopTimer.current = null;
     }
     await recorder.stop();
-    setPhase("recorded");
+    setPhase("finalizing");
+    const uri = recorder.uri;
+    const ready = uri ? await waitForFileReady(uri) : false;
+    setPhase(ready ? "recorded" : "error");
   }
 
   function handleDiscard() {
@@ -153,6 +172,20 @@ export function VoiceRecorderModal({
                   </Pressable>
                   <Text style={styles.durationText}>{durationLabel}</Text>
                   <Text style={styles.hintText}>Recording… tap to stop</Text>
+                </>
+              ) : phase === "finalizing" ? (
+                <>
+                  <ActivityIndicator color={colors.primary} size="small" />
+                  <Text style={styles.hintText}>Finalizing recording…</Text>
+                </>
+              ) : phase === "error" ? (
+                <>
+                  <Text style={styles.deniedText}>
+                    Couldn't finish saving that recording. Please try again.
+                  </Text>
+                  <Pressable accessibilityRole="button" onPress={handleDiscard} style={styles.discardButton}>
+                    <Text style={styles.discardButtonText}>↺ Re-record</Text>
+                  </Pressable>
                 </>
               ) : (
                 <>
