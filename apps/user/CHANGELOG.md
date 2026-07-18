@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.20.3](https://github.com/EffortEdutech/myexpensio/compare/v4.20.2...v4.20.3) (2026-07-18)
+
+
+### Bug Fixes
+
+* **ai:** timezone-safe date fill + AI review sheet; fix 2 latent tsc errors from earlier session ([3587258](https://github.com/EffortEdutech/myexpensio/commit/35872581ec273c0e60e5e6caa3390d4c5e99159a))
+
 ### [4.20.2](https://github.com/EffortEdutech/myexpensio/compare/v4.20.1...v4.20.2) (2026-07-18)
 
 
