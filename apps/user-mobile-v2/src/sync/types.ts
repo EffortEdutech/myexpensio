@@ -7,6 +7,7 @@ export type SyncEntityType =
   | "export_job"
   | "ledger_entry"
   | "receipt"
+  | "subscription" // real, live case in pullEngine.ts's applyChange() — was missing from this union
   | "sync_state"
   | "tng_statement_batch"
   | "tng_transaction"

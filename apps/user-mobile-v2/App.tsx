@@ -643,10 +643,17 @@ function AuthenticatedHome({
             claims={claims.data ?? []}
             onBack={() => onWorkTabChange("transactions")}
             onAddToClaim={async ({ claim, transaction }) => {
+              // "transport" was never a valid ClaimItemType (see types.ts —
+              // the union only has specific modes: taxi/grab/train/bus/flight).
+              // RETAIL-sector TNG rows (the only sector besides TOLL/PARKING)
+              // are transport payments but TNG doesn't tell us which specific
+              // mode, so default to "taxi" — the most common case — and the
+              // user can change it in the item's edit screen if it was
+              // actually a Grab/train/bus ride.
               const type =
                 transaction.sector === "TOLL" ? "toll" as const
                 : transaction.sector === "PARKING" ? "parking" as const
-                : "transport" as const;
+                : "taxi" as const;
               const title =
                 transaction.sector === "TOLL"
                   ? [transaction.entryLocation, transaction.exitLocation]

@@ -11,6 +11,7 @@
 
 import * as ImagePicker from "expo-image-picker";
 import { useRef, useState } from "react";
+import type { ElementRef } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -37,7 +38,10 @@ export function SignatureModal({ visible, onConfirm, onClose }: Props) {
   const [uploadedUri, setUploadedUri] = useState<string | null>(null);
   const [uploadedDataUrl, setUploadedDataUrl] = useState<string | null>(null);
   const [canvasReady, setCanvasReady] = useState(false);
-  const sigRef = useRef<SignatureCanvas>(null);
+  // SignatureCanvas ships no dedicated ref-instance type export — ElementRef
+  // derives the imperative-handle type (clearSignature/readSignature) from
+  // the component itself, same fix pattern TS suggested (typeof SignatureCanvas).
+  const sigRef = useRef<ElementRef<typeof SignatureCanvas>>(null);
 
   function handleClear() {
     if (tab === "draw") {

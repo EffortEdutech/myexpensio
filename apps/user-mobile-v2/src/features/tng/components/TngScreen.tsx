@@ -736,7 +736,11 @@ function TngImportModal({
                     <Text style={styles.checkbox}>{row.selected ? "✓" : ""}</Text>
                     <View style={styles.previewMain}>
                       <Text style={styles.previewName}>
-                        {sectorIcon(row.sector)} {locationLabel({ ...row, location: row.location ?? null, entryLocation: row.entryLocation ?? null, exitLocation: row.exitLocation ?? null } as TngTransaction)}
+                        {sectorIcon(row.sector)} {locationLabel({
+                          location: row.location ?? null,
+                          entryLocation: row.entryLocation ?? null,
+                          exitLocation: row.exitLocation ?? null
+                        })}
                       </Text>
                       <Text style={styles.previewMeta}>
                         {formatDate(row.transactionDate)}
@@ -905,38 +909,12 @@ function TransactionRow({
   );
 }
 
-function SummaryMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.metric}>
-      <Text style={styles.metricValue}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function SegmentButton({
-  active,
-  label,
-  onPress
-}: {
-  active: boolean;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={[styles.segment, active ? styles.segmentActive : null]}
-    >
-      <Text style={[styles.segmentText, active ? styles.segmentTextActive : null]}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-function locationLabel(transaction: TngTransaction) {
+// Only reads these three fields, so accept just what's needed rather than a
+// full TngTransaction — lets callers pass preview rows (before they're saved
+// as real transactions) without an unsafe cast.
+function locationLabel(
+  transaction: Pick<TngTransaction, "location" | "entryLocation" | "exitLocation">
+) {
   const routeLocation = [transaction.entryLocation, transaction.exitLocation]
     .filter(Boolean)
     .join(" -> ");

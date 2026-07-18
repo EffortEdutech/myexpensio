@@ -555,15 +555,6 @@ function UsageCard({
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.metric}>
-      <Text style={styles.metricValue}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
-    </View>
-  );
-}
-
 function periodLabel(claim: ClaimDraft) {
   if (claim.periodStart && claim.periodEnd) {
     if (claim.periodStart === claim.periodEnd) {
