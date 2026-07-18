@@ -107,6 +107,13 @@ Eff clarified directly: `apps/user-mobile-v2` (Expo — native app on Expo Go, a
 
 **Verification:** not run through `tsc`/Expo's type checker in this environment (mobile-v2's bash mount in this sandbox is stale for Edit-tool-modified files, same root cause as the earlier apps/user false-positive — confirmed via mtime/truncation check). All edited regions were re-read in full after editing and are structurally sound (balanced braces, complete JSX). **Run `pnpm --filter user-mobile-v2 tsc --noEmit` (or Expo's own type-check) locally to confirm before relying on this.**
 
+### UX correction — 2026-07-18: silent auto-fill replaced with a review sheet
+Eff reported the AI-scanned date wasn't landing in the claim form. Root cause: `todayInput()` in `ClaimDetail.tsx` computed the "is this field still at its default" guard from `new Date().toISOString().slice(0,10)` (UTC), while `DatePickerField.tsx` parses/formats dates from **local** date parts. For MYR/Malaysia (UTC+8), between 00:00–08:00 local time `todayInput()` returned *yesterday's* date while the field displayed today — so `date === todayInput()` silently failed and the extracted date was dropped with no visible error. Fixed `todayInput()`/`tomorrowInput()` to use local date parts (matching `DatePickerField.tsx` exactly).
+
+That bug exposed a deeper design issue: silent "auto-fill only if the field still looks like its default" is fragile and gives zero visibility into which field the AI failed to read. Replaced it with `AiReviewModal.tsx` — a confirm sheet shown right after extraction that lists whatever Gemini returned (amount/date/merchant) next to the field's current value and its confidence (HIGH/MEDIUM/LOW), with a checkbox per field (defaults checked when the AI returned that field). Nothing is applied to the form until the user taps **Apply Selected**; **Skip** discards the extraction entirely. Wired into both `AddClaimItemModal` and `EditClaimItemModal` — Edit previously hard-coded "never touch date," which is now instead the user's explicit per-field choice.
+
+Files: `apps/user-mobile-v2/src/features/claims/components/AiReviewModal.tsx` (new), `ClaimDetail.tsx` (`todayInput`/`tomorrowInput` fix, `handleAiExtracted`/new `handleAiApply` in both modals, review-modal render in both).
+
 ### Verification note — updated 2026-07-17
 Two separate verification passes now done:
 

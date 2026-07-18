@@ -27,6 +27,7 @@ const ENTITY_LABELS: Record<SyncEntityType, string> = {
   export_job: "Export",
   ledger_entry: "Ledger entry",
   receipt: "Receipt",
+  subscription: "Subscription",
   sync_state: "Sync state",
   tng_statement_batch: "TnG statement",
   tng_transaction: "TnG transaction",

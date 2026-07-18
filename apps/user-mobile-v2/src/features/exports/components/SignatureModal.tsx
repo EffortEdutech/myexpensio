@@ -11,7 +11,6 @@
 
 import * as ImagePicker from "expo-image-picker";
 import { useRef, useState } from "react";
-import type { ElementRef } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -22,6 +21,7 @@ import {
   View,
 } from "react-native";
 import SignatureCanvas from "react-native-signature-canvas";
+import type { SignatureViewRef } from "react-native-signature-canvas";
 
 import { colors, spacing, typography } from "@/theme/tokens";
 
@@ -38,10 +38,13 @@ export function SignatureModal({ visible, onConfirm, onClose }: Props) {
   const [uploadedUri, setUploadedUri] = useState<string | null>(null);
   const [uploadedDataUrl, setUploadedDataUrl] = useState<string | null>(null);
   const [canvasReady, setCanvasReady] = useState(false);
-  // SignatureCanvas ships no dedicated ref-instance type export — ElementRef
-  // derives the imperative-handle type (clearSignature/readSignature) from
-  // the component itself, same fix pattern TS suggested (typeof SignatureCanvas).
-  const sigRef = useRef<ElementRef<typeof SignatureCanvas>>(null);
+  // 2026-07-18 fix: ElementRef<typeof SignatureCanvas> resolved to `never`
+  // under this package's type declarations — its component interface extends
+  // ForwardRefExoticComponent via a custom wrapper type, which ElementRef's
+  // inference doesn't unwrap correctly. The package exports the ref-instance
+  // shape directly as SignatureViewRef (clearSignature/readSignature/etc.),
+  // so use that instead of trying to derive it from the component type.
+  const sigRef = useRef<SignatureViewRef>(null);
 
   function handleClear() {
     if (tab === "draw") {

@@ -17,6 +17,8 @@ import {
 // KeyboardSafeScrollView replaced with plain ScrollView in modals (sheet now has flex:1)
 
 import { DatePickerField } from "@/components/DatePickerField";
+import { AiReviewModal } from "./AiReviewModal";
+import type { AiReviewSelection } from "./AiReviewModal";
 import type {
   ClaimDraft,
   ClaimItemDraft,
@@ -871,30 +873,41 @@ function AddClaimItemModal({
   const [perDiemDays, setPerDiemDays] = useState("1");
   const [perDiemRate, setPerDiemRate] = useState(rates.perDiemRate);
   // AI Capture S1 (mobile) — 2026-07-17
+  // AI Capture — Review Sheet (2026-07-18): extraction no longer auto-fills
+  // silently. It opens AiReviewModal with whatever Gemini returned; the user
+  // picks which fields to apply. See AiReviewModal.tsx for why (fixes a
+  // date-fill bug where the old "still today's default" guard could desync
+  // from the date picker's local-time parsing).
   const [aiFilled, setAiFilled] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiReviewFields, setAiReviewFields] = useState<AiExtractedFields | null>(null);
 
   function handleAiExtracted(fields: AiExtractedFields) {
     setAiError(null);
-    if (fields.confidence === "LOW" && fields.amount == null && !fields.merchant) {
+    const hasAnyField = fields.amount != null || !!fields.date || !!fields.merchant;
+    if (!hasAnyField) {
       setAiError("AI couldn't read this receipt clearly — please enter the details manually.");
       return;
     }
+    setAiReviewFields(fields);
+  }
+
+  function handleAiApply(selection: AiReviewSelection) {
     let filled = false;
-    if (fields.amount != null && !amount) {
-      setAmount(String(fields.amount));
+    if (selection.amount != null) {
+      setAmount(String(selection.amount));
       filled = true;
     }
-    if (fields.date && date === todayInput()) {
-      setDate(fields.date);
+    if (selection.date) {
+      setDate(selection.date);
       filled = true;
     }
-    if (fields.merchant && !description) {
-      setDescription(fields.merchant);
+    if (selection.merchant) {
+      setDescription(selection.merchant);
       filled = true;
     }
-    if (filled) setAiFilled(true);
-    else setAiError("AI read the receipt but had nothing new to fill in.");
+    setAiReviewFields(null);
+    setAiFilled(filled);
   }
 
   function handleAiError(message: string) {
@@ -1459,6 +1472,16 @@ function AddClaimItemModal({
           </View>
         </View>
       </View>
+      <AiReviewModal
+        currentAmount={amount}
+        currentDate={date}
+        currentMerchant={description}
+        fields={aiReviewFields}
+        merchantLabel={meta.descriptionLabel ?? "Description"}
+        onApply={handleAiApply}
+        onDismiss={() => setAiReviewFields(null)}
+        visible={!!aiReviewFields}
+      />
     </Modal>
   );
 }
@@ -1683,11 +1706,13 @@ function EditClaimItemModal({
   const [title, setTitle] = useState(item?.title ?? "");
   const [notes, setNotes] = useState(item?.notes ?? "");
   const [receipt, setReceipt] = useState<LocalReceiptFile | null>(null);
-  // AI Capture S1 (mobile) — 2026-07-17. Edit mode is more conservative than
-  // Add: the item already has a real date, so AI never touches it here —
-  // only amount/title, and only if the user hasn't already typed something.
+  // AI Capture — Review Sheet (2026-07-18): Edit used to never let AI touch
+  // date (the item already has a real date) — now the review modal makes
+  // that explicit user choice instead of a hard-coded rule, so a re-scan can
+  // correct a wrong date too, but only if the user opts in per field.
   const [aiFilled, setAiFilled] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiReviewFields, setAiReviewFields] = useState<AiExtractedFields | null>(null);
 
   useEffect(() => {
     if (!item) return;
@@ -1698,25 +1723,35 @@ function EditClaimItemModal({
     setReceipt(null);
     setAiFilled(false);
     setAiError(null);
+    setAiReviewFields(null);
   }, [item?.id]);
 
   function handleAiExtracted(fields: AiExtractedFields) {
     setAiError(null);
-    if (fields.confidence === "LOW" && fields.amount == null && !fields.merchant) {
+    const hasAnyField = fields.amount != null || !!fields.date || !!fields.merchant;
+    if (!hasAnyField) {
       setAiError("AI couldn't read this receipt clearly — please enter the details manually.");
       return;
     }
+    setAiReviewFields(fields);
+  }
+
+  function handleAiApply(selection: AiReviewSelection) {
     let filled = false;
-    if (fields.amount != null && !amount) {
-      setAmount(String(fields.amount));
+    if (selection.amount != null) {
+      setAmount(String(selection.amount));
       filled = true;
     }
-    if (fields.merchant && !title) {
-      setTitle(fields.merchant);
+    if (selection.date) {
+      setDate(selection.date);
       filled = true;
     }
-    if (filled) setAiFilled(true);
-    else setAiError("AI read the receipt but had nothing new to fill in.");
+    if (selection.merchant) {
+      setTitle(selection.merchant);
+      filled = true;
+    }
+    setAiReviewFields(null);
+    setAiFilled(filled);
   }
 
   function handleAiError(message: string) {
@@ -1820,6 +1855,16 @@ function EditClaimItemModal({
           </View>
         </View>
       </View>
+      <AiReviewModal
+        currentAmount={amount}
+        currentDate={date}
+        currentMerchant={title}
+        fields={aiReviewFields}
+        merchantLabel="Title"
+        onApply={handleAiApply}
+        onDismiss={() => setAiReviewFields(null)}
+        visible={!!aiReviewFields}
+      />
     </Modal>
   );
 }
@@ -2685,15 +2730,29 @@ function formatFileSize(fileSize: number | null) {
   return `${(fileSize / 1024 / 1024).toFixed(1)} MB`;
 }
 
+// Local date parts, not UTC — must match DatePickerField.tsx's toDateInput().
+// Bug (2026-07-18): these previously used toISOString().slice(0,10), which is
+// UTC. For MYR/Malaysia (UTC+8), any time between 00:00–08:00 local, that
+// returned *yesterday's* date while DatePickerField displayed today — so the
+// AI-fill guard `date === todayInput()` silently failed and receipt dates
+// never got applied. Always compute local date parts instead.
+function toLocalDateInput(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 function todayInput() {
-  return new Date().toISOString().slice(0, 10);
+  return toLocalDateInput(new Date());
 }
 
 function tomorrowInput() {
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
 
-  return tomorrow.toISOString().slice(0, 10);
+  return toLocalDateInput(tomorrow);
 }
 
 function isAfterDate(value: string, compareTo: string) {
