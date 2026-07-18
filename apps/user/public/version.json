@@ -1,5 +1,5 @@
 {
-  "version": "4.20.2",
+  "version": "4.20.3",
   "changelog": [
     "ai: BYOK Gemini key for receipt scanning (S5) ()",
     "Gemini model gemini-2.5-flash deprecated, bump to gemini-3.5-flash ()",
