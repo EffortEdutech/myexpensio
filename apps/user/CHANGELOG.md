@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.24.3](https://github.com/EffortEdutech/myexpensio/compare/v4.24.2...v4.24.3) (2026-07-18)
+
+
+### Bug Fixes
+
+* **voice:** work around expo-audio zero-byte recording URI bug (expo/expo[#39646](https://github.com/EffortEdutech/myexpensio/issues/39646)) ([1fe16bf](https://github.com/EffortEdutech/myexpensio/commit/1fe16bf8eb0ea4b3244831d417c651ac986a7f8b))
+
 ### [4.24.2](https://github.com/EffortEdutech/myexpensio/compare/v4.24.1...v4.24.2) (2026-07-18)
 
 
