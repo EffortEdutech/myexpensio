@@ -36,29 +36,58 @@ import { colors, spacing, typography } from "@/theme/tokens";
 
 const MAX_DURATION_MS = 60_000; // 60s cap — short voice note, keeps upload small
 
-// Android/Expo Go gotcha (found on-device 2026-07-18, revised same day after
-// the first fix didn't hold): expo-audio writes recordings to the shared
-// "cache/Audio/" directory, which sits OUTSIDE the per-experience sandboxed
-// directory expo-file-system's readAsStringAsync enforces under Expo Go.
-// getInfoAsync (a plain stat check) can see the file fine — which is why an
-// earlier fix that only polled getInfoAsync still passed, then failed on the
-// real read — but readAsStringAsync throws "isn't readable" because the path
-// is outside Expo Go's allowed scope. Fix: copy the recording into
-// FileSystem.cacheDirectory (the app's own scoped, JS-readable cache) before
-// ever trying to read it. This also incidentally absorbs any leftover
-// finalization-timing race, since copyAsync is retried the same way.
+// Confirmed root cause (found on-device 2026-07-18, two earlier fixes here
+// assumed a timing/sandbox race and both failed — this is the real bug):
+// upstream expo-audio issue on Android — recorder.uri points to a placeholder
+// file that stays at 0 bytes; the actual recording is written as a SEPARATE
+// file in the same cache/Audio/ directory. Any amount of waiting/retrying on
+// recorder.uri itself will never work, because that exact file never gets
+// content. See https://github.com/expo/expo/issues/39646 — same symptom
+// ("isn't readable" / zero-byte file), community-verified workaround below:
+// scan the recording's directory for the real (non-empty, most-recently-
+// written) file instead of trusting recorder.uri, then copy THAT into our
+// own scoped cache before ever reading it.
 const FILE_READY_ATTEMPTS = 10;
 const FILE_READY_DELAY_MS = 250;
 
-async function copyToScopedCache(sourceUri: string): Promise<string | null> {
+async function findActualRecordingUri(reportedUri: string): Promise<string | null> {
+  const lastSlash = reportedUri.lastIndexOf("/");
+  if (lastSlash === -1) return null;
+  const dirUri = reportedUri.slice(0, lastSlash + 1);
+  try {
+    const names = await FileSystem.readDirectoryAsync(dirUri);
+    let best: { uri: string; modificationTime: number } | null = null;
+    for (const name of names) {
+      const uri = `${dirUri}${name}`;
+      let info;
+      try {
+        info = await FileSystem.getInfoAsync(uri);
+      } catch {
+        continue;
+      }
+      if (!info.exists || info.isDirectory) continue;
+      if ((info.size ?? 0) <= 0) continue; // skip the known-bad zero-byte placeholder
+      const modificationTime = info.modificationTime ?? 0;
+      if (!best || modificationTime > best.modificationTime) {
+        best = { uri, modificationTime };
+      }
+    }
+    return best?.uri ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function finalizeRecording(reportedUri: string): Promise<string | null> {
   const destUri = `${FileSystem.cacheDirectory}voice-claim-${Date.now()}.m4a`;
   for (let i = 0; i < FILE_READY_ATTEMPTS; i++) {
+    const actualUri = (await findActualRecordingUri(reportedUri)) ?? reportedUri;
     try {
-      await FileSystem.copyAsync({ from: sourceUri, to: destUri });
+      await FileSystem.copyAsync({ from: actualUri, to: destUri });
       const info = await FileSystem.getInfoAsync(destUri);
       if (info.exists && (info.size ?? 0) > 0) return destUri;
     } catch {
-      // source not finalized/readable yet — fall through to retry
+      // real file not written yet — fall through to retry
     }
     await new Promise((resolve) => setTimeout(resolve, FILE_READY_DELAY_MS));
   }
@@ -125,10 +154,10 @@ export function VoiceRecorderModal({
     }
     await recorder.stop();
     setPhase("finalizing");
-    const sourceUri = recorder.uri;
-    const copiedUri = sourceUri ? await copyToScopedCache(sourceUri) : null;
-    setReadyUri(copiedUri);
-    setPhase(copiedUri ? "recorded" : "error");
+    const reportedUri = recorder.uri;
+    const finalUri = reportedUri ? await finalizeRecording(reportedUri) : null;
+    setReadyUri(finalUri);
+    setPhase(finalUri ? "recorded" : "error");
   }
 
   function handleDiscard() {
