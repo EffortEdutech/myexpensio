@@ -1,8 +1,9 @@
 {
-  "version": "4.20.3",
+  "version": "4.21.0",
   "changelog": [
-    "ai: BYOK Gemini key for receipt scanning (S5) ()",
-    "Gemini model gemini-2.5-flash deprecated, bump to gemini-3.5-flash ()",
-    "sync pnpm-lock.yaml with jest devDependencies ()"
+    "ai: odometer AI reading (S3) — extract-odometer route, ai_odometer_scan gate, mobile wiring ()",
+    "test: add missing jest devDependencies (jest.config.js existed but deps never landed) ()",
+    "ai: timezone-safe date fill + AI review sheet; fix 2 latent tsc errors from earlier session ()",
+    "14 pre-existing tsc errors (invalid ClaimItemType, dead components, unsafe casts, missing SyncEntityType case) ()"
   ]
 }
