@@ -48,6 +48,8 @@ import {
   extractOdometerFieldsDirect,
   type GeminiOdometerFields
 } from "@/features/ai/geminiDirectClient";
+import { useDeferredAiExtraction } from "@/features/ai/hooks/useDeferredAiExtraction";
+import { isLikelyOfflineError } from "@/utils/network";
 
 type TripsScreenProps = {
   claims: ClaimDraft[];
@@ -2422,7 +2424,9 @@ function EvidenceCapture({
   const { data: byokKey } = useByokGeminiKey();
   const canReadAi = canUseFeature(tier, "ai_odometer_scan") || !!byokKey;
   const accessToken = useAuthStore((s) => s.session?.accessToken ?? null);
-  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  // AI Capture S2 gap (2026-07-18) — offline-deferred auto-retry instead of
+  // a generic error when there's no connectivity. See useDeferredAiExtraction.
+  const { status: aiStatus, run: runAiExtraction } = useDeferredAiExtraction<GeminiOdometerFields>();
 
   async function handlePicked(source: "camera" | "gallery") {
     const uri = await openEvidencePicker(label, source);
@@ -2431,23 +2435,23 @@ function EvidenceCapture({
     if (!canReadAi) return; // evidence still attaches, just no AI reading
 
     if (byokKey) {
-      setAiAnalyzing(true);
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64
       });
-      const { fields, error } = await extractOdometerFieldsDirect(base64, byokKey);
-      setAiAnalyzing(false);
-      if (fields) onExtracted?.(fields);
-      else if (error) onAiError?.(error);
+      void runAiExtraction(
+        () => extractOdometerFieldsDirect(base64, byokKey),
+        (fields) => onExtracted?.(fields),
+        (error) => onAiError?.(error)
+      );
       return;
     }
 
     if (!accessToken) return; // shared-key path needs a signed-in session
-    setAiAnalyzing(true);
-    const { fields, error } = await extractOdometerFields(uri, accessToken);
-    setAiAnalyzing(false);
-    if (fields) onExtracted?.(fields);
-    else if (error) onAiError?.(error);
+    void runAiExtraction(
+      () => extractOdometerFields(uri, accessToken),
+      (fields) => onExtracted?.(fields),
+      (error) => onAiError?.(error)
+    );
   }
 
   function handleCameraPress() {
@@ -2486,10 +2490,17 @@ function EvidenceCapture({
           selected={value?.includes("gallery")}
           onPress={() => void handlePicked("gallery")}
         />
-        {aiAnalyzing ? (
+        {aiStatus === "analyzing" ? (
           <View style={styles.aiAnalyzingRow}>
             <ActivityIndicator size="small" color={colors.primary} />
             <Text style={styles.aiAnalyzingText}>🤖 Reading odometer…</Text>
+          </View>
+        ) : null}
+        {aiStatus === "deferred" ? (
+          <View style={styles.aiDeferredRow}>
+            <Text style={styles.aiDeferredText}>
+              📡 You're offline — auto-fill will run once you're back online.
+            </Text>
           </View>
         ) : null}
         {value ? (
@@ -2975,7 +2986,7 @@ function confirmTripDelete(onConfirm: () => void) {
 async function extractOdometerFields(
   localUri: string,
   accessToken: string
-): Promise<{ fields?: GeminiOdometerFields; error?: string }> {
+): Promise<{ fields?: GeminiOdometerFields; error?: string; offline?: boolean }> {
   try {
     const base64 = await FileSystem.readAsStringAsync(localUri, {
       encoding: FileSystem.EncodingType.Base64
@@ -3022,9 +3033,15 @@ async function extractOdometerFields(
       }
     };
   } catch (e: unknown) {
-    const message = (e as Error).message ?? "AI extraction failed.";
-    console.warn("[EvidenceCapture] AI extraction error:", message);
-    return { error: message };
+    if (e instanceof Error && e.name === "AbortError") {
+      return { error: "AI extraction timed out. Please try again or enter this reading manually." };
+    }
+    const rawMessage = (e as Error)?.message ?? "";
+    console.warn("[EvidenceCapture] AI extraction error:", rawMessage);
+    if (isLikelyOfflineError(rawMessage)) {
+      return { error: "You're offline — auto-fill will run once you're back online.", offline: true };
+    }
+    return { error: rawMessage || "AI extraction failed." };
   }
 }
 
@@ -4087,6 +4104,19 @@ const styles = StyleSheet.create({
   },
   aiErrorHintText: {
     color: "#b45309",
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  // AI Capture S2 gap — offline-deferred auto-retry banner.
+  aiDeferredRow: {
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: spacing.sm
+  },
+  aiDeferredText: {
+    color: "#1d4ed8",
     fontSize: typography.caption,
     fontWeight: "700"
   },

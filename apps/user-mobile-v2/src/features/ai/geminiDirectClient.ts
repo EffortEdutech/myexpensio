@@ -10,6 +10,8 @@
 // Keep this file's GEMINI_MODEL / RECEIPT_SCHEMA / PROMPT in sync with
 // route.ts if either changes.
 
+import { isLikelyOfflineError } from "@/utils/network";
+
 const GEMINI_MODEL = "gemini-3.5-flash";
 const GEMINI_URL = (key: string) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`;
@@ -133,7 +135,7 @@ export async function testGeminiKey(
 export async function extractReceiptFieldsDirect(
   base64Image: string,
   apiKey: string
-): Promise<{ fields?: GeminiDirectFields; error?: string }> {
+): Promise<{ fields?: GeminiDirectFields; error?: string; offline?: boolean }> {
   try {
     const upstream = await fetch(GEMINI_URL(apiKey), {
       method: "POST",
@@ -202,6 +204,9 @@ export async function extractReceiptFieldsDirect(
     if (msg.includes("abort") || msg.includes("timed out")) {
       return { error: "AI extraction timed out. Please try again or enter this receipt manually." };
     }
+    if (isLikelyOfflineError(msg)) {
+      return { error: "You're offline — auto-fill will run once you're back online.", offline: true };
+    }
     return { error: "Could not reach Gemini. Please enter this receipt manually." };
   }
 }
@@ -215,7 +220,7 @@ export async function extractReceiptFieldsDirect(
 export async function extractOdometerFieldsDirect(
   base64Image: string,
   apiKey: string
-): Promise<{ fields?: GeminiOdometerFields; error?: string }> {
+): Promise<{ fields?: GeminiOdometerFields; error?: string; offline?: boolean }> {
   try {
     const upstream = await fetch(GEMINI_URL(apiKey), {
       method: "POST",
@@ -279,6 +284,9 @@ export async function extractOdometerFieldsDirect(
     console.warn("[BYOK] fetch error:", msg);
     if (msg.includes("abort") || msg.includes("timed out")) {
       return { error: "AI extraction timed out. Please try again or enter this reading manually." };
+    }
+    if (isLikelyOfflineError(msg)) {
+      return { error: "You're offline — auto-fill will run once you're back online.", offline: true };
     }
     return { error: "Could not reach Gemini. Please enter this reading manually." };
   }

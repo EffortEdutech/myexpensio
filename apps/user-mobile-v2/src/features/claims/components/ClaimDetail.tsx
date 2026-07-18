@@ -31,6 +31,8 @@ import { canUseFeature } from "@/features/subscription/featureGates";
 import { useSubscription } from "@/features/subscription/hooks/useSubscription";
 import { useByokGeminiKey } from "@/features/ai/hooks/useByokGeminiKey";
 import { extractReceiptFieldsDirect } from "@/features/ai/geminiDirectClient";
+import { useDeferredAiExtraction } from "@/features/ai/hooks/useDeferredAiExtraction";
+import { isLikelyOfflineError } from "@/utils/network";
 import { matchTngToClaimItems, scorePair } from "@/features/tng/matcher";
 import type { TngTransaction } from "@/features/tng/types";
 import type { TripDraft } from "@/features/trips/types";
@@ -1925,7 +1927,9 @@ function ReceiptCaptureField({
   const { data: byokKey } = useByokGeminiKey();
   const canScan = canUseFeature(tier, "receipt_scan") || !!byokKey;
   const accessToken = useAuthStore((s) => s.session?.accessToken ?? null);
-  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  // AI Capture S2 gap (2026-07-18) — offline-deferred auto-retry instead of
+  // a generic error when there's no connectivity. See useDeferredAiExtraction.
+  const { status: aiStatus, run: runAiExtraction } = useDeferredAiExtraction<AiExtractedFields>();
 
   async function handlePicked(receipt: LocalReceiptFile | null) {
     if (!receipt) return;
@@ -1933,23 +1937,23 @@ function ReceiptCaptureField({
     if (!canScan) return; // manual entry, no AI attempted
 
     if (byokKey) {
-      setAiAnalyzing(true);
       const base64 = await FileSystem.readAsStringAsync(receipt.localUri, {
         encoding: FileSystem.EncodingType.Base64
       });
-      const { fields, error } = await extractReceiptFieldsDirect(base64, byokKey);
-      setAiAnalyzing(false);
-      if (fields) onExtracted?.(fields);
-      else if (error) onAiError?.(error);
+      void runAiExtraction(
+        () => extractReceiptFieldsDirect(base64, byokKey),
+        (fields) => onExtracted?.(fields),
+        (error) => onAiError?.(error)
+      );
       return;
     }
 
     if (!accessToken) return; // shared-key path needs a signed-in session
-    setAiAnalyzing(true);
-    const { fields, error } = await extractReceiptFields(receipt, accessToken);
-    setAiAnalyzing(false);
-    if (fields) onExtracted?.(fields);
-    else if (error) onAiError?.(error);
+    void runAiExtraction(
+      () => extractReceiptFields(receipt, accessToken),
+      (fields) => onExtracted?.(fields),
+      (error) => onAiError?.(error)
+    );
   }
 
   function handleCameraPress() {
@@ -1986,10 +1990,17 @@ function ReceiptCaptureField({
         sub="JPEG - PNG - WebP - Max 5 MB"
         title="Attach from Gallery"
       />
-      {aiAnalyzing ? (
+      {aiStatus === "analyzing" ? (
         <View style={styles.aiAnalyzingRow}>
           <ActivityIndicator size="small" color={colors.primary} />
           <Text style={styles.aiAnalyzingText}>🤖 Reading receipt…</Text>
+        </View>
+      ) : null}
+      {aiStatus === "deferred" ? (
+        <View style={styles.aiDeferredRow}>
+          <Text style={styles.aiDeferredText}>
+            📡 You're offline — auto-fill will run once you're back online.
+          </Text>
         </View>
       ) : null}
       {value ? (
@@ -2541,7 +2552,7 @@ export type AiExtractedFields = {
 async function extractReceiptFields(
   file: LocalReceiptFile,
   accessToken: string
-): Promise<{ fields?: AiExtractedFields; error?: string }> {
+): Promise<{ fields?: AiExtractedFields; error?: string; offline?: boolean }> {
   try {
     const base64 = await FileSystem.readAsStringAsync(file.localUri, {
       encoding: FileSystem.EncodingType.Base64
@@ -2583,12 +2594,15 @@ async function extractReceiptFields(
 
     return { fields: json as unknown as AiExtractedFields };
   } catch (e: unknown) {
-    const message =
-      e instanceof Error && e.name === "AbortError"
-        ? "AI extraction timed out. Please try again or enter this receipt manually."
-        : (e as Error)?.message ?? "AI extraction failed.";
-    console.warn("[ReceiptCaptureField] AI extraction error:", message);
-    return { error: message };
+    if (e instanceof Error && e.name === "AbortError") {
+      return { error: "AI extraction timed out. Please try again or enter this receipt manually." };
+    }
+    const rawMessage = (e as Error)?.message ?? "";
+    console.warn("[ReceiptCaptureField] AI extraction error:", rawMessage);
+    if (isLikelyOfflineError(rawMessage)) {
+      return { error: "You're offline — auto-fill will run once you're back online.", offline: true };
+    }
+    return { error: rawMessage || "AI extraction failed." };
   }
 }
 
@@ -3786,6 +3800,19 @@ const styles = StyleSheet.create({
   },
   aiAnalyzingText: {
     color: colors.primary,
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  // AI Capture S2 gap — offline-deferred auto-retry banner.
+  aiDeferredRow: {
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: spacing.sm
+  },
+  aiDeferredText: {
+    color: "#1d4ed8",
     fontSize: typography.caption,
     fontWeight: "700"
   },
