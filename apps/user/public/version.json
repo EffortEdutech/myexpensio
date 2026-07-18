@@ -1,5 +1,5 @@
 {
-  "version": "4.21.0",
+  "version": "4.21.1",
   "changelog": [
     "ai: odometer AI reading (S3) — extract-odometer route, ai_odometer_scan gate, mobile wiring ()",
     "test: add missing jest devDependencies (jest.config.js existed but deps never landed) ()",
