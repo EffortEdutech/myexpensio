@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "jest",
     "release": "standard-version",
     "postrelease": "node scripts/generate-version.js"
   },
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/jest": "^29",
     "@types/leaflet": "^1.9.21",
     "@types/node": "^20",
     "@types/pdfkit": "^0.17.5",
@@ -34,6 +36,8 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
+    "jest": "^29",
+    "jest-environment-node": "^29",
     "standard-version": "^9.5.0",
     "tailwindcss": "^4",
     "typescript": "^5"
