@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.24.2](https://github.com/EffortEdutech/myexpensio/compare/v4.24.1...v4.24.2) (2026-07-18)
+
+
+### Bug Fixes
+
+* **voice:** copy recording into scoped cache before reading (Expo Go sandbox blocks cache/Audio/ path) ([ee1fc84](https://github.com/EffortEdutech/myexpensio/commit/ee1fc8424736597466b80c5dc78365fcb2a6c142))
+
 ### [4.24.1](https://github.com/EffortEdutech/myexpensio/compare/v4.24.0...v4.24.1) (2026-07-18)
 
 
