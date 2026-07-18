@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.24.1](https://github.com/EffortEdutech/myexpensio/compare/v4.24.0...v4.24.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* **voice:** wait for recording file to finalize before allowing confirm (S4 on-device bug) ([8856808](https://github.com/EffortEdutech/myexpensio/commit/885680887e99f36dcca45d5296673cf18af4e933))
+
 ## [4.24.0](https://github.com/EffortEdutech/myexpensio/compare/v4.23.0...v4.24.0) (2026-07-18)
 
 
