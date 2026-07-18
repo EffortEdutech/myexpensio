@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.20.2](https://github.com/EffortEdutech/myexpensio/compare/v4.20.1...v4.20.2) (2026-07-18)
+
+
+### Bug Fixes
+
+* 14 pre-existing tsc errors (invalid ClaimItemType, dead components, unsafe casts, missing SyncEntityType case) ([4d718a3](https://github.com/EffortEdutech/myexpensio/commit/4d718a353603945f1cfbbd0319b5c1c1d43a8a64))
+
 ### [4.20.1](https://github.com/EffortEdutech/myexpensio/compare/v4.20.0...v4.20.1) (2026-07-17)
 
 ## [4.20.0](https://github.com/EffortEdutech/myexpensio/compare/v4.19.4...v4.20.0) (2026-07-17)
