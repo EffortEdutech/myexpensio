@@ -1,6 +1,6 @@
 {
-  "version": "4.22.0",
+  "version": "4.23.0",
   "changelog": [
-    "ai: offline-deferred auto-retry for receipt/odometer scanning (S2 gap) ()"
+    "ai: voice claim entry (S4) — parse-voice-claim route, ai_voice_claim gate, VoiceRecorderModal + VoiceClaimEntry ()"
   ]
 }
