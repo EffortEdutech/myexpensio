@@ -138,11 +138,13 @@ Two separate verification passes now done:
 **Goal:** Same capability inside `apps/user-mobile-v2`, respecting local-first/offline rules.
 **Version bump:** user-mobile-v2 `0.1.0` → `0.2.0`
 
+**Status update — 2026-07-18:** most of this sprint shipped early, inside S1 — see S1's "SECOND CORRECTION" above. S1 turned out to be built directly in `apps/user-mobile-v2` (the real product — `apps/user`'s web pages aren't what users touch), so the auto-fill wiring and tier gate below are already live, not a separate S2 build. What's actually left of S2 is narrower than originally scoped: the offline-deferred retry prompt was never built, and no manual QA has been run on either S1 or S2 behavior yet.
+
 ### Tasks
-- [ ] Extend `ReceiptPickerField.tsx`: after a photo is picked (and device is online), offer "Auto-fill from photo"
-- [ ] If offline: photo still attaches via the existing sync queue (`receiptUploadEngine.ts`) exactly as today; auto-fill is deferred and surfaced as "Auto-fill available" once connectivity returns — do not block claim creation on AI availability
-- [ ] `canUseFeature(tier, "ai_receipt_scan")` gate, same PRO/PREMIUM pattern as `receipt_scan`
-- [ ] Parallel QA against the web app's S1 behavior (same prompt/schema, same review-before-save UX)
+- [x] Auto-fill wired into the mobile claim form — `ReceiptCaptureField` → `extractReceiptFields()` / `extractReceiptFieldsDirect()` in `ClaimDetail.tsx`, reviewed via `AiReviewModal.tsx` (2026-07-18) — delivered as part of S1, not a separate build
+- [x] Tier gate — `canUseFeature(tier, "receipt_scan")`, PRO/PREMIUM, FREE unlocked via BYOK (S5) — delivered as part of S1
+- [ ] Offline-deferred retry: today the photo always attaches via the existing sync queue regardless of connectivity (correct, unchanged), but AI extraction is attempted immediately and simply errors out if offline — surfaces the generic amber "AI extraction failed" hint, not the "Auto-fill available" deferred-retry-on-reconnect prompt this sprint originally called for. **Not built — real gap.**
+- [ ] Parallel QA against the web app's S1 behavior (same prompt/schema, same review-before-save UX) — not run
 
 ### Testing checklist
 - [ ] Offline capture → photo saved, auto-fill prompt appears only after sync
@@ -154,18 +156,24 @@ Two separate verification passes now done:
 ## Sprint 3 — Odometer AI Reading
 
 **Goal:** Photograph the odometer → numeric reading proposed directly, replacing the *manual read* step (not yet replacing `scan_service` itself — see S7).
-**Version bump:** user `4.19.0` → `4.20.0`, mobile `0.2.0` → `0.3.0`
+**Version bump:** user `4.20.2` → `4.21.0`, mobile `0.1.1` → `0.2.0` (actual repo versions had already drifted from this doc's original `4.19.0`/`0.2.0` baseline via unrelated releases — bumped minor from current, not forced back to the doc's old numbers).
+**Built 2026-07-18.**
 
 ### Tasks
-- [ ] `POST /api/ai/extract-odometer` — same pattern as S1, schema `{ reading_km, confidence }`
-- [ ] Wire into the existing odometer trip-entry flow (web + mobile) as a proposed value the user confirms — `final_distance_m` is only written after confirmation, unchanged single-source-of-truth rule
-- [ ] Keep `scan_service`'s `/process` ODOMETER mode running in parallel as the fallback if Gemini is unavailable/unset
-- [ ] Add `ai_odometer_scan` feature gate (PRO/PREMIUM)
+- [x] `POST /api/ai/extract-odometer` (`apps/user/app/api/ai/extract-odometer/route.ts`) — same auth/tier-gate/error-shape pattern as S1's `extract-receipt`, schema `{ reading_km, confidence }`, prompt explicitly covers mechanical/plain-LCD/backlit-LCD displays (the same three scenes `scan_service` handles) and instructs mile→km conversion
+- [x] Add `ai_odometer_scan` feature gate (PRO/PREMIUM) — `apps/user-mobile-v2/src/features/subscription/{types,featureGates}.ts`. Kept separate from `receipt_scan` (which still gates the camera button itself) so the AI-read capability can be independently BYOK-unlocked, same split S5 established.
+- [x] BYOK direct-call path — `extractOdometerFieldsDirect()` in `geminiDirectClient.ts`, same model/prompt mirrored from the route, same key/error handling as the receipt path.
+- [x] Wired into the mobile odometer trip-entry flow (`TripsScreen.tsx`) — `EvidenceCapture` (used for both Origin and Destination readings) now fires AI extraction after a photo is picked (BYOK direct call if a key is set, else the shared-key route), and a new `AiReadingPrompt` inline confirm row shows "🤖 AI read: X km (confidence) — Use This Reading / Dismiss". Nothing is applied to `originReading`/`destinationReading` until the user taps Apply — same "propose, never silently apply" rule S1's date-fill bug taught us, this time as a single-field inline prompt rather than a full review modal since there's only one field to confirm.
+- [x] Keep `scan_service`'s `/process` ODOMETER mode running in parallel as the fallback — unchanged, not touched by this sprint (Source Boundary rule).
+- [ ] **Web (`apps/user`) odometer page wiring — deliberately skipped.** Per S1's SECOND CORRECTION, `apps/user`'s own pages (including `app/(app)/trips/odometer/page.tsx`) aren't what users touch — `apps/user-mobile-v2` is the real product, `apps/user` is API-only. `ScanPreviewModal.tsx` still skips AI entirely for `purpose='ODOMETER'` (`if (!isReceipt) { onConfirm(finalBlob); return }`), left as-is rather than spending effort wiring a page nobody uses, same call already made for the original S1 web pass. Revisit only if the 2026-08-08 `apps/user` retirement checkpoint decision changes this.
 
 ### Testing checklist
-- [ ] Mechanical, LCD-light, and backlit-LCD odometer photos (the three scenes `scan_service` already handles) all produce a sane reading or a clear "couldn't read this, enter manually" — no silent wrong numbers
+- [ ] Mechanical, LCD-light, and backlit-LCD odometer photos all produce a sane reading or a clear "couldn't read this, enter manually" — no silent wrong numbers
 - [ ] Confirmed reading matches what gets written to `final_distance_m`
 - [ ] Claim/trip distance audit trail unaffected
+- [ ] FREE-tier user without a BYOK key → camera still works (evidence attaches), no AI prompt appears, no crash
+- [ ] BYOK key set → FREE tier gets the AI prompt too, same as receipt scanning
+- [ ] `pnpm --filter user-mobile-v2 tsc --noEmit` and `pnpm --filter user tsc --noEmit` both clean (not yet run — needs Eff to confirm)
 
 ---
 

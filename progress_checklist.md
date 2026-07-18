@@ -107,8 +107,8 @@ Full detail: `docs/02-product-specs/02_AI_ASSISTANT_AUTOMATION_SPEC.md` (spec) a
 
 - [x] S0 — Compliance & provider prep (Gemini key, PDPA sign-off) — done 2026-07-17
 - [x] S1 — Receipt auto-fill (web, shared key) — done 2026-07-17. Corrected same day: first pass wired the wrong (unused) TransportModal file; re-wired into the actual live modals in claims/[id]/page.tsx (Meal, Lodging, Toll, Parking, Transport, Misc). Per Diem has no receipt field, N/A.
-- [ ] S2 — Receipt auto-fill (mobile + tier gate)
-- [ ] S3 — Odometer AI reading
+- [~] S2 — Receipt auto-fill (mobile + tier gate) — auto-fill wiring + tier gate shipped early as part of S1 (built directly in mobile-v2, the real product). Remaining gap: offline-deferred retry prompt not built; QA not run. See sprint plan S2 for detail.
+- [x] S3 — Odometer AI reading — built 2026-07-18, mobile-v2 only (`/api/ai/extract-odometer` route + BYOK direct path + `TripsScreen.tsx` origin/destination wiring, `ai_odometer_scan` gate). Web page wiring deliberately skipped — `apps/user` pages aren't the real product, same call as S1. Not yet manually tested by Eff — see S3 testing checklist in the sprint plan.
 - [ ] S4 — Voice claim entry (cloud)
 - [x] S5 — Bring-your-own-key (BYOK) — built 2026-07-18 for receipt scanning (mobile-v2 only; odometer/voice BYOK deferred until S3/S4 exist). Client-side only — key stored via expo-secure-store/localStorage, calls Gemini directly from device, never touches myexpensio's servers. Settings → AI Receipt Scanning. Not yet manually tested by Eff — see S5 testing checklist in the sprint plan.
 - [ ] S6 — On-device fast path (Android)

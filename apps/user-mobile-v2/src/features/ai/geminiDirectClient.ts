@@ -65,6 +65,35 @@ export type GeminiDirectFields = {
 
 type GeminiField = Omit<GeminiDirectFields, "currency"> & { currency?: string };
 
+// AI Capture Sprint 3 — Odometer reading (BYOK direct path). Mirrors
+// apps/user/app/api/ai/extract-odometer/route.ts's model/schema/prompt
+// exactly — keep both in sync if either changes.
+const ODOMETER_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    reading_km: {
+      type: "NUMBER",
+      description:
+        "The odometer reading in kilometers, as shown on the display. If the display shows miles, convert to km (1 mile = 1.60934 km). Null if not legible.",
+      nullable: true,
+    },
+    confidence: {
+      type: "STRING",
+      enum: ["HIGH", "MEDIUM", "LOW"],
+      description:
+        "HIGH if every digit is clearly legible, LOW if the photo is blurry/dark/glare/cropped or any digit is ambiguous, MEDIUM otherwise.",
+    },
+  },
+  required: ["confidence"],
+};
+
+const ODOMETER_PROMPT = `You are reading a photo of a vehicle odometer for a mileage-claim app. The display may be mechanical (physical wheel digits), a plain LCD screen, or a backlit LCD screen (dashboard lit up, photo taken at night or in a dark garage) — handle all three. Extract the distance reading as a number in kilometers. Read every digit carefully, including any decimal/tenths digit if shown. This reading is used to calculate a real reimbursement amount, so accuracy matters more than completeness — if any digit is unclear, glare-obscured, or cut off, return null and report LOW confidence rather than guessing a number.`;
+
+export type GeminiOdometerFields = {
+  reading_km: number | null;
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+};
+
 /**
  * Lightweight validation call for the Settings "Test Key" button — lists
  * models rather than running a real generation, so it's fast and doesn't
@@ -174,5 +203,83 @@ export async function extractReceiptFieldsDirect(
       return { error: "AI extraction timed out. Please try again or enter this receipt manually." };
     }
     return { error: "Could not reach Gemini. Please enter this receipt manually." };
+  }
+}
+
+/**
+ * Same contract as extractOdometerFields() in TripsScreen.tsx (server path)
+ * — { fields } on success, { error } on a user-facing failure message — so
+ * EvidenceCapture can call either interchangeably, same pattern as the
+ * receipt BYOK/shared-key split above.
+ */
+export async function extractOdometerFieldsDirect(
+  base64Image: string,
+  apiKey: string
+): Promise<{ fields?: GeminiOdometerFields; error?: string }> {
+  try {
+    const upstream = await fetch(GEMINI_URL(apiKey), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: ODOMETER_PROMPT },
+              { inlineData: { mimeType: "image/jpeg", data: base64Image } },
+            ],
+          },
+        ],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: ODOMETER_SCHEMA,
+          temperature: 0.1,
+        },
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    const rawText = await upstream.text();
+
+    if (!upstream.ok) {
+      console.warn("[BYOK] Gemini odometer error:", upstream.status, rawText.slice(0, 300));
+      if (upstream.status === 400 || upstream.status === 401 || upstream.status === 403) {
+        return { error: "Your saved Gemini key was rejected. Check it in Settings → AI Receipt Scanning." };
+      }
+      if (upstream.status === 429) {
+        return { error: "Your Gemini key hit its rate limit. Please wait a moment and try again." };
+      }
+      return { error: "AI extraction failed. Please enter this reading manually." };
+    }
+
+    let upstreamJson: { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+    try {
+      upstreamJson = JSON.parse(rawText);
+    } catch {
+      return { error: "AI extraction returned an unexpected response. Please enter this reading manually." };
+    }
+
+    const modelText = upstreamJson.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!modelText) return { error: "Could not extract a reading from this photo. Please enter manually." };
+
+    let fields: GeminiOdometerFields;
+    try {
+      fields = JSON.parse(modelText);
+    } catch {
+      return { error: "Could not extract a reading from this photo. Please enter manually." };
+    }
+
+    return {
+      fields: {
+        reading_km: typeof fields.reading_km === "number" ? fields.reading_km : null,
+        confidence: fields.confidence ?? "LOW",
+      },
+    };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "";
+    console.warn("[BYOK] fetch error:", msg);
+    if (msg.includes("abort") || msg.includes("timed out")) {
+      return { error: "AI extraction timed out. Please try again or enter this reading manually." };
+    }
+    return { error: "Could not reach Gemini. Please enter this reading manually." };
   }
 }

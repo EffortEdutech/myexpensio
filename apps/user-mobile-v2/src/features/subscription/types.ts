@@ -22,6 +22,7 @@ export type CachedSubscription = {
 };
 
 export type FeatureKey =
+  | "ai_odometer_scan"
   | "business_space"
   | "exports"
   | "exports_pdf"

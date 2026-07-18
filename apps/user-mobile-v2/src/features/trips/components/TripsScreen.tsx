@@ -40,6 +40,14 @@ import type {
 import type { ClaimRates } from "@/state/settingsStore";
 import { getSyncBaseUrl } from "@/sync/syncConfig";
 import { colors, spacing, typography } from "@/theme/tokens";
+// AI Capture S3 — 2026-07-18. Odometer AI reading, same BYOK-aware
+// shared-key/direct split pattern as ClaimDetail.tsx's receipt scanning.
+import { useAuthStore } from "@/state/authStore";
+import { useByokGeminiKey } from "@/features/ai/hooks/useByokGeminiKey";
+import {
+  extractOdometerFieldsDirect,
+  type GeminiOdometerFields
+} from "@/features/ai/geminiDirectClient";
 
 type TripsScreenProps = {
   claims: ClaimDraft[];
@@ -1071,6 +1079,54 @@ function TripFormModal({
   const [destinationEvidence, setDestinationEvidence] = useState<string | null>(null);
   const [originSectionDone, setOriginSectionDone] = useState(false);
   const [vehicleType, setVehicleType] = useState<VehicleType>("car");
+  // AI Capture S3 (mobile) — 2026-07-18. AI-proposed reading per step; never
+  // applied until the user taps "Use This Reading" (AiReadingPrompt below).
+  const [originAiFields, setOriginAiFields] = useState<GeminiOdometerFields | null>(null);
+  const [originAiError, setOriginAiError] = useState<string | null>(null);
+  const [destinationAiFields, setDestinationAiFields] = useState<GeminiOdometerFields | null>(null);
+  const [destinationAiError, setDestinationAiError] = useState<string | null>(null);
+
+  function handleOriginAiExtracted(fields: GeminiOdometerFields) {
+    setOriginAiError(null);
+    if (fields.reading_km == null) {
+      setOriginAiError("AI couldn't read this odometer clearly — please enter the reading manually.");
+      return;
+    }
+    setOriginAiFields(fields);
+  }
+
+  function handleOriginAiError(message: string) {
+    setOriginAiFields(null);
+    setOriginAiError(message);
+  }
+
+  function applyOriginAiReading() {
+    if (originAiFields?.reading_km != null) {
+      setOriginReading(String(originAiFields.reading_km));
+    }
+    setOriginAiFields(null);
+  }
+
+  function handleDestinationAiExtracted(fields: GeminiOdometerFields) {
+    setDestinationAiError(null);
+    if (fields.reading_km == null) {
+      setDestinationAiError("AI couldn't read this odometer clearly — please enter the reading manually.");
+      return;
+    }
+    setDestinationAiFields(fields);
+  }
+
+  function handleDestinationAiError(message: string) {
+    setDestinationAiFields(null);
+    setDestinationAiError(message);
+  }
+
+  function applyDestinationAiReading() {
+    if (destinationAiFields?.reading_km != null) {
+      setDestinationReading(String(destinationAiFields.reading_km));
+    }
+    setDestinationAiFields(null);
+  }
 
   useEffect(() => {
     if (!mode) {
@@ -1280,6 +1336,10 @@ function TripFormModal({
     setDestinationEvidence(null);
     setOriginSectionDone(false);
     setVehicleType("car");
+    setOriginAiFields(null);
+    setOriginAiError(null);
+    setDestinationAiFields(null);
+    setDestinationAiError(null);
   }
 
   function handleOriginMapSet(latLng: LatLng) {
@@ -1471,7 +1531,22 @@ function TripFormModal({
                         label="Origin Reading"
                         onChange={setOriginEvidence}
                         value={originEvidence}
+                        onExtracted={handleOriginAiExtracted}
+                        onAiError={handleOriginAiError}
                       />
+                      {originAiFields?.reading_km != null ? (
+                        <AiReadingPrompt
+                          confidence={originAiFields.confidence}
+                          onApply={applyOriginAiReading}
+                          onDismiss={() => setOriginAiFields(null)}
+                          readingKm={originAiFields.reading_km}
+                        />
+                      ) : null}
+                      {originAiError ? (
+                        <View style={styles.aiErrorHint}>
+                          <Text style={styles.aiErrorHintText}>🤖 {originAiError}</Text>
+                        </View>
+                      ) : null}
                       <Pressable
                         accessibilityRole="button"
                         disabled={!originReading || Number(originReading) < 0}
@@ -1522,7 +1597,22 @@ function TripFormModal({
                         label="Destination Reading"
                         onChange={setDestinationEvidence}
                         value={destinationEvidence}
+                        onExtracted={handleDestinationAiExtracted}
+                        onAiError={handleDestinationAiError}
                       />
+                      {destinationAiFields?.reading_km != null ? (
+                        <AiReadingPrompt
+                          confidence={destinationAiFields.confidence}
+                          onApply={applyDestinationAiReading}
+                          onDismiss={() => setDestinationAiFields(null)}
+                          readingKm={destinationAiFields.reading_km}
+                        />
+                      ) : null}
+                      {destinationAiError ? (
+                        <View style={styles.aiErrorHint}>
+                          <Text style={styles.aiErrorHintText}>🤖 {destinationAiError}</Text>
+                        </View>
+                      ) : null}
                     </OdometerStep>
 
                     {/* Auto-calculated distance */}
@@ -2309,27 +2399,67 @@ function RouteAlternativeOption({
 function EvidenceCapture({
   label,
   onChange,
-  value
+  value,
+  onExtracted,
+  onAiError
 }: {
   label: string;
   onChange: (value: string) => void;
   value: string | null;
+  // AI Capture S3 (mobile) — fires once, right after a photo is picked
+  // (camera or gallery), with whatever /api/ai/extract-odometer (or the BYOK
+  // direct call) proposed. Same "fires, doesn't apply" contract as
+  // ClaimDetail.tsx's ReceiptCaptureField — the caller decides whether/how
+  // to apply the reading.
+  onExtracted?: (fields: GeminiOdometerFields) => void;
+  onAiError?: (message: string) => void;
 }) {
   const { tier } = useSubscription();
+  // Camera-lock gate (can this account attach evidence via camera at all) —
+  // unchanged, still receipt_scan. AI-read gate is separate: ai_odometer_scan,
+  // or any tier with a BYOK key set (S5 pattern extended to S3).
   const canScan = canUseFeature(tier, "receipt_scan");
+  const { data: byokKey } = useByokGeminiKey();
+  const canReadAi = canUseFeature(tier, "ai_odometer_scan") || !!byokKey;
+  const accessToken = useAuthStore((s) => s.session?.accessToken ?? null);
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+
+  async function handlePicked(source: "camera" | "gallery") {
+    const uri = await openEvidencePicker(label, source);
+    if (!uri) return;
+    onChange(uri);
+    if (!canReadAi) return; // evidence still attaches, just no AI reading
+
+    if (byokKey) {
+      setAiAnalyzing(true);
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64
+      });
+      const { fields, error } = await extractOdometerFieldsDirect(base64, byokKey);
+      setAiAnalyzing(false);
+      if (fields) onExtracted?.(fields);
+      else if (error) onAiError?.(error);
+      return;
+    }
+
+    if (!accessToken) return; // shared-key path needs a signed-in session
+    setAiAnalyzing(true);
+    const { fields, error } = await extractOdometerFields(uri, accessToken);
+    setAiAnalyzing(false);
+    if (fields) onExtracted?.(fields);
+    else if (error) onAiError?.(error);
+  }
 
   function handleCameraPress() {
     if (!canScan) {
       Alert.alert(
         "PRO Feature",
-        "Camera scanning requires a PRO subscription. Upgrade in Settings → Billing to unlock.",
+        "Camera scanning requires a PRO subscription — or add your own free Gemini key in Settings → AI Receipt Scanning to unlock it on any plan.",
         [{ text: "OK" }]
       );
       return;
     }
-    void openEvidencePicker(label, "camera").then((uri) => {
-      if (uri) onChange(uri);
-    });
+    void handlePicked("camera");
   }
 
   return (
@@ -2339,7 +2469,13 @@ function EvidenceCapture({
         <EvidenceChoice
           icon={canScan ? "📷" : "🔒"}
           title="Scan Document"
-          sub={canScan ? "Camera · auto edge detect · perspective fix" : "PRO feature — upgrade to unlock"}
+          sub={
+            canScan
+              ? canReadAi
+                ? "Camera · auto edge detect · AI reads the reading"
+                : "Camera · auto edge detect · perspective fix"
+              : "PRO feature — upgrade to unlock, or add your own key in Settings"
+          }
           selected={value?.includes("camera")}
           onPress={handleCameraPress}
         />
@@ -2348,12 +2484,14 @@ function EvidenceCapture({
           title="Attach from Gallery"
           sub="JPEG · PNG · WebP · Max 5 MB"
           selected={value?.includes("gallery")}
-          onPress={() =>
-            void openEvidencePicker(label, "gallery").then((uri) => {
-              if (uri) onChange(uri);
-            })
-          }
+          onPress={() => void handlePicked("gallery")}
         />
+        {aiAnalyzing ? (
+          <View style={styles.aiAnalyzingRow}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={styles.aiAnalyzingText}>🤖 Reading odometer…</Text>
+          </View>
+        ) : null}
         {value ? (
           <View style={styles.evidencePreview}>
             <Text style={styles.evidencePreviewText}>
@@ -2370,6 +2508,39 @@ function EvidenceCapture({
             </Pressable>
           </View>
         ) : null}
+      </View>
+    </View>
+  );
+}
+
+// AI Capture S3 — the odometer reading has exactly one AI-proposed value, so
+// (unlike the receipt review sheet, which covers three fields) a small
+// inline confirm row is enough: no silent apply (same lesson learned from
+// the S1 date-fill bug — the user always taps to accept), but no need for a
+// full modal either.
+function AiReadingPrompt({
+  confidence,
+  onApply,
+  onDismiss,
+  readingKm
+}: {
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+  onApply: () => void;
+  onDismiss: () => void;
+  readingKm: number;
+}) {
+  return (
+    <View style={styles.aiPrompt}>
+      <Text style={styles.aiPromptText}>
+        🤖 AI read: {readingKm.toLocaleString()} km ({confidence.toLowerCase()} confidence)
+      </Text>
+      <View style={styles.aiPromptActions}>
+        <Pressable accessibilityRole="button" onPress={onDismiss} style={styles.aiPromptDismiss}>
+          <Text style={styles.aiPromptDismissText}>Dismiss</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" onPress={onApply} style={styles.aiPromptApply}>
+          <Text style={styles.aiPromptApplyText}>Use This Reading</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -2796,6 +2967,65 @@ function confirmTripDelete(onConfirm: () => void) {
     { style: "cancel", text: "Cancel" },
     { onPress: onConfirm, style: "destructive", text: "Delete" }
   ]);
+}
+
+// AI Capture S3 (mobile) — 2026-07-18. Calls the same /api/ai/extract-odometer
+// endpoint apps/user's route.ts exposes. Mirrors ClaimDetail.tsx's
+// extractReceiptFields() (shared-key path) for a local file URI.
+async function extractOdometerFields(
+  localUri: string,
+  accessToken: string
+): Promise<{ fields?: GeminiOdometerFields; error?: string }> {
+  try {
+    const base64 = await FileSystem.readAsStringAsync(localUri, {
+      encoding: FileSystem.EncodingType.Base64
+    });
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25_000);
+
+    let response: Response;
+    try {
+      response = await fetch(`${getSyncBaseUrl()}/api/ai/extract-odometer`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ image: base64 }),
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const rawText = await response.text();
+    let json: Record<string, unknown>;
+    try {
+      json = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {};
+    } catch {
+      json = {};
+    }
+
+    if (!response.ok) {
+      const message =
+        (json?.error as { message?: string } | undefined)?.message ??
+        `AI extraction failed (HTTP ${response.status}).`;
+      console.warn("[EvidenceCapture] AI extraction declined:", response.status, json);
+      return { error: message };
+    }
+
+    return {
+      fields: {
+        reading_km: typeof json.reading_km === "number" ? json.reading_km : null,
+        confidence: (json.confidence as GeminiOdometerFields["confidence"]) ?? "LOW"
+      }
+    };
+  } catch (e: unknown) {
+    const message = (e as Error).message ?? "AI extraction failed.";
+    console.warn("[EvidenceCapture] AI extraction error:", message);
+    return { error: message };
+  }
 }
 
 async function openEvidencePicker(
@@ -3790,6 +4020,75 @@ const styles = StyleSheet.create({
     color: "#dc2626",
     fontSize: 10,
     fontWeight: "900"
+  },
+  // AI Capture S3 — odometer reading prompt/hint styles, same visual
+  // language as ClaimDetail.tsx's aiHint/aiErrorHint/aiAnalyzingRow.
+  aiAnalyzingRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingVertical: spacing.xs ?? 4
+  },
+  aiAnalyzingText: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  aiPrompt: {
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.sm
+  },
+  aiPromptText: {
+    color: "#1d4ed8",
+    fontSize: typography.caption,
+    fontWeight: "800"
+  },
+  aiPromptActions: {
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  aiPromptDismiss: {
+    alignItems: "center",
+    borderColor: "#bfdbfe",
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 38
+  },
+  aiPromptDismissText: {
+    color: "#1d4ed8",
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  aiPromptApply: {
+    alignItems: "center",
+    backgroundColor: "#2563eb",
+    borderRadius: 8,
+    flex: 2,
+    justifyContent: "center",
+    minHeight: 38
+  },
+  aiPromptApplyText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  aiErrorHint: {
+    backgroundColor: "#fffbeb",
+    borderColor: "#fde68a",
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: spacing.sm
+  },
+  aiErrorHintText: {
+    color: "#b45309",
+    fontSize: typography.caption,
+    fontWeight: "700"
   },
   saveButton: {
     alignItems: "center",
