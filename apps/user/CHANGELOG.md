@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.22.0](https://github.com/EffortEdutech/myexpensio/compare/v4.21.1...v4.22.0) (2026-07-18)
+
+
+### Features
+
+* **ai:** offline-deferred auto-retry for receipt/odometer scanning (S2 gap) ([a1e3b1f](https://github.com/EffortEdutech/myexpensio/commit/a1e3b1f8f8bd59517c1dc708bdfc56715bb0db92))
+
 ### [4.21.1](https://github.com/EffortEdutech/myexpensio/compare/v4.21.0...v4.21.1) (2026-07-18)
 
 ## [4.21.0](https://github.com/EffortEdutech/myexpensio/compare/v4.20.3...v4.21.0) (2026-07-18)
