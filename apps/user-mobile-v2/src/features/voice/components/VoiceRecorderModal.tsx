@@ -36,27 +36,33 @@ import { colors, spacing, typography } from "@/theme/tokens";
 
 const MAX_DURATION_MS = 60_000; // 60s cap — short voice note, keeps upload small
 
-// Android-specific gotcha (found on-device 2026-07-18): recorder.stop()
-// resolves before the MediaRecorder container (m4a) is fully flushed/closed
-// on disk. Reading the file immediately after stop() can hit
-// "Location ... isn't readable" (ExponentFileSystem IOException) if the user
-// taps "Use This Recording" fast. Poll for the file to actually exist with
-// non-zero size before allowing confirm, instead of trusting stop()'s promise
-// alone.
+// Android/Expo Go gotcha (found on-device 2026-07-18, revised same day after
+// the first fix didn't hold): expo-audio writes recordings to the shared
+// "cache/Audio/" directory, which sits OUTSIDE the per-experience sandboxed
+// directory expo-file-system's readAsStringAsync enforces under Expo Go.
+// getInfoAsync (a plain stat check) can see the file fine — which is why an
+// earlier fix that only polled getInfoAsync still passed, then failed on the
+// real read — but readAsStringAsync throws "isn't readable" because the path
+// is outside Expo Go's allowed scope. Fix: copy the recording into
+// FileSystem.cacheDirectory (the app's own scoped, JS-readable cache) before
+// ever trying to read it. This also incidentally absorbs any leftover
+// finalization-timing race, since copyAsync is retried the same way.
 const FILE_READY_ATTEMPTS = 10;
 const FILE_READY_DELAY_MS = 250;
 
-async function waitForFileReady(uri: string): Promise<boolean> {
+async function copyToScopedCache(sourceUri: string): Promise<string | null> {
+  const destUri = `${FileSystem.cacheDirectory}voice-claim-${Date.now()}.m4a`;
   for (let i = 0; i < FILE_READY_ATTEMPTS; i++) {
     try {
-      const info = await FileSystem.getInfoAsync(uri);
-      if (info.exists && (info.size ?? 0) > 0) return true;
+      await FileSystem.copyAsync({ from: sourceUri, to: destUri });
+      const info = await FileSystem.getInfoAsync(destUri);
+      if (info.exists && (info.size ?? 0) > 0) return destUri;
     } catch {
-      // not ready yet — fall through to retry
+      // source not finalized/readable yet — fall through to retry
     }
     await new Promise((resolve) => setTimeout(resolve, FILE_READY_DELAY_MS));
   }
-  return false;
+  return null;
 }
 
 type RecorderPhase = "idle" | "recording" | "finalizing" | "recorded" | "error";
@@ -80,12 +86,14 @@ export function VoiceRecorderModal({
   const recorderState = useAudioRecorderState(recorder, 100);
   const [phase, setPhase] = useState<RecorderPhase>("idle");
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [readyUri, setReadyUri] = useState<string | null>(null);
   const autoStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!visible) {
       setPhase("idle");
       setPermissionDenied(false);
+      setReadyUri(null);
     }
   }, [visible]);
 
@@ -117,18 +125,20 @@ export function VoiceRecorderModal({
     }
     await recorder.stop();
     setPhase("finalizing");
-    const uri = recorder.uri;
-    const ready = uri ? await waitForFileReady(uri) : false;
-    setPhase(ready ? "recorded" : "error");
+    const sourceUri = recorder.uri;
+    const copiedUri = sourceUri ? await copyToScopedCache(sourceUri) : null;
+    setReadyUri(copiedUri);
+    setPhase(copiedUri ? "recorded" : "error");
   }
 
   function handleDiscard() {
     setPhase("idle");
+    setReadyUri(null);
   }
 
   function handleConfirm() {
-    if (!recorder.uri) return;
-    onAudioReady(recorder.uri, mimeTypeFromUri(recorder.uri));
+    if (!readyUri) return;
+    onAudioReady(readyUri, mimeTypeFromUri(readyUri));
   }
 
   const durationLabel = formatDuration(recorderState.durationMillis ?? 0);
