@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.21.0](https://github.com/EffortEdutech/myexpensio/compare/v4.20.3...v4.21.0) (2026-07-18)
+
+
+### Features
+
+* **ai:** odometer AI reading (S3) — extract-odometer route, ai_odometer_scan gate, mobile wiring ([3e81ac6](https://github.com/EffortEdutech/myexpensio/commit/3e81ac61f77488f0948372b5cd44b2100e18a597))
+
+
+### Bug Fixes
+
+* **test:** add missing jest devDependencies (jest.config.js existed but deps never landed) ([7bc29a2](https://github.com/EffortEdutech/myexpensio/commit/7bc29a2dfb602a16c475f95c4708e20be69b06ee))
+
 ### [4.20.3](https://github.com/EffortEdutech/myexpensio/compare/v4.20.2...v4.20.3) (2026-07-18)
 
 
