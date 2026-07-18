@@ -96,6 +96,53 @@ export type GeminiOdometerFields = {
   confidence: "HIGH" | "MEDIUM" | "LOW";
 };
 
+// AI Capture Sprint 4 — Voice claim entry (BYOK direct path). Mirrors
+// apps/user/app/api/ai/parse-voice-claim/route.ts's model/schema/prompt
+// exactly — keep both in sync if either changes. Response shape is
+// deliberately identical to GeminiDirectFields (receipt) — see that route's
+// header comment for why: it plugs into the same AiReviewModal pipeline.
+const VOICE_CLAIM_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    amount: {
+      type: "NUMBER",
+      description: "The expense amount mentioned, as a plain number. Null if no amount was spoken.",
+      nullable: true,
+    },
+    currency: {
+      type: "STRING",
+      description: "ISO 4217 currency code. Default to MYR unless another currency is explicitly spoken.",
+    },
+    date: {
+      type: "STRING",
+      description:
+        "Transaction date in YYYY-MM-DD format, only if a specific date/relative day (e.g. \"yesterday\", \"last Tuesday\") is spoken. Null if no date is mentioned — do not guess today's date.",
+      nullable: true,
+    },
+    merchant: {
+      type: "STRING",
+      description:
+        'A short (under 60 characters) summary of the merchant, location, or context spoken — e.g. "Grab from KLCC to office", "Petronas Ayer Keroh", "Client lunch with ABC Sdn Bhd". Null if nothing usable was said.',
+      nullable: true,
+    },
+    category_guess: {
+      type: "STRING",
+      description:
+        'Best-guess expense category from the spoken content, one of: "Mileage", "Toll", "Parking", "Taxi", "Grab", "Train", "Flight", "Meal", "Lodging", "Per Diem", "Misc". Null if unclear.',
+      nullable: true,
+    },
+    confidence: {
+      type: "STRING",
+      enum: ["HIGH", "MEDIUM", "LOW"],
+      description:
+        "HIGH if amount and category are both clearly stated, LOW if the audio is unclear/silent/background-noise-only or the key fields are ambiguous, MEDIUM otherwise.",
+    },
+  },
+  required: ["confidence"],
+};
+
+const VOICE_CLAIM_PROMPT = `You are listening to a short voice note from an employee describing an expense claim for a mileage/expense claim app. The speaker may talk in English, Malay, or a mix of both (common in Malaysia) — understand either. Extract the amount, currency, transaction date (only if a specific day is mentioned), a short merchant/location/context summary, and the best-guess expense category. This is a real expense claim — only report what was actually said, do not invent details. If a field wasn't mentioned or isn't clear, return null for it rather than guessing. Report your confidence honestly: LOW if the audio is unclear, silent, mostly background noise, or the key fields (amount, category) are ambiguous.`;
+
 /**
  * Lightweight validation call for the Settings "Test Key" button — lists
  * models rather than running a real generation, so it's fast and doesn't
@@ -289,5 +336,92 @@ export async function extractOdometerFieldsDirect(
       return { error: "You're offline — auto-fill will run once you're back online.", offline: true };
     }
     return { error: "Could not reach Gemini. Please enter this reading manually." };
+  }
+}
+
+/**
+ * Same contract as parseVoiceClaimFields() (server path, claims voice-entry
+ * feature) — { fields } on success, { error } on a user-facing failure
+ * message. Returns GeminiDirectFields (the same shape as receipt extraction)
+ * so the result plugs straight into AddClaimItemModal's existing
+ * AiReviewModal pipeline — see route.ts's header comment for why.
+ */
+export async function parseVoiceClaimDirect(
+  base64Audio: string,
+  mimeType: string,
+  apiKey: string
+): Promise<{ fields?: GeminiDirectFields; error?: string; offline?: boolean }> {
+  try {
+    const upstream = await fetch(GEMINI_URL(apiKey), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: VOICE_CLAIM_PROMPT },
+              { inlineData: { mimeType, data: base64Audio } },
+            ],
+          },
+        ],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: VOICE_CLAIM_SCHEMA,
+          temperature: 0.1,
+        },
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    const rawText = await upstream.text();
+
+    if (!upstream.ok) {
+      console.warn("[BYOK] Gemini voice-claim error:", upstream.status, rawText.slice(0, 300));
+      if (upstream.status === 400 || upstream.status === 401 || upstream.status === 403) {
+        return { error: "Your saved Gemini key was rejected. Check it in Settings → AI Receipt Scanning." };
+      }
+      if (upstream.status === 429) {
+        return { error: "Your Gemini key hit its rate limit. Please wait a moment and try again." };
+      }
+      return { error: "AI extraction failed. Please enter this claim manually." };
+    }
+
+    let upstreamJson: { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+    try {
+      upstreamJson = JSON.parse(rawText);
+    } catch {
+      return { error: "AI extraction returned an unexpected response. Please enter this claim manually." };
+    }
+
+    const modelText = upstreamJson.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!modelText) return { error: "Could not understand this recording. Please enter manually." };
+
+    let fields: GeminiField;
+    try {
+      fields = JSON.parse(modelText);
+    } catch {
+      return { error: "Could not understand this recording. Please enter manually." };
+    }
+
+    return {
+      fields: {
+        amount: typeof fields.amount === "number" ? fields.amount : null,
+        currency: fields.currency || "MYR",
+        date: fields.date ?? null,
+        merchant: fields.merchant ?? null,
+        category_guess: fields.category_guess ?? null,
+        confidence: fields.confidence ?? "LOW",
+      },
+    };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "";
+    console.warn("[BYOK] fetch error:", msg);
+    if (msg.includes("abort") || msg.includes("timed out")) {
+      return { error: "AI extraction timed out. Please try again or enter this claim manually." };
+    }
+    if (isLikelyOfflineError(msg)) {
+      return { error: "You're offline — this will parse once you're back online.", offline: true };
+    }
+    return { error: "Could not reach Gemini. Please enter this claim manually." };
   }
 }

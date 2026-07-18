@@ -180,18 +180,29 @@ Two separate verification passes now done:
 ## Sprint 4 — Voice Claim Entry (cloud)
 
 **Goal:** Record a short voice note → structured claim draft (amount, category, location, date, note).
-**Version bump:** user `4.20.0` → `4.21.0`, mobile `0.3.0` → `0.4.0`
+**Version bump:** user `4.21.1` → `4.22.0`, mobile `0.2.1` → `0.3.0` (actual repo versions, not this doc's original placeholder numbers — see S3's note on the same drift).
+
+**Built 2026-07-18** — mobile-v2 only, per Eff's Option B call: a standalone "record first, categorize after" entry point (not folded into Add Item), so the recorder is reusable for future non-claims voice triggers.
 
 ### Tasks
-- [ ] `POST /api/ai/parse-voice-claim` — accepts base64 audio, Gemini audio-understanding call with `responseSchema`
-- [ ] Mic button on the claim-creation screen (web + mobile); record → upload → show draft → user reviews/edits → save
-- [ ] `ai_voice_claim` feature gate (PRO/PREMIUM)
-- [ ] Offline: allow recording and local storage of the raw audio note even without connectivity; parsing deferred until online (same deferred-pass pattern as S2)
+- [x] `POST /api/ai/parse-voice-claim` (`apps/user/app/api/ai/parse-voice-claim/route.ts`) — accepts base64 audio + mimeType, Gemini audio-understanding call (`inlineData` same as image routes, just with an audio mimeType). **Response schema is deliberately identical to `/api/ai/extract-receipt`'s** `{ amount, currency, date, merchant, category_guess, confidence }` — not a coincidence, see the route's header comment: this lets voice-parsed fields plug straight into `AddClaimItemModal`'s existing `AiReviewModal` pipeline (S1) instead of a second parallel review UI. `merchant` carries voice's spoken location/context instead of a printed merchant name. Prompt explicitly handles English/Malay mixed speech.
+- [x] New dependency: **`expo-audio`** (Expo's current, non-deprecated recording API — `expo-av`'s Audio module is deprecated). Approved by Eff 2026-07-18. **Not yet installed in this session** — run `npx expo install expo-audio` once (adds the correct SDK-56-compatible version; don't hand-pin it). `app.json` already has the config plugin entry + `NSMicrophoneUsageDescription` (iOS) + `RECORD_AUDIO` (Android, was already present).
+- [x] Generic, reusable recording UI — `VoiceRecorderModal.tsx` (`apps/user-mobile-v2/src/features/voice/components/`) — mic permission, record/stop/re-record with a 60s cap, hands the local file back via `onAudioReady`. Deliberately knows nothing about claims, so it's reusable for other future myexpensio voice triggers per Eff's ask. No playback preview in this first pass (reduces reliance on the less-certain parts of the API surface not verified in this session — see verification note below).
+- [x] Claims-specific orchestrator — `VoiceClaimEntry.tsx` — standalone "🎙️ Voice Entry" button on the Claims screen (below the item-type grid). Record → parse (shared-key `parseVoiceClaimFields()` in `voiceClaimApi.ts`, or BYOK `parseVoiceClaimDirect()` in `geminiDirectClient.ts`) → a lightweight type-confirm step (AI's spoken-category guess is less reliable than image OCR, so this is a real correction point — shows the guessed type highlighted among all 8, one tap to change it) → opens `AddClaimItemModal` pre-seeded via new `pendingAiFields`/`pendingTransportType` props, which auto-opens the same `AiReviewModal` receipt/odometer scanning uses.
+- [x] `ai_voice_claim` feature gate (PRO/PREMIUM), FREE unlocked via BYOK — same split pattern as `ai_odometer_scan` (S3): recording itself isn't gated, only whether a recording actually gets parsed.
+- [x] Offline-deferred parsing — reuses `useDeferredAiExtraction` (S2 gap) as-is, no new offline-handling code needed. The recording is already local once stopped; if parsing fails offline, it retries automatically on reconnect, same "📡 You're offline" banner as receipt/odometer.
+- [ ] Web (`apps/user`) mic button — **not built**, same call as S3's odometer web wiring: `apps/user`'s pages aren't the real product.
+
+**Verification note (2026-07-18):** `expo-audio` was not installed in this session (sandbox has no network-verified npm access), so its exact API surface for this Expo SDK version wasn't confirmed against real type declarations — `VoiceRecorderModal.tsx` uses the standard `useAudioRecorder`/`useAudioRecorderState`/`AudioModule.requestRecordingPermissionsAsync`/`setAudioModeAsync`/`RecordingPresets.HIGH_QUALITY` shape from Expo's documented API, but if `pnpm tsc --noEmit` flags anything in that one file after running `npx expo install expo-audio`, it's almost certainly a minor renamed-method mismatch, not a logic error — check expo-audio's installed-version docs and adjust. Every other file in this sprint follows patterns already proven working in S1/S2/S3/S5.
 
 ### Testing checklist
-- [ ] Clear speech in a quiet room → correct fields
-- [ ] Background noise / accented English or Malay → degrades to "couldn't parse — here's the raw note, fill in manually" rather than wrong data
-- [ ] Offline recording → queued correctly, parsed on reconnect
+- [ ] `npx expo install expo-audio` run, `pnpm --filter user-mobile-v2 tsc --noEmit` clean
+- [ ] Clear speech in a quiet room → correct fields, right type guessed
+- [ ] Background noise / accented English or Malay → degrades to "couldn't understand — enter manually" rather than wrong data
+- [ ] Wrong type guessed → tapping a different chip in the confirm step opens the right modal with fields still applied
+- [ ] Offline recording → stays in "analyzing" then shows the deferred banner, parses automatically once back online
+- [ ] Mic permission denied → clean message, no crash
+- [ ] FREE tier without BYOK key → button shows "PRO feature" sub-text, recording still works but parse is blocked with a clear message (not silently failing)
 
 ---
 

@@ -33,6 +33,8 @@ import { useByokGeminiKey } from "@/features/ai/hooks/useByokGeminiKey";
 import { extractReceiptFieldsDirect } from "@/features/ai/geminiDirectClient";
 import { useDeferredAiExtraction } from "@/features/ai/hooks/useDeferredAiExtraction";
 import { isLikelyOfflineError } from "@/utils/network";
+import { VoiceClaimEntry } from "@/features/claims/components/VoiceClaimEntry";
+import { claimActions, type ClaimModalKind } from "@/features/claims/claimActions";
 import { matchTngToClaimItems, scorePair } from "@/features/tng/matcher";
 import type { TngTransaction } from "@/features/tng/types";
 import type { TripDraft } from "@/features/trips/types";
@@ -97,31 +99,6 @@ type ClaimDetailProps = {
   tngTransactions: TngTransaction[];
   trips: TripDraft[];
 };
-
-const claimActions: Array<{
-  icon: string;
-  label: string;
-  modal: ClaimModalKind;
-}> = [
-  { icon: "🚗", label: "Mileage", modal: "mileage" },
-  { icon: "🛣️", label: "Toll", modal: "toll" },
-  { icon: "🅿️", label: "Parking", modal: "parking" },
-  { icon: "🚕", label: "Transport", modal: "transport" },
-  { icon: "🍽", label: "Meal", modal: "meal" },
-  { icon: "🏨", label: "Lodging", modal: "lodging" },
-  { icon: "🧾", label: "Per Diem", modal: "per_diem" },
-  { icon: "📦", label: "Misc", modal: "other" }
-];
-
-type ClaimModalKind =
-  | "mileage"
-  | "toll"
-  | "parking"
-  | "transport"
-  | "meal"
-  | "lodging"
-  | "per_diem"
-  | "other";
 
 type ClaimItemCategoryFilter =
   | "all"
@@ -203,6 +180,11 @@ export function ClaimDetail({
   trips
 }: ClaimDetailProps) {
   const [activeModal, setActiveModal] = useState<ClaimModalKind | null>(null);
+  // AI Capture S4 (voice entry) — seeded by VoiceClaimEntry right before it
+  // opens AddClaimItemModal; cleared on close so a later manual open of the
+  // same kind doesn't replay stale voice-parsed fields.
+  const [pendingAiFields, setPendingAiFields] = useState<AiExtractedFields | null>(null);
+  const [pendingTransportType, setPendingTransportType] = useState<ClaimItemType | null>(null);
   const [itemCategoryFilter, setItemCategoryFilter] =
     useState<ClaimItemCategoryFilter>("all");
   const [itemFilterOpen, setItemFilterOpen] = useState(false);
@@ -427,6 +409,16 @@ export function ClaimDetail({
         </View>
       ) : null}
 
+      {isDraft ? (
+        <VoiceClaimEntry
+          onOpenModal={(modal, transportType, fields) => {
+            setPendingTransportType(transportType);
+            setPendingAiFields(fields);
+            setActiveModal(modal);
+          }}
+        />
+      ) : null}
+
       {unresolvedTngItems.length > 0 ? (
         <View style={styles.submitNotice}>
           <Text style={styles.submitNoticeTitle}>TNG link pending</Text>
@@ -483,7 +475,13 @@ export function ClaimDetail({
         existingItems={items}
         kind={activeModal}
         onAddItem={onAddItem}
-        onClose={() => setActiveModal(null)}
+        onClose={() => {
+          setActiveModal(null);
+          setPendingAiFields(null);
+          setPendingTransportType(null);
+        }}
+        pendingAiFields={pendingAiFields}
+        pendingTransportType={pendingTransportType}
         rates={rates}
         trips={trips}
       />
@@ -824,6 +822,8 @@ function AddClaimItemModal({
   kind,
   onAddItem,
   onClose,
+  pendingAiFields,
+  pendingTransportType,
   rates,
   trips
 }: {
@@ -848,6 +848,15 @@ function AddClaimItemModal({
     merchant?: string | null;
   }) => void;
   onClose: () => void;
+  // AI Capture S4 (voice entry) — 2026-07-18. When VoiceClaimEntry opens this
+  // modal after a recording is parsed, it seeds these once on open instead of
+  // building a second review UI: pendingTransportType pre-selects the
+  // transport sub-type (kind === "transport" only), pendingAiFields feeds
+  // straight into the SAME AiReviewModal receipt/odometer scanning already
+  // uses (see the effect below). The parent clears both in its onClose
+  // handler so re-opening the same kind manually later doesn't replay them.
+  pendingAiFields?: AiExtractedFields | null;
+  pendingTransportType?: ClaimItemType | null;
   rates: ClaimRates;
   trips: TripDraft[];
 }) {
@@ -883,6 +892,17 @@ function AddClaimItemModal({
   const [aiFilled, setAiFilled] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiReviewFields, setAiReviewFields] = useState<AiExtractedFields | null>(null);
+
+  // AI Capture S4 (voice entry) — seed once per modal-open from
+  // VoiceClaimEntry's parsed fields. Deliberately depends only on `kind` so
+  // it fires exactly once per open, not on every re-render.
+  useEffect(() => {
+    if (kind && pendingAiFields) {
+      if (pendingTransportType) setTransportType(pendingTransportType);
+      setAiReviewFields(pendingAiFields);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind]);
 
   function handleAiExtracted(fields: AiExtractedFields) {
     setAiError(null);

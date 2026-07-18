@@ -22,7 +22,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "MyExpensio needs camera access to snap receipt photos.",
         "NSPhotoLibraryUsageDescription": "MyExpensio needs photo library access to attach receipt images.",
-        "NSLocationWhenInUseUsageDescription": "MyExpensio needs location access to track your trips."
+        "NSLocationWhenInUseUsageDescription": "MyExpensio needs location access to track your trips.",
+        "NSMicrophoneUsageDescription": "MyExpensio needs microphone access to record voice notes for quick claim entry."
       }
     },
     "android": {
@@ -68,6 +69,12 @@
         {
           "locationAlwaysAndWhenInUsePermission": "MyExpensio needs location access to track your trips.",
           "locationWhenInUsePermission": "MyExpensio needs location access to track your trips."
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "MyExpensio needs microphone access to record voice notes for quick claim entry."
         }
       ]
     ],
