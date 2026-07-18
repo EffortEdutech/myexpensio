@@ -1,9 +1,6 @@
 {
-  "version": "4.21.1",
+  "version": "4.22.0",
   "changelog": [
-    "ai: odometer AI reading (S3) — extract-odometer route, ai_odometer_scan gate, mobile wiring ()",
-    "test: add missing jest devDependencies (jest.config.js existed but deps never landed) ()",
-    "ai: timezone-safe date fill + AI review sheet; fix 2 latent tsc errors from earlier session ()",
-    "14 pre-existing tsc errors (invalid ClaimItemType, dead components, unsafe casts, missing SyncEntityType case) ()"
+    "ai: offline-deferred auto-retry for receipt/odometer scanning (S2 gap) ()"
   ]
 }
