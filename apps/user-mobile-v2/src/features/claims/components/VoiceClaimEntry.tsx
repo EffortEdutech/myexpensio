@@ -18,7 +18,7 @@
  */
 import { useState } from "react";
 import * as FileSystem from "expo-file-system/legacy";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { AiExtractedFields } from "@/features/claims/components/ClaimDetail";
 import { claimActions, type ClaimModalKind } from "@/features/claims/claimActions";
@@ -168,45 +168,52 @@ export function VoiceClaimEntry({
         visible={recorderVisible}
       />
 
-      {draft ? (
-        <View style={styles.overlay}>
-          <View style={styles.confirmSheet}>
-            <Text style={styles.confirmTitle}>What kind of expense is this?</Text>
-            <Text style={styles.confirmSub}>
-              AI guessed: {claimActions.find((a) => a.modal === draft.modal)?.label ?? "Misc"}
-              {draft.fields.amount != null ? ` · RM${draft.fields.amount.toFixed(2)}` : ""}
-            </Text>
-            <View style={styles.typeGrid}>
-              {claimActions.map((action) => (
-                <Pressable
-                  accessibilityRole="button"
-                  key={action.modal}
-                  onPress={() =>
-                    handleConfirmType(
-                      action.modal,
-                      action.modal === "transport" ? (draft.transportType ?? "grab") : null
-                    )
-                  }
-                  style={[styles.typeChip, action.modal === draft.modal ? styles.typeChipActive : null]}
-                >
-                  <Text style={styles.typeChipIcon}>{action.icon}</Text>
-                  <Text
-                    style={[
-                      styles.typeChipLabel,
-                      action.modal === draft.modal ? styles.typeChipLabelActive : null
-                    ]}
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setDraft(null)}
+        transparent
+        visible={!!draft}
+      >
+        {draft ? (
+          <View style={styles.overlay}>
+            <View style={styles.confirmSheet}>
+              <Text style={styles.confirmTitle}>What kind of expense is this?</Text>
+              <Text style={styles.confirmSub}>
+                AI guessed: {claimActions.find((a) => a.modal === draft.modal)?.label ?? "Misc"}
+                {draft.fields.amount != null ? ` · RM${draft.fields.amount.toFixed(2)}` : ""}
+              </Text>
+              <View style={styles.typeGrid}>
+                {claimActions.map((action) => (
+                  <Pressable
+                    accessibilityRole="button"
+                    key={action.modal}
+                    onPress={() =>
+                      handleConfirmType(
+                        action.modal,
+                        action.modal === "transport" ? (draft.transportType ?? "grab") : null
+                      )
+                    }
+                    style={[styles.typeChip, action.modal === draft.modal ? styles.typeChipActive : null]}
                   >
-                    {action.label}
-                  </Text>
-                </Pressable>
-              ))}
+                    <Text style={styles.typeChipIcon}>{action.icon}</Text>
+                    <Text
+                      style={[
+                        styles.typeChipLabel,
+                        action.modal === draft.modal ? styles.typeChipLabelActive : null
+                      ]}
+                    >
+                      {action.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Pressable accessibilityRole="button" onPress={() => setDraft(null)} style={styles.discardDraftButton}>
+                <Text style={styles.discardDraftText}>Discard</Text>
+              </Pressable>
             </View>
-            <Pressable accessibilityRole="button" onPress={() => setDraft(null)} style={styles.discardDraftButton}>
-              <Text style={styles.discardDraftText}>Discard</Text>
-            </Pressable>
           </View>
-        </View>
-      ) : null}
+        ) : null}
+      </Modal>
     </View>
   );
 }

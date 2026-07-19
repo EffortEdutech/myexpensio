@@ -7,6 +7,7 @@
     "dev:user": "pnpm -C apps/user dev",
     "dev:user-mobile-v2": "pnpm -C apps/user-mobile-v2 start",
     "dev:admin": "pnpm -C apps/admin dev",
+    "logcat:expo": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -ExecutionPolicy Bypass -File .\\scripts\\logcat-expo.ps1",
     "build:user": "pnpm -C apps/user build",
     "build:admin": "pnpm -C apps/admin build",
     "build:cs": "pnpm -C apps/cs build",

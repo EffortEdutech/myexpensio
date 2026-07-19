@@ -73,7 +73,8 @@ async function findActualRecordingUri(reportedUri: string): Promise<string | nul
       }
     }
     return best?.uri ?? null;
-  } catch {
+  } catch (e) {
+    console.warn("[VoiceRecorder] readDirectoryAsync failed:", dirUri, (e as Error)?.message ?? e);
     return null;
   }
 }
@@ -86,8 +87,10 @@ async function finalizeRecording(reportedUri: string): Promise<string | null> {
       await FileSystem.copyAsync({ from: actualUri, to: destUri });
       const info = await FileSystem.getInfoAsync(destUri);
       if (info.exists && (info.size ?? 0) > 0) return destUri;
-    } catch {
-      // real file not written yet — fall through to retry
+    } catch (e) {
+      if (i === FILE_READY_ATTEMPTS - 1) {
+        console.warn("[VoiceRecorder] finalizeRecording: last attempt failed from", actualUri, (e as Error)?.message ?? e);
+      }
     }
     await new Promise((resolve) => setTimeout(resolve, FILE_READY_DELAY_MS));
   }
@@ -170,15 +173,38 @@ export function VoiceRecorderModal({
     onAudioReady(readyUri, mimeTypeFromUri(readyUri));
   }
 
+  // Cancelling (header ✕, footer Cancel, or Android back button) must stop
+  // the native recorder session if one is active/prepared — otherwise the
+  // AudioRecorder instance is left "prepared" and the next attempt to record
+  // throws "AudioRecorder has already been prepared. Stop or release the
+  // current session before preparing again." (found on-device 2026-07-19:
+  // canceling mid-recording, then trying to record again).
+  async function handleClose() {
+    if (autoStopTimer.current) {
+      clearTimeout(autoStopTimer.current);
+      autoStopTimer.current = null;
+    }
+    if (phase === "recording" || phase === "finalizing" || recorderState.isRecording) {
+      try {
+        await recorder.stop();
+      } catch {
+        // already stopped/never started — safe to ignore
+      }
+    }
+    setPhase("idle");
+    setReadyUri(null);
+    onCancel();
+  }
+
   const durationLabel = formatDuration(recorderState.durationMillis ?? 0);
 
   return (
-    <Modal animationType="slide" onRequestClose={onCancel} transparent visible={visible}>
+    <Modal animationType="slide" onRequestClose={() => void handleClose()} transparent visible={visible}>
       <View style={styles.overlay}>
         <View style={styles.sheet}>
           <View style={styles.header}>
             <Text style={styles.title}>🎙️ {title}</Text>
-            <Pressable accessibilityRole="button" onPress={onCancel}>
+            <Pressable accessibilityRole="button" onPress={() => void handleClose()}>
               <Text style={styles.close}>✕</Text>
             </Pressable>
           </View>
@@ -238,7 +264,7 @@ export function VoiceRecorderModal({
           )}
 
           <View style={styles.actions}>
-            <Pressable accessibilityRole="button" onPress={onCancel} style={styles.cancelButton}>
+            <Pressable accessibilityRole="button" onPress={() => void handleClose()} style={styles.cancelButton}>
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </Pressable>
             {phase === "recorded" ? (

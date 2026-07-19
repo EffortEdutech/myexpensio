@@ -1,4 +1,4 @@
-package com.effortedutech.myexpensio.mobile.v2
+package com.effortedutech.myexpensio
 
 import android.app.Application
 import android.content.res.Configuration

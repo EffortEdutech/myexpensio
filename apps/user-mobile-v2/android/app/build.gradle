@@ -87,7 +87,7 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.effortedutech.myexpensio.mobile.v2'
+    namespace 'com.effortedutech.myexpensio'
     defaultConfig {
         applicationId 'com.effortedutech.myexpensio'
         minSdkVersion rootProject.ext.minSdkVersion
