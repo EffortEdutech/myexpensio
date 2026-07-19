@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.24.4](https://github.com/EffortEdutech/myexpensio/compare/v4.24.3...v4.24.4) (2026-07-19)
+
+
+### Bug Fixes
+
+* **voice:** confirm-sheet z-index + cancel-mid-recording crash; docs: S4 confirmed working on-device (0.4.0) ([ccdc445](https://github.com/EffortEdutech/myexpensio/commit/ccdc445cf8be729f7ca35a922acd7990ddd32d85))
+
 ### [4.24.3](https://github.com/EffortEdutech/myexpensio/compare/v4.24.2...v4.24.3) (2026-07-18)
 
 
