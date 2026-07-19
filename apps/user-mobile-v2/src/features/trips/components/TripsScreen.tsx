@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   Modal,
   Platform,
   Pressable,
@@ -1628,6 +1629,17 @@ function TripFormModal({
                           {odoDestKm} − {odoOriginKm} = {odoDistance.toFixed(2)} km
                         </Text>
                       </View>
+                    ) : originReading.length > 0 && destinationReading.length > 0 ? (
+                      // Both readings entered but distance isn't positive — the
+                      // Save button below stays disabled with zero explanation
+                      // otherwise (found on-device 2026-07-19: tester couldn't
+                      // tell why Save wouldn't enable after filling both fields).
+                      <View style={styles.aiErrorHint}>
+                        <Text style={styles.aiErrorHintText}>
+                          ⚠️ Destination reading ({odoDestKm} km) must be higher than
+                          the origin reading ({odoOriginKm} km).
+                        </Text>
+                      </View>
                     ) : null}
                   </View>
                 )}
@@ -2505,11 +2517,15 @@ function EvidenceCapture({
         ) : null}
         {value ? (
           <View style={styles.evidencePreview}>
-            <Text style={styles.evidencePreviewText}>
-              {value.startsWith("blob:") || value.startsWith("local://")
-                ? "Photo attached · pending sync"
-                : value}
-            </Text>
+            {value.startsWith("file:") || value.startsWith("http") ? (
+              <Image source={{ uri: value }} style={styles.evidenceThumbnail} />
+            ) : (
+              <Text style={styles.evidencePreviewText}>
+                {value.startsWith("blob:") || value.startsWith("local://")
+                  ? "Photo attached · pending sync"
+                  : value}
+              </Text>
+            )}
             <Pressable
               accessibilityRole="button"
               onPress={() => onChange("")}
@@ -4022,6 +4038,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: typography.caption,
     fontWeight: "900"
+  },
+  evidenceThumbnail: {
+    backgroundColor: "#e2e8f0",
+    borderRadius: 6,
+    flex: 1,
+    height: 64,
+    resizeMode: "cover"
   },
   evidenceRemoveButton: {
     alignItems: "center",
