@@ -1807,6 +1807,26 @@ function TripDetailModal({
               <Metric label="Rate" value={`MYR ${safeRate.toFixed(2)}/km`} />
             </View>
 
+            {trip.startEvidenceUri || trip.endEvidenceUri ? (
+              <View style={styles.evidenceReviewSection}>
+                <Text style={styles.evidenceReviewLabel}>Odometer Evidence</Text>
+                <View style={styles.evidenceReviewRow}>
+                  {trip.startEvidenceUri ? (
+                    <View style={styles.evidenceReviewItem}>
+                      <EvidenceThumbnail label="Origin reading" uri={trip.startEvidenceUri} />
+                      <Text style={styles.evidenceReviewItemLabel}>Origin</Text>
+                    </View>
+                  ) : null}
+                  {trip.endEvidenceUri ? (
+                    <View style={styles.evidenceReviewItem}>
+                      <EvidenceThumbnail label="Destination reading" uri={trip.endEvidenceUri} />
+                      <Text style={styles.evidenceReviewItemLabel}>Destination</Text>
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
+
             {canEditTrip ? (
               <View style={styles.infoBox}>
                 <Text style={styles.infoText}>
@@ -2518,7 +2538,7 @@ function EvidenceCapture({
         {value ? (
           <View style={styles.evidencePreview}>
             {value.startsWith("file:") || value.startsWith("http") ? (
-              <Image source={{ uri: value }} style={styles.evidenceThumbnail} />
+              <EvidenceThumbnail label={label} uri={value} />
             ) : (
               <Text style={styles.evidencePreviewText}>
                 {value.startsWith("blob:") || value.startsWith("local://")
@@ -2537,6 +2557,34 @@ function EvidenceCapture({
         ) : null}
       </View>
     </View>
+  );
+}
+
+// Shared by EvidenceCapture's create-flow preview and TripDetailModal's
+// saved-evidence review — tapping the thumbnail opens a full-screen lightbox
+// (found on-device 2026-07-19: tapping the thumbnail did nothing, and the
+// trip detail/edit view never showed the saved evidence photo at all).
+function EvidenceThumbnail({ label, uri }: { label?: string; uri: string }) {
+  const [viewerOpen, setViewerOpen] = useState(false);
+  return (
+    <>
+      <Pressable accessibilityRole="button" onPress={() => setViewerOpen(true)}>
+        <Image source={{ uri }} style={styles.evidenceThumbnail} />
+      </Pressable>
+      <Modal animationType="fade" onRequestClose={() => setViewerOpen(false)} transparent visible={viewerOpen}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setViewerOpen(false)}
+          style={styles.imageViewerOverlay}
+        >
+          <Image resizeMode="contain" source={{ uri }} style={styles.imageViewerFull} />
+          <View style={styles.imageViewerFooter}>
+            {label ? <Text style={styles.imageViewerLabel}>{label}</Text> : null}
+            <Text style={styles.imageViewerHint}>Tap anywhere to close</Text>
+          </View>
+        </Pressable>
+      </Modal>
+    </>
   );
 }
 
@@ -4042,9 +4090,58 @@ const styles = StyleSheet.create({
   evidenceThumbnail: {
     backgroundColor: "#e2e8f0",
     borderRadius: 6,
-    flex: 1,
     height: 64,
-    resizeMode: "cover"
+    resizeMode: "cover",
+    width: 96
+  },
+  imageViewerOverlay: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.92)",
+    flex: 1,
+    justifyContent: "center",
+    padding: spacing.lg
+  },
+  imageViewerFull: {
+    height: "80%",
+    width: "100%"
+  },
+  imageViewerFooter: {
+    alignItems: "center",
+    gap: 4,
+    marginTop: spacing.md
+  },
+  imageViewerLabel: {
+    color: "#ffffff",
+    fontSize: typography.body,
+    fontWeight: "900"
+  },
+  imageViewerHint: {
+    color: "#cbd5e1",
+    fontSize: typography.caption,
+    fontWeight: "700"
+  },
+  evidenceReviewSection: {
+    gap: spacing.sm
+  },
+  evidenceReviewLabel: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "900",
+    textTransform: "uppercase"
+  },
+  evidenceReviewRow: {
+    flexDirection: "row",
+    gap: spacing.md
+  },
+  evidenceReviewItem: {
+    alignItems: "center",
+    flex: 1,
+    gap: 4
+  },
+  evidenceReviewItemLabel: {
+    color: colors.muted,
+    fontSize: typography.caption,
+    fontWeight: "700"
   },
   evidenceRemoveButton: {
     alignItems: "center",
