@@ -251,6 +251,12 @@ export async function updateTrip(input: UpdateTripInput, deviceId: string) {
       existing.calculationMode === "odometer"
         ? distanceM
         : existing.odometerDistanceM,
+    odometerEndEvidenceUri: input.removeEndEvidence
+      ? null
+      : existing.odometerEndEvidenceUri,
+    odometerStartEvidenceUri: input.removeStartEvidence
+      ? null
+      : existing.odometerStartEvidenceUri,
     originText: input.originText ?? existing.originText,
     routeOptionLabel: input.routeOptionLabel ?? existing.routeOptionLabel,
     selectedRouteDistanceM:
@@ -272,6 +278,8 @@ export async function updateTrip(input: UpdateTripInput, deviceId: string) {
             ended_at = ?,
             final_distance_m = ?,
             odometer_distance_m = ?,
+            odometer_start_evidence_uri = ?,
+            odometer_end_evidence_uri = ?,
             selected_route_distance_m = ?,
             origin_text = ?,
             destination_text = ?,
@@ -289,6 +297,8 @@ export async function updateTrip(input: UpdateTripInput, deviceId: string) {
         updatedTrip.endedAt,
         updatedTrip.finalDistanceM,
         updatedTrip.odometerDistanceM,
+        updatedTrip.odometerStartEvidenceUri,
+        updatedTrip.odometerEndEvidenceUri,
         updatedTrip.selectedRouteDistanceM,
         updatedTrip.originText,
         updatedTrip.destinationText,
@@ -310,6 +320,8 @@ export async function updateTrip(input: UpdateTripInput, deviceId: string) {
           destinationText: updatedTrip.destinationText,
           distanceM: updatedTrip.finalDistanceM,
           notes: updatedTrip.notes,
+          odometerEndEvidenceUri: updatedTrip.odometerEndEvidenceUri,
+          odometerStartEvidenceUri: updatedTrip.odometerStartEvidenceUri,
           originText: updatedTrip.originText,
           routeOptionLabel: updatedTrip.routeOptionLabel,
           startedAt: updatedTrip.startedAt,

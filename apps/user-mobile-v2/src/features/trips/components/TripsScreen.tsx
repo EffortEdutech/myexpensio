@@ -1783,6 +1783,28 @@ function TripDetailModal({
     setIsEditing(false);
   }
 
+  function handleRemoveEvidence(which: "start" | "end") {
+    if (!trip) return;
+    Alert.alert(
+      "Remove evidence photo?",
+      `This will permanently remove the ${which === "start" ? "origin" : "destination"} odometer photo from this trip. This can't be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: () => {
+            void onUpdateTrip({
+              removeEndEvidence: which === "end",
+              removeStartEvidence: which === "start",
+              tripId: trip.id
+            });
+          }
+        }
+      ]
+    );
+  }
+
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible>
       <View style={styles.modalOverlay}>
@@ -1807,20 +1829,38 @@ function TripDetailModal({
               <Metric label="Rate" value={`MYR ${safeRate.toFixed(2)}/km`} />
             </View>
 
-            {trip.startEvidenceUri || trip.endEvidenceUri ? (
+            {trip.odometerStartEvidenceUri || trip.odometerEndEvidenceUri ? (
               <View style={styles.evidenceReviewSection}>
                 <Text style={styles.evidenceReviewLabel}>Odometer Evidence</Text>
                 <View style={styles.evidenceReviewRow}>
-                  {trip.startEvidenceUri ? (
+                  {trip.odometerStartEvidenceUri ? (
                     <View style={styles.evidenceReviewItem}>
-                      <EvidenceThumbnail label="Origin reading" uri={trip.startEvidenceUri} />
+                      <EvidenceThumbnail label="Origin reading" uri={trip.odometerStartEvidenceUri} />
                       <Text style={styles.evidenceReviewItemLabel}>Origin</Text>
+                      {canEditTrip ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => void handleRemoveEvidence("start")}
+                          style={styles.evidenceReviewDeleteButton}
+                        >
+                          <Text style={styles.evidenceReviewDeleteText}>Remove</Text>
+                        </Pressable>
+                      ) : null}
                     </View>
                   ) : null}
-                  {trip.endEvidenceUri ? (
+                  {trip.odometerEndEvidenceUri ? (
                     <View style={styles.evidenceReviewItem}>
-                      <EvidenceThumbnail label="Destination reading" uri={trip.endEvidenceUri} />
+                      <EvidenceThumbnail label="Destination reading" uri={trip.odometerEndEvidenceUri} />
                       <Text style={styles.evidenceReviewItemLabel}>Destination</Text>
+                      {canEditTrip ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => void handleRemoveEvidence("end")}
+                          style={styles.evidenceReviewDeleteButton}
+                        >
+                          <Text style={styles.evidenceReviewDeleteText}>Remove</Text>
+                        </Pressable>
+                      ) : null}
                     </View>
                   ) : null}
                 </View>
@@ -1908,16 +1948,6 @@ function TripDetailModal({
               <View style={styles.infoBox}>
                 <Text style={styles.infoText}>
                   Selected route: {trip.routeOptionLabel}
-                </Text>
-              </View>
-            ) : null}
-
-            {trip.odometerStartEvidenceUri || trip.odometerEndEvidenceUri ? (
-              <View style={styles.infoBox}>
-                <Text style={styles.infoText}>
-                  Odometer evidence:{" "}
-                  {trip.odometerStartEvidenceUri ? "Origin attached" : "Origin missing"}{" "}
-                  / {trip.odometerEndEvidenceUri ? "Destination attached" : "Destination missing"}
                 </Text>
               </View>
             ) : null}
@@ -4142,6 +4172,21 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: typography.caption,
     fontWeight: "700"
+  },
+  evidenceReviewDeleteButton: {
+    alignItems: "center",
+    backgroundColor: "#fef2f2",
+    borderColor: "#fecaca",
+    borderRadius: 6,
+    borderWidth: 1,
+    minHeight: 26,
+    justifyContent: "center",
+    paddingHorizontal: spacing.sm
+  },
+  evidenceReviewDeleteText: {
+    color: "#dc2626",
+    fontSize: 10,
+    fontWeight: "900"
   },
   evidenceRemoveButton: {
     alignItems: "center",

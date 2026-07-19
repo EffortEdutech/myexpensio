@@ -51,6 +51,11 @@ export type UpdateTripInput = {
   distanceM?: number | null;
   notes?: string | null;
   originText?: string | null;
+  // Odometer evidence deletion (2026-07-19) — the only supported evidence
+  // edit for now is removal; re-scanning a replacement photo on an existing
+  // trip is a separate feature, not built yet.
+  removeEndEvidence?: boolean;
+  removeStartEvidence?: boolean;
   routeOptionLabel?: string | null;
   startedAt?: string;
   tripId: string;
