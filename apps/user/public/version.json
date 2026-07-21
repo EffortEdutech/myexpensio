@@ -1,6 +1,11 @@
 {
-  "version": "4.24.3",
+  "version": "4.25.0",
   "changelog": [
-    "ai: voice claim entry (S4) — parse-voice-claim route, ai_voice_claim gate, VoiceRecorderModal + VoiceClaimEntry ()"
+    "tng: Node/pdfjs-dist replacement for scan_service parse-tng and highlight-tng ()",
+    "trips: correct evidence field names, remove duplicate text block, add evidence delete (0.4.3) ()",
+    "trips: odometer evidence thumbnail + disabled-save reason hint (0.4.1) ()",
+    "trips: tap-to-view evidence lightbox + show odometer evidence in trip detail (0.4.2) ()",
+    "voice: confirm-sheet z-index + cancel-mid-recording crash; docs: S4 confirmed working on-device (0.4.0) ()",
+    "voice: work around expo-audio zero-byte recording URI bug (expo/expo) ()"
   ]
 }
