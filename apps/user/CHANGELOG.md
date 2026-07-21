@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.25.0](https://github.com/EffortEdutech/myexpensio/compare/v4.24.3...v4.25.0) (2026-07-21)
+
+
+### Features
+
+* **tng:** Node/pdfjs-dist replacement for scan_service parse-tng and highlight-tng ([8213f16](https://github.com/EffortEdutech/myexpensio/commit/8213f163f15d54aceb5e0462d8752883a10505cd))
+
+
+### Bug Fixes
+
+* **trips:** correct evidence field names, remove duplicate text block, add evidence delete (0.4.3) ([66056ed](https://github.com/EffortEdutech/myexpensio/commit/66056edfac3a2b4cf73d990948cf31b416b879cf))
+* **trips:** odometer evidence thumbnail + disabled-save reason hint (0.4.1) ([dcca38a](https://github.com/EffortEdutech/myexpensio/commit/dcca38aa7e696946583465444da3da12ab8baaac))
+* **trips:** tap-to-view evidence lightbox + show odometer evidence in trip detail (0.4.2) ([8ca2ca9](https://github.com/EffortEdutech/myexpensio/commit/8ca2ca907cfc6002854c83c7147fca0f2908639e))
+* **voice:** confirm-sheet z-index + cancel-mid-recording crash; docs: S4 confirmed working on-device (0.4.0) ([ccdc445](https://github.com/EffortEdutech/myexpensio/commit/ccdc445cf8be729f7ca35a922acd7990ddd32d85))
+
 ### [4.24.3](https://github.com/EffortEdutech/myexpensio/compare/v4.24.2...v4.24.3) (2026-07-18)
 
 
