@@ -12,9 +12,21 @@
 //
 // DOES NOT save to DB — saving is done via POST /api/tng/transactions.
 // This separation allows user to preview rows before committing.
+//
+// ENGINE SWITCH (Render retirement, step 4 — see
+// docs/01-architecture/04_SCAN_SERVICE_RETIREMENT_PLAN.md): `TNG_NODE_ENGINE
+// === 'true'` runs the Node/pdfjs-dist replacement (lib/tng-parser.ts,
+// verified 35/35 against ground truth on the one real sample tested so far);
+// anything else (including unset) keeps calling the Python scan service —
+// this is the current production default, unchanged. Both paths fill the
+// same `pythonJson` shape (see below) so everything after parsing (storage
+// upload, statement_label, response body) is identical regardless of
+// engine. Do not flip the default until the multi-sample parallel-run
+// validation in §4 of the plan doc passes.
 
 import { createClient } from '@/lib/supabase/server'
 import { type NextRequest, NextResponse } from 'next/server'
+import { parseTngStatement, TngParseError } from '@/lib/tng-parser'
 
 export const runtime = 'nodejs'
 
@@ -65,53 +77,81 @@ export async function POST(request: NextRequest) {
   const pdfBytes    = new Uint8Array(arrayBuffer)
   const pdfBase64   = Buffer.from(arrayBuffer).toString('base64')
 
-  // ── Forward to Python scan service ────────────────────────────────────────
-  const SCAN_API_URL    = process.env.SCAN_API_URL    ?? ''
-  const SCAN_API_SECRET = process.env.SCAN_API_SECRET ?? ''
-
-  if (!SCAN_API_URL) {
-    console.error('[POST /api/tng/parse] SCAN_API_URL not configured')
-    return err('SERVER_ERROR', 'PDF parsing service not configured.', 500)
-  }
+  // ── Parse: Node (pdfjs-dist) or Python (Render), per TNG_NODE_ENGINE ──────
+  // Both branches fill the same `pythonJson` shape so everything below
+  // (storage upload, statement_label, response body) is engine-agnostic.
+  const useNodeEngine = process.env.TNG_NODE_ENGINE === 'true'
 
   let pythonJson: {
     transactions?:   unknown[]
-    meta?:           { account_name?: string; ewallet_id?: string; period?: string }
+    // string | null (not just string | undefined): both the Python JSON
+    // response and lib/tng-parser.ts's TngStatementMeta represent "not
+    // found" as null, not undefined.
+    meta?:           { account_name?: string | null; ewallet_id?: string | null; period?: string | null }
     toll_count?:     number
     parking_count?:  number
     skipped_retail?: number
     detail?:         string
   }
 
-  try {
-    const upstream = await fetch(`${SCAN_API_URL}/parse-tng`, {
-      method:  'POST',
-      headers: {
-        'Content-Type':  'application/json',
-        'X-Scan-Secret': SCAN_API_SECRET,
-      },
-      body:   JSON.stringify({ pdf: pdfBase64 }),
-      signal: AbortSignal.timeout(60_000),
-    })
-
-    pythonJson = await upstream.json()
-
-    if (!upstream.ok) {
-      const detail: string = (pythonJson as { detail?: string })?.detail ?? 'PDF parsing failed.'
-      console.error('[POST /api/tng/parse] upstream error:', upstream.status, detail)
-      if (detail.startsWith('PARSE_ERROR')) {
-        return err('PARSE_ERROR', detail.replace('PARSE_ERROR: ', ''), 422)
+  if (useNodeEngine) {
+    try {
+      const result = await parseTngStatement(Buffer.from(arrayBuffer))
+      pythonJson = {
+        transactions:   result.transactions,
+        meta:           result.meta,
+        toll_count:     result.toll_count,
+        parking_count:  result.parking_count,
+        skipped_retail: result.skipped_retail,
       }
-      return err('UPSTREAM_ERROR', detail, 502)
+    } catch (e: unknown) {
+      if (e instanceof TngParseError) {
+        console.error('[POST /api/tng/parse] Node parse error:', e.message)
+        return err('PARSE_ERROR', e.message.replace('PARSE_ERROR: ', ''), 422)
+      }
+      console.error('[POST /api/tng/parse] Node parse exception:', (e as Error).message ?? e)
+      return err('SERVER_ERROR', 'Could not parse PDF.', 500)
+    }
+  } else {
+    // ── Forward to Python scan service ──────────────────────────────────────
+    const SCAN_API_URL    = process.env.SCAN_API_URL    ?? ''
+    const SCAN_API_SECRET = process.env.SCAN_API_SECRET ?? ''
+
+    if (!SCAN_API_URL) {
+      console.error('[POST /api/tng/parse] SCAN_API_URL not configured')
+      return err('SERVER_ERROR', 'PDF parsing service not configured.', 500)
     }
 
-  } catch (e: unknown) {
-    const msg = (e as Error).message ?? ''
-    console.error('[POST /api/tng/parse] fetch error:', msg)
-    if (msg.includes('timed out') || msg.includes('abort')) {
-      return err('TIMEOUT', 'PDF parser is waking up — please try again in 30 seconds.', 504)
+    try {
+      const upstream = await fetch(`${SCAN_API_URL}/parse-tng`, {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'X-Scan-Secret': SCAN_API_SECRET,
+        },
+        body:   JSON.stringify({ pdf: pdfBase64 }),
+        signal: AbortSignal.timeout(60_000),
+      })
+
+      pythonJson = await upstream.json()
+
+      if (!upstream.ok) {
+        const detail: string = (pythonJson as { detail?: string })?.detail ?? 'PDF parsing failed.'
+        console.error('[POST /api/tng/parse] upstream error:', upstream.status, detail)
+        if (detail.startsWith('PARSE_ERROR')) {
+          return err('PARSE_ERROR', detail.replace('PARSE_ERROR: ', ''), 422)
+        }
+        return err('UPSTREAM_ERROR', detail, 502)
+      }
+
+    } catch (e: unknown) {
+      const msg = (e as Error).message ?? ''
+      console.error('[POST /api/tng/parse] fetch error:', msg)
+      if (msg.includes('timed out') || msg.includes('abort')) {
+        return err('TIMEOUT', 'PDF parser is waking up — please try again in 30 seconds.', 504)
+      }
+      return err('SERVER_ERROR', 'Could not reach PDF parsing service.', 502)
     }
-    return err('SERVER_ERROR', 'Could not reach PDF parsing service.', 502)
   }
 
   // ── Save original PDF to Supabase Storage (best-effort) ──────────────────

@@ -28,7 +28,10 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   // pdfkit reads font .afm files from disk using __dirname-relative paths.
   // pdf-parse v2.x has no ESM default export — must stay as CJS via require().
-  // pdfjs-dist uses dynamic worker threads and must NOT be bundled by webpack.
+  // pdfjs-dist uses dynamic worker threads and must NOT be bundled by webpack;
+  // its main entry (build/pdf.mjs) is also forced ESM, so it's always
+  // dynamic-imported (`await import(...)`), never require()'d — see
+  // lib/tng-parser.ts and lib/tng-highlighter.ts for usage.
   // All three must be excluded from Turbopack/webpack server bundling.
   serverExternalPackages: ['pdfkit', 'pdf-parse', 'pdfjs-dist'],
 
